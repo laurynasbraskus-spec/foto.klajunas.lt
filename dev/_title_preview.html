@@ -1,0 +1,125 @@
+﻿<!doctype html><html lang="lt"><head><meta charset="utf-8"><title>antrastes perziura</title><style>
+    :root{color-scheme:dark;--bg:#0b0e12;--panel:#151a20;--panel2:#10151b;--input:#0d1116;--line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.22);--text:#e8eef6;--muted:#a7b3c2;--accent:#ffb74a;--accent-soft:rgba(255,183,74,.14);--accent-line:rgba(255,183,74,.4);--accent-ink:#ffc46b;--btn:#1c222b;--th:#11161c;--td-line:#252d36;--topbar:rgba(11,14,18,.88);--ok-bg:#132018;--err-bg:#251114;--err-line:#5c2229;--radius:14px}body.light{color-scheme:light;--bg:#fdfdfc;--panel:#ffffff;--panel2:#f7f7f4;--input:#ffffff;--line:#e8e8e2;--line-strong:#cfcfc8;--text:#1a1a1a;--muted:#6b6b6b;--accent:#ffb74a;--accent-soft:rgba(255,183,74,.16);--accent-line:rgba(214,143,32,.45);--accent-ink:#8a5a10;--btn:#ffffff;--th:#f1f1ec;--td-line:#eeeee8;--topbar:rgba(253,253,252,.9);--ok-bg:#eaf6ee;--err-bg:#fdeaea;--err-line:#e3b3b3}*{box-sizing:border-box}body{margin:0;background:radial-gradient(1200px 800px at 50% -200px,var(--accent-soft),transparent 60%),var(--bg);font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);font-size:15px}body.preview-open{overflow:hidden}a{color:inherit;text-decoration:none}.top{min-height:76px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--topbar);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);z-index:2}.top-inner{max-width:1200px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:18px}.brand{font-size:24px;font-weight:850}.nav{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;min-width:0;flex:0 1 auto;scrollbar-width:none}.nav::-webkit-scrollbar{display:none}.nav a,.btn,button{border:1px solid var(--line);background:var(--btn);color:var(--text);border-radius:99px;padding:9px 15px;font-weight:650;cursor:pointer;white-space:nowrap;transition:border-color .15s,background .15s}.nav a:hover,.btn:hover,button:hover{border-color:var(--line-strong)}.nav a{padding:7px 12px;font-size:13.5px;white-space:nowrap}.nav a.active,.primary{border-color:var(--accent-line)!important;background:var(--accent-soft)!important;color:var(--accent-ink)!important}.wrap{max-width:1200px;margin:auto;padding:24px 16px 44px}.spacer{flex:1}.muted{color:var(--muted)}.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}.gateway-card{display:block;transition:border-color .15s ease,transform .15s ease,background .15s ease}.gateway-card:hover{border-color:var(--accent-line);background:var(--panel2);transform:translateY(-1px)}.metric{font-size:34px;font-weight:850}table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line)}th,td{border-bottom:1px solid var(--td-line);padding:10px;text-align:left;vertical-align:top}th{font-size:12px;color:var(--muted);text-transform:uppercase;background:var(--th)}input,select,textarea{width:100%;background:var(--input);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px;font:inherit}input[type=checkbox]{width:18px;height:18px;min-width:18px;padding:0;margin:0;accent-color:var(--accent);cursor:pointer;vertical-align:middle}label{display:block;font-size:12px;color:var(--muted);margin:0 0 6px}.formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:14px 0}.album-fields-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:10px}.album-field-panel{border:2px solid var(--accent-line);border-radius:10px;padding:14px;background:var(--panel2);min-width:0}.album-field-panel h3{margin:0 0 12px}.album-field-panel .formgrid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin:0 0 14px}.album-field-panel textarea{min-height:112px}.album-field-panel .full{grid-column:1/-1}.album-field-panel .field-full{grid-column:1/-1}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}.badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 8px;font-size:12px;color:var(--muted)}.flash{padding:12px 14px;border-radius:8px;margin:0 0 12px;border:1px solid var(--line);background:var(--ok-bg)}.err{background:var(--err-bg);border-color:var(--err-line)}.login{min-height:100vh;display:grid;place-items:center;padding:30px}.login .card{max-width:560px}.logo{width:132px;height:132px;object-fit:cover;margin-bottom:14px}.small{font-size:12px}.photo-board{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}.photo-tile{background:var(--panel2);border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:grab;position:relative}.photo-tile.dragging{opacity:.45;outline:2px solid var(--accent)}.photo-tile:focus{outline:2px solid var(--accent);outline-offset:2px}.photo-tile img,.photo-tile .no-thumb{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:var(--bg)}.photo-tile .no-thumb{display:grid;place-items:center;color:var(--muted)}.photo-tile-body{padding:9px}.photo-title{font-weight:800;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.photo-tools{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.mini{padding:5px 10px;font-size:12px;border-radius:99px}.pill-on{border-color:var(--accent-line)!important;background:var(--accent-soft)!important;color:var(--accent-ink)!important}.order-save{position:sticky;bottom:12px;z-index:3}.cover-flag{position:absolute;top:8px;left:8px;background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent-ink);border-radius:999px;padding:3px 7px;font-size:12px}.photo-preview-overlay{position:fixed;inset:0;z-index:60;display:none;background:rgba(5,8,10,.96)}.photo-preview-overlay.open{display:block}.photo-preview-shell{width:100%;height:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,370px);background:#070b0e;outline:0}.photo-preview-media{display:grid;place-items:center;padding:22px;min-width:0;overflow:hidden}.photo-preview-media img{max-width:100%;max-height:100%;object-fit:contain;background:#05080b;border-radius:8px;box-shadow:0 14px 55px rgba(0,0,0,.45)}.photo-preview-meta{border-left:1px solid var(--line);background:var(--panel);padding:22px 18px;overflow:auto}.preview-topline{font-size:12px;color:var(--muted);line-height:1.4}.photo-preview-title{margin:6px 0 8px;font-size:18px;line-height:1.15;font-weight:850;word-break:break-word}.preview-file{font-size:13px;font-weight:750;margin-bottom:14px;word-break:break-word}.preview-dl{display:grid;grid-template-columns:max-content 1fr;gap:8px 14px;margin:0;font-size:14px}.preview-dl dt{color:var(--muted)}.preview-dl dd{margin:0;word-break:break-word}.preview-admin{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}.preview-section-title{margin:0 0 12px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.preview-dl-admin dd{white-space:pre-wrap}.photo-preview-close,.photo-preview-nav{position:absolute;width:44px;height:44px;border-radius:99px;border:1px solid var(--line);background:var(--btn);color:var(--text);display:grid;place-items:center;font-size:28px;font-weight:700;cursor:pointer;z-index:2}.photo-preview-close{top:16px;right:16px}.photo-preview-nav.prev{left:16px;top:50%;transform:translateY(-50%)}.photo-preview-nav.next{right:calc(370px + 16px);top:50%;transform:translateY(-50%)}#photoListPreviewOverlay .photo-preview-nav.next{right:calc(320px + 16px)}.photo-preview-nav:disabled{opacity:.45;cursor:not-allowed}.photo-preview-close svg,.photo-preview-nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;display:block}.photo-preview-close:hover,.photo-preview-nav:hover:not(:disabled){border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-ink)}@media(min-width:1440px){.top-inner,.wrap{max-width:1400px}}@media(max-width:1280px){.top-inner>span.muted{display:none}}@media(max-width:900px){.photo-preview-shell{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(250px,38vh)}.photo-preview-meta{border-left:0;border-top:1px solid var(--line)}.photo-preview-close{top:10px;right:10px}.photo-preview-nav.prev{left:10px}.photo-preview-nav.next{right:10px}}@media(max-width:1100px){.album-fields-grid{grid-template-columns:1fr}}@media(max-width:760px){.top-inner{align-items:flex-start;flex-direction:column}.wrap{padding:16px}table{font-size:13px}.photo-board{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}}
+/* --- Vertikalus tankis ---
+   Antrastes neturejo savo taisykliu ir naudojo narsykles numatytasias
+   (h1 ~21px is virsaus IR apacios). Prie kelių kortelių viename puslapyje tai
+   susideda i tuscia trecdali ekrano. */
+.wrap>h1{font-size:24px;line-height:1.2;margin:0 0 14px;letter-spacing:-.02em}
+.wrap>h2{font-size:18px;margin:22px 0 10px}
+.card>h2:first-child,.card>h3:first-child{margin-top:0}
+.card h2{font-size:17px;margin:0 0 10px}
+.card h3{font-size:14px;margin:18px 0 8px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.card>p{margin:0 0 12px}
+.card>p:last-child{margin-bottom:0}
+.card+.card{margin-top:14px}
+.card table{margin-top:2px}
+.actions{margin:10px 0}
+.actions:first-child{margin-top:0}
+/* --- B2 Sync lentele: viena eilute vienam aplankui --- */
+/* Plati lentele slenka savo konteineryje, o ne stumia puslapio. Be sito
+   naršykle spaudzia stulpelius tol, kol kelias laužosi po viena simbolį. */
+.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tablewrap>table{min-width:760px;width:auto}
+.b2-row>td{padding-top:7px;padding-bottom:7px;vertical-align:middle}
+.b2-row .b2-prefix{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;margin-top:3px;overflow-wrap:anywhere;line-height:1.4}
+.b2-row .b2-prefix .dim{color:var(--muted);opacity:.7}
+.b2-row .b2-album{min-width:280px;max-width:460px}
+.b2-row .b2-album>a{white-space:normal;display:inline-block;max-width:100%;text-align:left;line-height:1.35}
+.b2-row .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.b2-row .b2-quick{white-space:nowrap}
+.spill{white-space:nowrap}
+.infobtn{border:1px solid var(--line);background:var(--btn);color:var(--muted);width:22px;height:22px;line-height:1;border-radius:50%;padding:0;font-size:12px;font-weight:800;font-style:italic;cursor:pointer;vertical-align:middle}
+.infobtn:hover{border-color:var(--line-strong);color:var(--text)}
+.infobtn.on{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-ink)}
+.b2-detail>td{background:var(--panel2);border-top:0}
+/* Veiksmu meniu: <details> kaip dropdown. Iskleistas turinys pozicionuojamas
+   absoliuciai, kad neisstumtu lenteles eilutes. */
+.rowmenu{position:relative;display:inline-block}
+.rowmenu>summary{list-style:none;cursor:pointer;border:1px solid var(--line);background:var(--btn);color:var(--text);border-radius:99px;padding:6px 12px;font-size:12.5px;font-weight:650;white-space:nowrap;user-select:none}
+.rowmenu>summary::-webkit-details-marker{display:none}
+.rowmenu>summary::after{content:" ▾";color:var(--muted)}
+.rowmenu>summary:hover{border-color:var(--line-strong)}
+.rowmenu[open]>summary{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-ink)}
+.rowmenu-pop{position:absolute;right:0;top:calc(100% + 6px);z-index:40;min-width:330px;max-width:min(460px,90vw);
+  background:var(--panel);border:1px solid var(--line-strong);border-radius:12px;padding:10px;
+  box-shadow:0 14px 40px rgba(0,0,0,.45);display:flex;flex-direction:column;gap:8px;text-align:left}
+.rowmenu-pop .actions{margin:0;flex-direction:column;align-items:stretch;gap:5px}
+.rowmenu-pop form{border-bottom:1px solid var(--td-line);padding-bottom:8px}
+.rowmenu-pop form:last-of-type{border-bottom:0;padding-bottom:0}
+.rowmenu-pop input[type=text],.rowmenu-pop input:not([type]){width:100%;min-width:0}
+.rowmenu-pop button{width:100%}
+.b2-detail-in{display:flex;gap:20px;flex-wrap:wrap;padding:4px 2px 8px}
+.b2-detail-status{flex:1 1 260px;min-width:0}
+.b2-detail-actions{flex:2 1 420px;min-width:0}
+.b2-detail-actions .actions{margin:0 0 6px}
+/* --- Albumu tinklelis: narsymo rodinys salia lenteles --- */
+.albumgrid{display:none;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:18px;margin-top:12px}
+body.view-grid .albumgrid{display:grid}
+body.view-grid table.albums-table{display:none}
+body.view-grid .bulkbar{display:none}
+.acard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column;transition:border-color .15s,transform .15s}
+.acard:hover{border-color:var(--line-strong);transform:translateY(-2px)}
+.acard-cover{position:relative;aspect-ratio:4/3;display:block;overflow:hidden;background:var(--panel2)}
+.acard-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.acard-ph{position:absolute;inset:0;display:grid;place-items:center;font-size:34px;font-weight:850;letter-spacing:-.03em;color:var(--line-strong);font-variant-numeric:tabular-nums}
+.acard-count{position:absolute;right:9px;top:9px;font-size:12px;font-weight:750;color:#fff;background:rgba(0,0,0,.5);padding:3px 9px;border-radius:99px;font-variant-numeric:tabular-nums}
+.acard-flag{position:absolute;left:9px;top:9px;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#fff;background:rgba(0,0,0,.5);padding:3px 8px;border-radius:6px}
+.acard-body{padding:11px 12px 13px;display:flex;flex-direction:column;gap:7px;flex:1}
+.acard-title{font-size:14px;font-weight:700;line-height:1.35;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.acard-title a{color:var(--text);text-decoration:none}
+.acard-title a:hover{color:var(--accent-ink)}
+.acard-meta{display:flex;flex-wrap:wrap;gap:4px 12px;color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums;margin-top:auto}
+.acard-meta .warn{color:var(--accent-ink);opacity:.9}
+.spill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:750;letter-spacing:.03em;text-transform:uppercase;padding:3px 9px;border-radius:99px;border:1px solid}
+.spill .d{width:6px;height:6px;border-radius:50%;background:currentColor}
+.spill.s-published{color:#5fd08a;background:rgba(95,208,138,.13);border-color:rgba(95,208,138,.34)}
+body.light .spill.s-published{color:#1f7a45;background:rgba(31,122,69,.1);border-color:rgba(31,122,69,.28)}
+.spill.s-draft,.spill.s-private,.spill.s-hidden{color:var(--muted);background:var(--th);border-color:var(--line)}
+/* --- Sonine navigacija: meniu is virsutines juostos perkeltas i kairę --- */
+.shell{display:flex;align-items:flex-start;max-width:1400px;margin:0 auto}
+.side{flex:0 0 208px;position:sticky;top:76px;align-self:flex-start;padding:18px 10px 40px;border-right:1px solid var(--line)}
+.side .nav{display:flex;flex-direction:column;gap:3px;overflow:visible;flex-wrap:nowrap}
+.side .nav a{border:0;background:transparent;border-radius:9px;padding:9px 12px;font-size:14px;font-weight:600;text-align:left;width:100%;white-space:nowrap}
+.side .nav a:hover{background:var(--btn)}
+.side .nav a.active{border:0!important;background:var(--accent-soft)!important;color:var(--accent-ink)!important}
+.side .nav-group{margin:14px 0 4px;padding:0 12px;font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);opacity:.75}
+.shell>main.wrap{flex:1 1 auto;min-width:0;max-width:none;margin:0}
+@media(max-width:900px){
+.shell{flex-direction:column}
+.side{position:static;flex:0 0 auto;width:100%;padding:10px;border-right:0;border-bottom:1px solid var(--line)}
+.side .nav{flex-direction:row;overflow-x:auto;gap:6px}
+.side .nav a{width:auto;border-radius:99px}
+.side .nav-group{display:none}
+}
+/* Puslapio pavadinimas persikele i virsutine juosta salia logotipo - ten buvo
+   tuscia vieta, o turinys del atskiros antrastes eilutes prasidedavo per zemai.
+   Pati h1 lieka viena: puslapiuose ji tik paslepiama, nes rasoma cia. */
+.pagetitle{margin:0;font-size:22px;font-weight:850;line-height:1.1;letter-spacing:-.01em;padding-left:18px;border-left:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.wrap h1:not(.keep){display:none}
+/* Kai antraste buvo eiluteje kartu su mygtukais (Albums, Access, Audit),
+   ja paslepus space-between nuspaustu mygtukus i kaire - grazinam desinen. */
+.wrap .actions:has(>h1:not(.keep)){justify-content:flex-end!important}
+
+/* Meniui persikelus i sonine juosta, virsutinei juostai nebeliko ko deti i
+   atskiras eilutes. Sena taisykle ja vertė stulpeliu ir siaurame lange
+   logotipas su dviem mygtukais suvalgydavo puse ekrano. */
+@media(max-width:760px){
+.pagetitle{font-size:17px;padding-left:10px}
+.top{min-height:0}
+.top-inner{flex-direction:row;align-items:center;flex-wrap:wrap;gap:8px;padding:10px 12px}
+.top-inner .brand img{height:34px}
+.top-inner .btn{padding:7px 12px;font-size:13px}
+.side{padding:8px 10px}
+.wrap{padding:14px 12px 40px}
+.wrap h1{font-size:22px}
+}
+</style></head><body><div class="top"><div class="top-inner"><a class="brand" href="#"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MCIgaGVpZ2h0PSI1MCI+PHJlY3Qgd2lkdGg9IjUwIiBoZWlnaHQ9IjUwIiBmaWxsPSIjZjA4MDIwIi8+PC9zdmc+" alt="logo" style="display:block;height:50px;width:auto"></a><h1 class="pagetitle">B2 Sync</h1><div class="spacer"></div><button type="button" class="btn">&#9681; Light</button><span class="muted small">laurynas\@gmail.com</span><a class="btn" href="#">Logout</a></div></div>
+<div class="shell"><aside class="side"><nav class="nav"><a href="#">Dashboard</a><div class="nav-group">Turinys</div><a href="#">Albums</a><a href="#">Photos</a><div class="nav-group">Įkėlimas</div><a class="active" href="#">B2 Sync</a><div class="nav-group">Sistema</div><a href="#">Settings</a></nav></aside><main class="wrap">
+<h1>B2 Sync</h1><div class="card"><h2>Bucket</h2><p class="muted">Turinys prasideda iškart po juostos.</p></div>
+</main></div><hr style="margin:36px 0;border:0;border-top:2px dashed #555"><div class="top"><div class="top-inner"><a class="brand" href="#"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MCIgaGVpZ2h0PSI1MCI+PHJlY3Qgd2lkdGg9IjUwIiBoZWlnaHQ9IjUwIiBmaWxsPSIjZjA4MDIwIi8+PC9zdmc+" alt="logo" style="display:block;height:50px;width:auto"></a><h1 class="pagetitle">Albums</h1><div class="spacer"></div><button type="button" class="btn">&#9681; Light</button><span class="muted small">laurynas\@gmail.com</span><a class="btn" href="#">Logout</a></div></div>
+<div class="shell"><aside class="side"><nav class="nav"><a href="#">Dashboard</a><div class="nav-group">Turinys</div><a href="#">Albums</a><a href="#">Photos</a><div class="nav-group">Įkėlimas</div><a class="active" href="#">B2 Sync</a><div class="nav-group">Sistema</div><a href="#">Settings</a></nav></aside><main class="wrap">
+<div class="actions" style="justify-content:space-between;align-items:center"><h1 style="margin:0">Albums</h1><div class="actions" style="margin:0"><button class="btn">Tinklelis</button><a class="btn primary" href="#">Naujas albumas</a></div></div><div class="card"><p class="muted">Mygtukai turi likti dešinėje.</p></div>
+</main></div><hr style="margin:36px 0;border:0;border-top:2px dashed #555"><div class="top"><div class="top-inner"><a class="brand" href="#"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MCIgaGVpZ2h0PSI1MCI+PHJlY3Qgd2lkdGg9IjUwIiBoZWlnaHQ9IjUwIiBmaWxsPSIjZjA4MDIwIi8+PC9zdmc+" alt="logo" style="display:block;height:50px;width:auto"></a><h1 class="pagetitle">Admin error</h1><div class="spacer"></div><button type="button" class="btn">&#9681; Light</button><span class="muted small">laurynas\@gmail.com</span><a class="btn" href="#">Logout</a></div></div>
+<div class="shell"><aside class="side"><nav class="nav"><a href="#">Dashboard</a><div class="nav-group">Turinys</div><a href="#">Albums</a><a href="#">Photos</a><div class="nav-group">Įkėlimas</div><a class="active" href="#">B2 Sync</a><div class="nav-group">Sistema</div><a href="#">Settings</a></nav></aside><main class="wrap">
+<h1 class="keep">Admin error</h1><p class="muted">Ši antraštė NEslepiama - kitaip klaida liktų be pavadinimo.</p>
+</main></div></body></html>

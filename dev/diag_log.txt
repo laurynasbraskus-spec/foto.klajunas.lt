@@ -1,0 +1,24 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260807212442
+Username: DESKTOP-GBNFCK2\Klajūnas
+RunAs User: DESKTOP-GBNFCK2\Klajūnas
+Configuration Name: 
+Machine: DESKTOP-GBNFCK2 (Microsoft Windows NT 10.0.19044.0)
+Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -NoExit -File C:\Users\Klajūnas\Documents\Claude\foto.klajunas.lt\dev\ftp_diag.ps1 -LogFile C:\Users\Klajūnas\Documents\Claude\foto.klajunas.lt\dev\diag_log.txt
+Process ID: 17988
+PSVersion: 5.1.19041.7548
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.19041.7548
+BuildVersion: 10.0.19041.7548
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+
+Bandom: ftp://ftp.klajunas.lt/domains/foto.klajunas.lt/public_html/admin/
+
+  pasyvus + TLS      VEIKIA  (9 failai)
+  pasyvus be TLS     VEIKIA  (9 failai)
+  aktyvus + TLS      nepavyko  The operation has timed out.

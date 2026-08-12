@@ -1,0 +1,15 @@
+# Nuotrauku archyvas - 38 GB, jo vieta yra diske ir B2, ne git'e.
+Google Photos archyvas/
+
+# Paslaptys. Serveryje sie failai guli UZ webroot ribu (~/domains/), o cia
+# laikomi tik tam, kad butu ka ikelti. I git nededami niekada.
+server/b2-config.php
+server/foto-db-config.php
+server/foto-api-token.php
+server/foto-api.log
+dev/api-token.txt
+
+# Laikini ir atsarginiai failai
+*.bak-*
+*.tmp
+*~

@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>foto.klajunas.lt — albumai</title>
+<meta name="description" content="OK Klajūnas nuotraukų archyvas — orientavimosi sporto, bėgimo ir žygių renginių albumai.">
+<link rel="icon" href="/favicon.ico">
+<link rel="manifest" href="/site.webmanifest">
+<meta name="theme-color" content="#0b0e12">
+<style>
+  :root {
+    /* Width of the content column shared by the header, the album grid and the
+       lightbox bar, so their controls line up on wide screens. */
+    --shell: 1200px;
+    --bg: #fdfdfc;
+    --ink: #1a1a1a;
+    --ink-soft: #6b6b6b;
+    --ink-faint: #9a9a94;
+    --line: #e8e8e2;
+    --line-strong: #cfcfc8;
+    --card-bg: #f7f7f4;
+    --panel: #ffffff;
+    --topbar: rgba(253, 253, 252, .9);
+    --overlay: rgba(252, 252, 250, .96);
+    --chip-active: #f1f1ec;
+    --counter-bg: rgba(255, 255, 255, .88);
+    --amber: #ffb74a;
+    --amber-soft: rgba(255, 183, 74, .16);
+    --amber-line: rgba(214, 143, 32, .45);
+    --amber-ink: #8a5a10;
+    --radius: 14px;
+  }
+  body.dark {
+    --bg: #0b0e12;
+    --ink: #e8eef6;
+    --ink-soft: #a7b3c2;
+    --ink-faint: #77828f;
+    --line: rgba(255, 255, 255, .09);
+    --line-strong: rgba(255, 255, 255, .22);
+    --card-bg: #10151b;
+    --panel: #151a20;
+    --topbar: rgba(11, 14, 18, .88);
+    --overlay: rgba(9, 12, 15, .96);
+    --chip-active: #2a2013;
+    --counter-bg: rgba(16, 21, 27, .85);
+    --amber-soft: rgba(255, 183, 74, .14);
+    --amber-line: rgba(255, 183, 74, .4);
+    --amber-ink: #ffc46b;
+  }
+  body.dark { background: radial-gradient(1200px 800px at 50% -200px, rgba(255,183,74,.10), transparent 60%), var(--bg); }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; }
+
+  /* ---------- Topbar ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--topbar);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar-inner {
+    max-width: 1200px; margin: 0 auto; padding: 14px 20px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 9px; cursor: pointer;
+    background: none; border: 0; padding: 0;
+  }
+  .brand-logo { display: block; height: 46px; width: auto; }
+  .brand .name { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+  .brand .name span { color: var(--ink-soft); font-weight: 400; }
+  .controls { display: flex; gap: 10px; align-items: center; flex: 1; flex-wrap: wrap; justify-content: flex-end; }
+  .search {
+    display: flex; align-items: center; gap: 8px;
+    border: 1px solid var(--line); background: var(--panel);
+    border-radius: 99px; padding: 8px 14px; flex: 1; min-width: 190px; max-width: 340px;
+    transition: border-color .18s, box-shadow .18s;
+  }
+  .search:focus-within { border-color: var(--amber-line); box-shadow: 0 0 0 3px var(--amber-soft); }
+  .search svg { width: 15px; height: 15px; stroke: var(--ink-faint); flex-shrink: 0; }
+  .search input { border: 0; outline: none; background: transparent; width: 100%; font: inherit; font-size: 13.5px; color: var(--ink); }
+  .select-wrap { position: relative; }
+  .select-wrap::after {
+    content: "⌄"; position: absolute; right: 13px; top: 50%; transform: translateY(-60%);
+    color: var(--ink-faint); pointer-events: none; font-size: 13px;
+  }
+  select {
+    appearance: none; -webkit-appearance: none;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    border-radius: 99px; padding: 8px 32px 8px 14px; font: inherit; font-size: 13px;
+    cursor: pointer; outline: none; transition: border-color .18s;
+  }
+  select:hover, select:focus { border-color: var(--line-strong); }
+  .pill {
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink-soft);
+    border-radius: 99px; padding: 8px 15px; font-size: 13px; cursor: pointer;
+    transition: all .18s;
+  }
+  .pill:hover { border-color: var(--line-strong); color: var(--ink); }
+  .pill:active { transform: translateY(1px); }
+  .pill.primary { background: var(--amber-soft); border-color: var(--amber-line); color: var(--amber-ink); }
+
+  /* ---------- Layout ---------- */
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 22px 20px 60px; }
+
+  .admin-panel {
+    border: 1px solid var(--amber-line); background: var(--amber-soft);
+    border-radius: var(--radius); padding: 16px 18px; margin-bottom: 20px;
+  }
+  .admin-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 14px; color: var(--amber-ink); }
+  .admin-tools { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .admin-tools .pill[disabled] { opacity: .55; cursor: not-allowed; }
+
+  .back-pill {
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    border-radius: 99px; padding: 8px 16px; font-size: 13px; cursor: pointer;
+    white-space: nowrap; flex-shrink: 0; transition: all .15s; display: none;
+  }
+  .back-pill.show { display: block; }
+  .back-pill:hover { border-color: var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); }
+
+  .status { color: var(--ink-faint); font-size: 13px; margin: 2px 0 18px; font-variant-numeric: tabular-nums; }
+
+  .album-head { margin: 2px 0 18px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+  .album-bar { display: flex; align-items: center; gap: 14px; flex-wrap: nowrap; }
+  .album-bar h2 { font-size: 20px; font-weight: 650; letter-spacing: -0.02em; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .album-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; flex-shrink: 0; }
+  @media (max-width: 620px) {
+    .album-bar { flex-wrap: wrap; }
+    .album-bar h2 { white-space: normal; min-width: 160px; }
+  }
+  .album-sub { color: var(--ink-soft); font-size: 13.5px; margin-top: 8px; display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+  .album-sub .d { opacity: .4; }
+  .tag {
+    font-size: 11.5px; color: var(--amber-ink); background: var(--amber-soft);
+    padding: 2.5px 9px; border-radius: 99px; font-weight: 550;
+  }
+  .card-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+  .tag-mini {
+    font-size: 10.5px; color: var(--amber-ink); background: var(--amber-soft);
+    padding: 2px 8px; border-radius: 99px; font-weight: 550; cursor: pointer;
+    transition: filter .15s, box-shadow .15s; line-height: 1.5;
+  }
+  .tag-mini:hover { filter: brightness(1.25); }
+  .tag-mini.on { box-shadow: inset 0 0 0 1px var(--amber-ink); }
+  .tag-mini.more { cursor: default; opacity: .75; }
+
+  .toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+  .chip {
+    border: 1px solid var(--line); background: transparent; color: var(--ink-soft);
+    padding: 7px 15px; border-radius: 99px; font-size: 13px; cursor: pointer; transition: all .18s;
+  }
+  .chip:hover { border-color: var(--line-strong); color: var(--ink); }
+  .chip.active { background: var(--amber-soft); border-color: var(--amber-line); color: var(--amber-ink); font-weight: 550; }
+  .view-toggle { display: flex; gap: 4px; border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+  .view-toggle button { border: 0; background: transparent; padding: 5px 10px; border-radius: 7px; cursor: pointer; color: var(--ink-soft); font-size: 12.5px; transition: all .15s; }
+  .view-toggle button.active { background: var(--chip-active); color: var(--ink); }
+
+  /* ---------- Grids ---------- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 20px; }
+  .grid.photos { grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); gap: 16px; }
+  .grid.photos.large { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+  @media (min-width: 1440px) {
+    :root { --shell: 1400px; }
+    .wrap, .topbar-inner { max-width: 1400px; }
+    #albumGrid { grid-template-columns: repeat(5, 1fr); }
+  }
+  @media (min-width: 1200px) and (max-width: 1439.98px) {
+    #albumGrid { grid-template-columns: repeat(4, 1fr); }
+  }
+
+  .card {
+    border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+    background: var(--panel); cursor: pointer; text-align: left;
+    transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+    animation: rise .35s ease both;
+  }
+  .card:hover { transform: translateY(-2px); border-color: var(--line-strong); box-shadow: 0 10px 26px rgba(30,25,10,.07); }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .thumb { aspect-ratio: 4 / 3; background: var(--card-bg); position: relative; overflow: hidden; }
+  .thumb svg { display: block; width: 100%; height: 100%; transition: transform .5s cubic-bezier(.2,.7,.3,1); }
+  .card:hover .thumb svg { transform: scale(1.045); }
+  .badge {
+    position: absolute; top: 9px; right: 10px; color: #fff; font-size: 11.5px;
+    background: rgba(20,16,8,.42); backdrop-filter: blur(3px);
+    padding: 3px 9px; border-radius: 99px; font-variant-numeric: tabular-nums;
+  }
+  .badge-date {
+    top: auto; left: auto; bottom: 9px; right: 10px;
+    text-transform: capitalize;
+  }
+  .card-meta { padding: 11px 13px 12px; }
+  .card-meta .title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.35; }
+  .card-meta .sub { color: var(--ink-soft); font-size: 12.5px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+  .pcard { position: relative; border-radius: var(--radius); overflow: hidden; cursor: zoom-in; background: var(--card-bg); animation: rise .35s ease both; }
+  .pcard svg { display: block; width: 100%; height: auto; transition: transform .5s cubic-bezier(.2,.7,.3,1); }
+  .pcard:hover svg { transform: scale(1.04); }
+  .pcard .pmeta {
+    position: absolute; inset: auto 0 0 0; padding: 26px 12px 10px;
+    background: linear-gradient(transparent, rgba(0,0,0,.4));
+    color: #fff; font-size: 12.5px; display: flex; justify-content: space-between;
+    opacity: 0; transition: opacity .25s; pointer-events: none;
+  }
+  .pcard:hover .pmeta { opacity: 1; }
+  /* Position badge ("3 / 28"). Always on; it steps aside on hover so it never
+     collides with the filename/size bar that slides in. */
+  .pindex {
+    position: absolute; left: 8px; bottom: 8px; display: block;
+    padding: 3px 8px; border-radius: 99px;
+    background: rgba(0,0,0,.55); color: #fff;
+    font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+    pointer-events: none; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    transition: opacity .25s;
+  }
+  .pcard:hover .pindex { opacity: 0; }
+  .fav-btn {
+    position: absolute; top: 9px; right: 9px; width: 32px; height: 32px;
+    border-radius: 50%; border: 0; cursor: pointer;
+    background: rgba(255,255,255,.88); backdrop-filter: blur(4px);
+    /* The heart used to inherit the page colour, which is near-white in dark
+       mode — the button then read as a blank white dot. Pin it dark. */
+    color: #2b2b2b;
+    display: grid; place-items: center; opacity: 0; transition: opacity .2s, transform .15s;
+    font-size: 14px; line-height: 1;
+  }
+  .fav-btn.on { color: #d64545; }
+  .pcard:hover .fav-btn, .fav-btn.on { opacity: 1; }
+  .fav-btn:active { transform: scale(.85); }
+
+  .empty { color: var(--ink-soft); text-align: center; padding: 60px 0 30px; font-size: 14.5px; }
+
+  footer {
+    border-top: 1px solid var(--line); margin-top: 40px; padding: 22px 20px 34px;
+    text-align: center; color: var(--ink-faint); font-size: 13px;
+  }
+
+  /* ---------- Viewer ---------- */
+  .lb {
+    position: fixed; inset: 0; background: var(--overlay);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    display: none; z-index: 50; flex-direction: column;
+  }
+  .lb.open { display: flex; }
+  .lb { overflow-y: auto; }
+  .lb-top {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    /* Bar stays full-bleed (background + border), but its controls sit inside the
+       same column as the album grid — otherwise they fly to the screen edges. */
+    padding: 14px max(24px, calc((100% - var(--shell)) / 2 + 20px));
+    position: sticky; top: 0; z-index: 5;
+    background: var(--topbar); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .lb-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .lb-left .titles { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-title { font-size: 14.5px; font-weight: 600; }
+  .lb-album {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    font-size: 19px; font-weight: 750; color: var(--ink); letter-spacing: -.01em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: min(46%, 620px); pointer-events: none; text-align: center;
+    /* Shifted with margin-left, applied instantly: the info panel itself pops in
+       via display:none/block, so animating the title would only desync them. */
+    margin-left: 0;
+  }
+  /* The info panel eats 300px on the right, so the photo's centre moves 150px
+     left — follow it, or the title sits off-centre above the image. */
+  @media (min-width: 761px) {
+    .lb.info-open .lb-album { margin-left: -150px; }
+  }
+  @media (max-width: 900px) { .lb-album { display: none; } }
+  .lb-actions { display: flex; gap: 8px; }
+  .lb .icon {
+    width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line);
+    background: var(--panel); cursor: pointer; font-size: 15px; display: grid; place-items: center;
+    transition: all .15s;
+  }
+  .lb .icon:hover { border-color: var(--amber-line); background: var(--amber-soft); }
+  .lb .icon.on { background: var(--amber-soft); border-color: var(--amber-line); color: var(--amber-ink); }
+  .lb .icon svg { width: 17px; height: 17px; stroke: currentColor; }
+  .lb-body { flex: 1; display: flex; min-height: 0; }
+  .lb-stage { flex: 1; display: flex; align-items: center; justify-content: center; gap: 18px; padding: 0 20px 24px; min-width: 0; position: relative; }
+  .lb-img { max-width: min(860px, 100%); width: 100%; }
+  .lb-img svg { width: 100%; height: auto; border-radius: 16px; box-shadow: 0 24px 70px rgba(30,25,10,.15); display: block; }
+  .lb-nav {
+    width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel);
+    cursor: pointer; color: var(--ink); transition: all .15s; flex-shrink: 0;
+    display: grid; place-items: center; padding: 0;
+  }
+  .lb-nav svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; display: block; }
+  .lb-nav:hover { border-color: var(--amber-line); background: var(--amber-soft); }
+  .lb-counter {
+    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+    background: var(--counter-bg); backdrop-filter: blur(4px);
+    border-radius: 99px; padding: 4px 12px; pointer-events: none;
+    color: var(--ink-soft); font-size: 12px; font-variant-numeric: tabular-nums;
+  }
+
+  .info-panel {
+    width: 300px; flex-shrink: 0; border-left: 1px solid var(--line);
+    background: var(--panel); padding: 20px; overflow-y: auto; display: none;
+  }
+  .info-panel.show { display: block; }
+  .info-panel h3 { font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-faint); margin-bottom: 14px; }
+  .info-panel table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .info-panel td { padding: 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .info-panel td.k { color: var(--ink-soft); width: 92px; padding-right: 10px; }
+  .info-panel td.v { color: var(--ink); word-break: break-word; }
+
+  @media (max-width: 760px) {
+    /* Overlay the stage. Both arrows keep the same amber "active" look in every
+       state — a hardcoded white pill was unreadable in dark mode, and on touch a
+       lingering :hover made only the last-tapped arrow look different. */
+    .lb-nav,
+    .lb-nav:hover,
+    .lb-nav:focus,
+    .lb-nav:active {
+      position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+      background: var(--amber-soft); border-color: var(--amber-line); color: var(--amber-ink);
+      box-shadow: 0 4px 14px rgba(0,0,0,.28);
+    }
+    #lbPrev { left: 10px; }
+    #lbNext { right: 10px; }
+    .lb-body { flex-direction: column; }
+    .lb-stage { padding: 0 12px 12px; }
+    .info-panel { width: 100%; max-height: 42vh; border-left: 0; border-top: 1px solid var(--line); }
+    .info-panel table { font-size: 12.5px; }
+  }
+
+  /* ================= Touch devices ================= */
+  @media (hover: none) and (pointer: coarse) {
+    #btnAdmin, #adminPanel { display: none !important; }
+    /* No hover to reveal it, and the filename/size is noise on a phone:
+       show only the position badge instead. */
+    .pcard .pmeta { display: none; }
+    .pindex { display: block; }
+    .view-toggle { display: none; }
+    /* Favourites are a desktop-only affordance (they live in this browser's
+       storage only), so drop the filter chip and every heart with it. */
+    #favFilter, .fav-btn, #lbFav { display: none !important; }
+  }
+
+  /* ================= Tablet (<=1024px) ================= */
+  @media (max-width: 1024px) {
+    .topbar-inner, .wrap { padding-left: 16px; padding-right: 16px; }
+    #albumGrid { grid-template-columns: repeat(3, 1fr); }
+    .grid.photos { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+    .grid.photos.large { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+    /* Touch targets */
+    .pill, select { padding-top: 10px; padding-bottom: 10px; }
+    .pcard { cursor: pointer; }
+  }
+
+  /* ================= Phone (<=640px) ================= */
+  @media (max-width: 640px) {
+    .topbar-inner { padding: 10px 14px; gap: 10px; row-gap: 10px; position: relative; }
+    .brand-logo { height: 36px; }
+    .brand .name { font-size: 15px; }
+    .controls { flex: 1 1 100%; width: 100%; justify-content: flex-start; gap: 8px; }
+    .search { flex: 1 1 100%; max-width: none; min-width: 0; order: -1; }
+    .select-wrap { flex: 1 1 calc(50% - 4px); min-width: 0; }
+    .select-wrap select { width: 100%; }
+    .pill { flex: 0 0 auto; }
+
+    /* Theme toggle sits top-right on the brand row; admin is desktop-only. */
+    #themeToggle { position: absolute; top: 12px; right: 14px; }
+    #btnAdmin, #adminPanel { display: none !important; }
+
+    /* Filename + file size are noise here — keep only "N / total". */
+    .pcard .pmeta { display: none; }
+    .pindex { display: block; }
+
+    /* Grid/Large switch is pointless at this width — the grid is always 2-up. */
+    .view-toggle { display: none; }
+    /* Favourites removed on phones (see touch block above). */
+    #favFilter, .fav-btn, #lbFav { display: none !important; }
+
+    .wrap { padding: 16px 14px 48px; }
+    .status { font-size: 12.5px; margin-bottom: 14px; }
+
+    #albumGrid, .grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .grid.photos, .grid.photos.large { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .card-meta { padding: 9px 10px 11px; }
+    .card-meta .title { font-size: 12.8px; line-height: 1.3; }
+    .card-meta .sub { font-size: 11.3px; }
+    .badge, .badge-date { font-size: 10.5px; }
+    .card-tags { gap: 4px; margin-top: 5px; }
+    .tag-mini { font-size: 10px; padding: 2px 7px; }
+    .card:hover { transform: none; box-shadow: none; }
+    .card:hover .thumb svg { transform: none; }
+
+    .album-bar h2 { font-size: 17px; }
+    .album-sub { font-size: 12.5px; }
+
+    /* Lightbox: full-screen, touch-first */
+    .lb-top { padding: 10px 12px; gap: 8px; }
+    .lb-left { gap: 8px; }
+    .lb-title { font-size: 12.5px; max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+    .back-pill { padding: 8px 12px; font-size: 12.5px; }
+    .lb-actions { gap: 6px; }
+    .lb .icon { width: 42px; height: 42px; }
+    .lb-nav { width: 42px; height: 42px; }
+    .lb-stage { padding: 0 8px 10px; gap: 0; }
+    .info-panel { max-height: 55vh; padding: 16px 14px; }
+    .info-panel td.k { width: 88px; }
+  }
+
+  /* Very narrow phones only (iPhone SE at 375px still gets two columns) */
+  @media (max-width: 330px) {
+    #albumGrid, .grid, .grid.photos, .grid.photos.large { grid-template-columns: 1fr; }
+    .lb-title { max-width: 34vw; }
+  }
+
+  .thumb img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .5s cubic-bezier(.2,.7,.3,1); }
+  .card:hover .thumb img { transform: scale(1.045); }
+  .pcard img.ph { display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover; background: var(--card-bg); transition: transform .5s cubic-bezier(.2,.7,.3,1); }
+  .pcard:hover img.ph { transform: scale(1.04); }
+  .lb-img img { width: 100%; max-height: 78vh; object-fit: contain; border-radius: 16px; box-shadow: 0 24px 70px rgba(30,25,10,.15); display: block; background: var(--card-bg); }
+  .loadnote { text-align: center; color: var(--ink-faint); font-size: 13px; padding: 14px 0; }
+
+  @keyframes kf-spin { to { transform: rotate(360deg); } }
+  @keyframes kf-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  .spinner {
+    width: 36px; height: 36px; border-radius: 50%;
+    border: 3px solid var(--amber-soft); border-top-color: var(--amber);
+    animation: kf-spin .8s linear infinite;
+  }
+  .lb-img { position: relative; min-height: 160px; }
+  .lb-img .spinner { position: absolute; top: 50%; left: 50%; margin: -18px 0 0 -18px; }
+  .lb-img img { opacity: 0; transition: opacity .3s ease; }
+  .lb-img img.loaded { opacity: 1; }
+  .pcard img.ph, .thumb img {
+    background: linear-gradient(100deg, var(--card-bg) 30%, var(--chip-active) 50%, var(--card-bg) 70%);
+    background-size: 200% 100%;
+    animation: kf-shimmer 1.3s linear infinite;
+  }
+  .pcard img.ph.loaded, .thumb img.loaded { animation: none; background: var(--card-bg); }
+
+  .no-preview {
+    display: grid; place-items: center; align-content: center; gap: 8px;
+    aspect-ratio: 4/3; background: var(--card-bg); color: var(--ink-faint);
+    font-size: 12px; text-align: center; padding: 12px; line-height: 1.4;
+  }
+  .no-preview .np-ico { font-size: 22px; opacity: .7; }
+  .lb-notice {
+    max-width: 440px; margin: 0 auto; text-align: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 30px 24px; color: var(--ink-soft); font-size: 14px; line-height: 1.5;
+  }
+  .lb-notice .np-ico { font-size: 28px; display: block; margin-bottom: 10px; opacity: .75; }
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--amber-line); color: var(--ink);
+    font-size: 13.5px; padding: 10px 18px; border-radius: 99px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.18); z-index: 80;
+    opacity: 0; transition: opacity .25s; pointer-events: none; max-width: 86vw;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body class="dark">
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <button class="brand" id="btnBrand" aria-label="Grįžti į albumus">
+      <img class="brand-logo" src="foto-klajunas-logo.png" alt="">
+      <span class="name">foto<span>.klajunas.lt</span></span>
+    </button>
+    <div class="controls">
+      <label class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" type="search" placeholder="Search albums / photos…" autocomplete="off">
+      </label>
+      <div class="select-wrap" id="tagWrap">
+        <select id="tagFilter" aria-label="Filter albums by tag"><option value="">All tags</option></select>
+      </div>
+      <div class="select-wrap" id="sortWrap">
+        <select id="sort" aria-label="Sort albums">
+          <option value="event_desc">Newest events first</option>
+          <option value="event_asc">Oldest events first</option>
+          <option value="title_asc">Title A–Z</option>
+          <option value="title_desc">Title Z–A</option>
+          <option value="photos_desc">Most photos</option>
+          <option value="views_desc">Most views</option>
+        </select>
+      </div>
+      <button class="pill" id="themeToggle" title="Perjungti temą">◑ Light</button>
+      <button class="pill" id="btnAdmin">Admin</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="admin-panel" id="adminPanel" hidden>
+    <div class="admin-head">
+      <div>Admin access</div>
+      <button class="pill" id="btnAdminClose">Close</button>
+    </div>
+    <div class="admin-tools">
+      <button class="pill primary" disabled>Import photos</button>
+      <button class="pill" disabled>B2 sync</button>
+      <button class="pill" disabled>Audit log</button>
+    </div>
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <!-- Archive -->
+  <section id="viewArchive">
+    <div class="grid" id="albumGrid"></div>
+  </section>
+
+  <!-- Album -->
+  <section id="viewAlbum" hidden>
+    <div class="album-head">
+      <div class="album-bar">
+        <button class="back-pill show" id="btnBack" aria-label="Back to albums">← Atgal</button>
+        <h2 id="albumTitle"></h2>
+        <div class="album-actions">
+          <button class="chip" id="albumShare" title="Dalintis albumo nuoroda" style="display:inline-flex;align-items:center;gap:7px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.6 6.8-4.2M8.6 13.4l6.8 4.2"/></svg>
+            <span id="albumShareLabel">Dalintis</span>
+          </button>
+          <button class="chip" id="favFilter">♡ Favorites only</button>
+          <div class="view-toggle">
+            <button id="vSmall" class="active">▦ Grid</button>
+            <button id="vLarge">◻ Large</button>
+          </div>
+        </div>
+      </div>
+      <div class="album-sub" id="albumSub"></div>
+    </div>
+    <div class="grid photos" id="photoGrid"></div>
+    <div class="empty" id="empty" style="display:none"></div>
+  </section>
+
+  <div id="sentinel" style="height:1px"></div>
+</div>
+
+<footer>© OK Klajūnas · foto.klajunas.lt</footer>
+
+<!-- Viewer -->
+<div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Photo viewer">
+  <div class="lb-top">
+    <div class="lb-left">
+      <button class="back-pill show" id="lbBack" title="Back to album (Esc)">← Atgal</button>
+      <div class="titles"><span class="lb-title" id="lbTitle"></span></div>
+    </div>
+    <div class="lb-album" id="lbTag"></div>
+    <div class="lb-actions">
+      <button class="icon" id="lbFav" title="Favorite (F)">♡</button>
+      <button class="icon" id="lbDown" title="Download (JPG)">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+      </button>
+      <button class="icon" id="lbShare" title="Dalintis nuoroda">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.6 6.8-4.2M8.6 13.4l6.8 4.2"/></svg>
+      </button>
+      <button class="icon" id="lbInfo" title="Photo info (I)" style="font-style:italic;font-family:Georgia,serif">i</button>
+      <button class="icon" id="lbClose" title="Close (Esc)" aria-label="Uždaryti"><svg viewBox="0 0 24 24" aria-hidden="true" style="fill:none;stroke-width:2.2;stroke-linecap:round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>
+    </div>
+  </div>
+  <div class="lb-body">
+    <div class="lb-stage">
+      <button class="lb-nav" id="lbPrev" title="Previous (←)" aria-label="Ankstesnė nuotrauka"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg></button>
+      <div class="lb-img" id="lbImg"></div>
+      <button class="lb-nav" id="lbNext" title="Next (→)" aria-label="Kita nuotrauka"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5 16 12l-6.5 6.5"/></svg></button>
+      <div class="lb-counter" id="lbCounter"></div>
+    </div>
+    <aside class="info-panel" id="infoPanel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h3 style="margin-bottom:0">Photo info</h3>
+        <button class="icon" id="infoClose" title="Close info">✕</button>
+      </div>
+      <table id="infoTable"></table>
+    </aside>
+  </div>
+</div>
+
+<script>
+(function () {
+  const API = "b2-gallery.php";
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const fmtN = n => Number(n || 0).toLocaleString("lt-LT");
+  const fmtBytes = n => { n = Number(n); if (!Number.isFinite(n) || n <= 0) return ""; const u = ["B", "KB", "MB", "GB"]; let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return (i ? n.toFixed(1) : Math.round(n)) + " " + u[i]; };
+  let toastTimer = null;
+  function toast(msg) {
+    let t = $("toast");
+    if (!t) { t = document.createElement("div"); t.id = "toast"; t.className = "toast"; document.body.appendChild(t); }
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 4500);
+  }
+  function previewIssue(p) {
+    if (p.previewMissing) return "HEIC originalas įkeltas, bet JPG peržiūra nesukurta.";
+    if (!p.thumbUrl || !p.viewUrl) return "Šiai nuotraukai peržiūra nesukurta.";
+    return null;
+  }
+  function markLoaded(im) {
+    if (!im) return;
+    const done = () => im.classList.add("loaded");
+    if (im.complete && im.naturalWidth) done();
+    else { im.onload = done; im.onerror = done; }
+  }
+  const MONTHS_LT = ["Sausis", "Vasaris", "Kovas", "Balandis", "Gegužė", "Birželis", "Liepa", "Rugpjūtis", "Rugsėjis", "Spalis", "Lapkritis", "Gruodis"];
+  const monthYear = d => d && d.length >= 7 ? `${MONTHS_LT[+d.slice(5, 7) - 1]} ${d.slice(0, 4)}` : "";
+  const dateLabel = al => al.eventDateLabel || al.eventDate || "";
+
+  let ALBUMS = [];
+  let currentAlbum = null;
+  let photos = [];
+  let visible = [];
+  let renderedCount = 0;
+  let nextCursor = "";
+  let loadingPhotos = false;
+  let favsOnly = false;
+  let lbIndex = 0;
+  const CHUNK = 24;
+  const metaCache = new Map();
+
+  let favs = new Set();
+  try { favs = new Set(JSON.parse(localStorage.getItem("klajunas_favs") || "[]")); } catch (e) {}
+  const saveFavs = () => { try { localStorage.setItem("klajunas_favs", JSON.stringify([...favs])); } catch (e) {} };
+
+  async function api(params) {
+    const r = await fetch(API + "?" + new URLSearchParams(params), { headers: { Accept: "application/json" } });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || "API klaida");
+    return d;
+  }
+
+  // ================= Archive =================
+  async function loadAlbums() {
+    $("status").textContent = "Kraunami albumai…";
+    try {
+      const d = await api({ withCovers: 1 });
+      ALBUMS = (d.items || []).filter(i => i.type === "folder");
+      const tags = [...new Set(ALBUMS.flatMap(a => a.tags || []))].sort((a, b) => a.localeCompare(b, "lt"));
+      tags.forEach(t => { const o = document.createElement("option"); o.value = t; o.textContent = t; $("tagFilter").appendChild(o); });
+      renderArchive();
+      await openFromUrl();
+    } catch (e) {
+      $("status").textContent = "Nepavyko užkrauti albumų: " + e.message;
+    }
+  }
+
+  // Mirrors the CSS breakpoints that strip favourites/toggles on phones.
+  const compactUI = () =>
+    window.matchMedia("(hover: none) and (pointer: coarse)").matches ||
+    window.innerWidth <= 640;
+
+  function searchFold(s) {
+    return String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  }
+
+  function filteredAlbums() {
+    const q = searchFold($("q").value.trim());
+    const tag = $("tagFilter").value;
+    let list = ALBUMS
+      .filter(al => !tag || (al.tags || []).includes(tag))
+      .filter(al => !q || searchFold(al.name + " " + (al.eventPlace || "") + " " + (al.tags || []).join(" ")).includes(q));
+    const d = al => al.eventDate || "0000";
+    const so = al => Number.isFinite(al.sortOrder) ? al.sortOrder : Number.MAX_SAFE_INTEGER;
+    const tie = (a, b) => so(a) - so(b) || a.name.localeCompare(b.name, "lt");
+    const cmp = {
+      event_desc: (a, b) => d(b).localeCompare(d(a)) || tie(a, b),
+      event_asc: (a, b) => d(a).localeCompare(d(b)) || tie(a, b),
+      title_asc: (a, b) => a.name.localeCompare(b.name, "lt") || tie(a, b),
+      title_desc: (a, b) => b.name.localeCompare(a.name, "lt") || tie(a, b),
+      photos_desc: (a, b) => (b.count || 0) - (a.count || 0) || tie(a, b),
+      views_desc: (a, b) => (b.viewCount || 0) - (a.viewCount || 0) || tie(a, b)
+    }[$("sort").value];
+    return list.sort(cmp);
+  }
+
+  function albumMetaLine(al) {
+    const bits = [];
+    if (dateLabel(al)) bits.push(dateLabel(al));
+    if (al.eventPlace) bits.push(al.eventPlace);
+    if (al.viewCount) bits.push(fmtN(al.viewCount) + " views");
+    return bits.join(" · ");
+  }
+
+  function renderArchive() {
+    const list = filteredAlbums();
+    const g = $("albumGrid");
+    g.innerHTML = "";
+    list.forEach((al, i) => {
+      const card = document.createElement("button");
+      card.className = "card";
+      card.type = "button";
+      card.style.animationDelay = Math.min(i * 30, 400) + "ms";
+      card.setAttribute("aria-label", "Atidaryti albumą " + al.name);
+      const cover = al.coverThumbUrl
+        ? `<img loading="lazy" src="${esc(al.coverThumbUrl)}" alt="">`
+        : `<div class="empty-cover" style="display:grid;place-items:center;height:100%;color:var(--ink-faint);font-size:13px">be viršelio</div>`;
+      const my = monthYear(al.eventDate);
+      const activeTag = $("tagFilter").value;
+      const tags = al.tags || [];
+      const tagsRow = tags.length
+        ? `<div class="card-tags">${tags.slice(0, 3).map(t =>
+            `<span class="tag-mini${t === activeTag ? " on" : ""}" data-tag="${esc(t)}" title="Filtruoti pagal ${esc(t)}">${esc(t)}</span>`
+          ).join("")}${tags.length > 3 ? `<span class="tag-mini more">+${tags.length - 3}</span>` : ""}</div>`
+        : "";
+      card.innerHTML =
+        `<div class="thumb">${cover}<span class="badge">${al.count || 0}</span>${my ? `<span class="badge badge-date">${esc(my)}</span>` : ""}</div>
+         <div class="card-meta">
+           <div class="title">${esc(al.name)}</div>
+           <div class="sub">${esc(albumMetaLine(al))}</div>
+           ${tagsRow}
+         </div>`;
+      card.onclick = () => openAlbum(al);
+      card.querySelectorAll(".tag-mini[data-tag]").forEach(ch => {
+        ch.onclick = e => {
+          e.stopPropagation();
+          const t = ch.dataset.tag;
+          $("tagFilter").value = $("tagFilter").value === t ? "" : t;
+          renderArchive();
+        };
+      });
+      markLoaded(card.querySelector(".thumb img"));
+      g.appendChild(card);
+    });
+    const total = ALBUMS.reduce((s, a) => s + (a.count || 0), 0);
+    $("status").textContent = !list.length
+      ? "Pagal paiešką nieko nerasta."
+      : (list.length === ALBUMS.length
+          ? `${ALBUMS.length} albumai · ${fmtN(total)} nuotraukų`
+          : `${list.length} / ${ALBUMS.length} albumų`)
+        + (favs.size && !compactUI() ? ` · ${favs.size} ♥` : "");
+  }
+
+  // ================= Album =================
+  async function openAlbum(al) {
+    currentAlbum = al;
+    favsOnly = false;
+    syncFavChip();
+    pushHistory({ v: "album", path: al.path, d: 1 });
+    $("viewArchive").hidden = true;
+    $("viewAlbum").hidden = false;
+    $("tagWrap").style.display = "none";
+    $("sortWrap").style.display = "none";
+    $("q").value = "";
+    window.scrollTo(0, 0);
+    $("albumTitle").textContent = al.name;
+    renderAlbumSub(al);
+    photos = [];
+    visible = [];
+    renderedCount = 0;
+    nextCursor = "";
+    $("photoGrid").innerHTML = "";
+    $("empty").style.display = "none";
+    $("status").textContent = "";
+    await fetchPhotos();
+  }
+
+  function renderAlbumSub(al) {
+    const bits = [];
+    if (dateLabel(al)) bits.push(`<span>${esc(dateLabel(al))}</span>`);
+    if (al.eventPlace) bits.push(`<span class="d">·</span><span>${esc(al.eventPlace)}</span>`);
+    bits.push(`<span class="d">·</span><span id="subCount">${al.count || 0} nuotr.</span>`);
+    if (al.viewCount) bits.push(`<span class="d">·</span><span>${fmtN(al.viewCount)} views</span>`);
+    if (al.authorName) bits.push(`<span class="d">·</span><span>Foto: ${esc(al.authorName)}</span>`);
+    if (al.copyrightText) bits.push(`<span class="d">·</span><span>${esc(al.copyrightText)}</span>`);
+    (al.tags || []).forEach(t => bits.push(`<span class="tag">${esc(t)}</span>`));
+    $("albumSub").innerHTML = bits.join(" ");
+  }
+
+  async function fetchPhotos() {
+    if (loadingPhotos || !currentAlbum) return;
+    loadingPhotos = true;
+    note("Kraunamos nuotraukos…");
+    try {
+      const params = { path: currentAlbum.path };
+      if (nextCursor) params.cursor = nextCursor;
+      const d = await api(params);
+      photos.push(...(d.items || []).filter(i => i.type === "photo"));
+      nextCursor = d.nextCursor || "";
+      applyPhotoFilter(false);
+    } catch (e) {
+      note("Klaida kraunant: " + e.message);
+      toast("Nepavyko užkrauti nuotraukų sąrašo: " + e.message);
+      return;
+    } finally {
+      loadingPhotos = false;
+    }
+    note(nextCursor ? "Slinkite žemyn — bus užkrauta daugiau" : "");
+  }
+
+  function note(text) {
+    let el = $("loadNote");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "loadNote";
+      el.className = "loadnote";
+      $("sentinel").before(el);
+    }
+    el.textContent = text;
+  }
+
+  function photoPasses(p) {
+    const q = searchFold($("q").value.trim());
+    if (favsOnly && !favs.has(p.path)) return false;
+    if (q && !searchFold(p.name).includes(q)) return false;
+    return true;
+  }
+
+  function applyPhotoFilter(reset) {
+    if (reset) { $("photoGrid").innerHTML = ""; renderedCount = 0; }
+    visible = photos.filter(photoPasses);
+    renderMore();
+    const sc = $("subCount");
+    if (sc && currentAlbum) {
+      const total = currentAlbum.count || photos.length;
+      sc.textContent = (visible.length === total ? `${total}` : `${visible.length} / ${total}`) + " nuotr.";
+    }
+    const emp = $("empty");
+    emp.style.display = visible.length ? "none" : "block";
+    emp.textContent = favsOnly ? "Šiame albume dar nėra ♥ pažymėtų nuotraukų." : "Pagal paiešką nieko nerasta.";
+  }
+
+  function renderMore() {
+    const g = $("photoGrid");
+    const end = Math.min(renderedCount + CHUNK, visible.length);
+    for (let vi = renderedCount; vi < end; vi++) {
+      const p = visible[vi];
+      const on = favs.has(p.path);
+      const card = document.createElement("figure");
+      card.className = "pcard";
+      const issue = previewIssue(p);
+      const media = issue
+        ? `<div class="no-preview"><span class="np-ico">⚠</span>${esc(issue)}</div>`
+        : `<img class="ph" loading="lazy" src="${esc(p.thumbUrl)}" alt="${esc(p.name)}">`;
+      card.innerHTML =
+        media +
+        `<figcaption class="pmeta"><span>${esc(p.name)}</span><span>${esc(fmtBytes(p.originalSize))}</span></figcaption>` +
+        `<span class="pindex">${vi + 1} / <span class="pindex-total"></span></span>` +
+        `<button class="fav-btn${on ? " on" : ""}" title="Įsiminti">${on ? "♥" : "♡"}</button>`;
+      card.querySelector(".fav-btn").onclick = e => { e.stopPropagation(); toggleFav(p.path); };
+      card.onclick = () => openLb(vi);
+      const gridIm = card.querySelector("img.ph");
+      if (gridIm) {
+        markLoaded(gridIm);
+        gridIm.onerror = () => {
+          gridIm.replaceWith(Object.assign(document.createElement("div"), {
+            className: "no-preview",
+            innerHTML: '<span class="np-ico">⚠</span>Nepavyko užkrauti peržiūros'
+          }));
+        };
+      }
+      g.appendChild(card);
+    }
+    renderedCount = end;
+    // Totals are only known progressively (cursor pagination), so every badge's
+    // "/ N" is rewritten here — otherwise tiles rendered before later pages
+    // arrive would keep a stale, too-small total. With no filter active the
+    // album's full published count is authoritative and correct from the first
+    // tile; a favourites/search filter narrows to the loaded set, so use that.
+    const filtered = favsOnly || $("q").value.trim() !== "";
+    const total = filtered ? visible.length : (currentAlbum && currentAlbum.count) || visible.length;
+    g.querySelectorAll(".pindex-total").forEach(el => { el.textContent = total; });
+  }
+
+  function backToArchive() {
+    currentAlbum = null;
+    $("viewAlbum").hidden = true;
+    $("viewArchive").hidden = false;
+    $("tagWrap").style.display = "";
+    $("sortWrap").style.display = "";
+    note("");
+    renderArchive();
+  }
+
+  function toggleFav(path) {
+    favs.has(path) ? favs.delete(path) : favs.add(path);
+    saveFavs();
+    applyPhotoFilter(true);
+    if ($("lb").classList.contains("open")) { syncLbFav(); renderInfo(); }
+  }
+
+  function syncFavChip() {
+    const b = $("favFilter");
+    b.classList.toggle("active", favsOnly);
+    b.textContent = (favsOnly ? "♥" : "♡") + " Tik įsiminti";
+  }
+
+  // ================= Infinite scroll =================
+  new IntersectionObserver(entries => {
+    if (!entries[0].isIntersecting || currentAlbum === null) return;
+    if (renderedCount < visible.length) renderMore();
+    else if (nextCursor && !loadingPhotos) fetchPhotos();
+  }, { rootMargin: "700px" }).observe($("sentinel"));
+
+  // ================= Lightbox =================
+  function openLb(vi) {
+    lbIndex = vi;
+    updateLb();
+    $("lb").classList.add("open");
+    pushHistory({ v: "photo", path: currentAlbum ? currentAlbum.path : "", i: vi, d: 2 });
+  }
+  function closeLb() { $("lb").classList.remove("open"); }
+
+  // ================= Browser history + shareable URLs =================
+  // Archive → album → photo each get a history entry (Back steps up one level)
+  // AND a real URL (?a=album&f=N), so any view can be reloaded or shared.
+  let suppressHistory = false;
+  const BASE_TITLE = document.title;
+
+  function urlForState(st) {
+    if (!st || st.v === "archive" || !st.path) return location.pathname;
+    const q = "?a=" + encodeURIComponent(st.path);
+    return location.pathname + (st.v === "photo" ? q + "&f=" + ((st.i | 0) + 1) : q);
+  }
+
+  function syncTitle(st) {
+    if (!st || st.v === "archive" || !currentAlbum) { document.title = BASE_TITLE; return; }
+    if (st.v === "photo" && visible[st.i | 0]) {
+      document.title = visible[st.i | 0].name + " — " + currentAlbum.name;
+    } else {
+      document.title = currentAlbum.name + " — foto.klajunas.lt";
+    }
+  }
+
+  function pushHistory(st) {
+    if (suppressHistory) return;
+    history.pushState(st, "", urlForState(st));
+    syncTitle(st);
+  }
+
+  async function applyHistoryState(st) {
+    const target = st && st.v ? st.v : "archive";
+    const lbIsOpen = $("lb").classList.contains("open");
+    const al = target === "archive" ? null : (ALBUMS || []).find(a => a.path === st.path);
+
+    suppressHistory = true;
+    try {
+      if (target === "archive") {
+        if (lbIsOpen) closeLb();
+        if (currentAlbum) backToArchive();
+        return;
+      }
+      // Re-open the album only if we are not already inside it (e.g. after a
+      // forward navigation or a reload); going photo → album just closes the box.
+      if (!currentAlbum || currentAlbum.path !== st.path) {
+        if (!al) { backToArchive(); return; }
+        await openAlbum(al);
+      }
+      if (target === "album") {
+        if ($("lb").classList.contains("open")) closeLb();
+      } else if (target === "photo") {
+        const i = Math.min(Math.max(0, st.i | 0), Math.max(0, visible.length - 1));
+        openLb(i);
+      }
+    } finally {
+      suppressHistory = false;
+      syncTitle(st);
+    }
+  }
+
+  // Deep link on load: /?a=<albumPath>&f=<nuotraukos numeris nuo 1>.
+  // Params are captured BEFORE the initial replaceState below strips them from
+  // the address bar (otherwise the deep link would be erased before it is read).
+  const INITIAL_SEARCH = location.search;
+  async function openFromUrl() {
+    const params = new URLSearchParams(INITIAL_SEARCH);
+    const a = params.get("a");
+    if (!a) return;
+    const al = (ALBUMS || []).find(x => x.path === a);
+    if (!al) return;
+    await openAlbum(al);
+    const f = parseInt(params.get("f") || "0", 10);
+    if (f >= 1) {
+      let guard = 0;
+      while (visible.length < f && nextCursor && guard++ < 40) await fetchPhotos();
+      if (visible.length) openLb(Math.min(f, visible.length) - 1);
+    }
+  }
+
+  window.addEventListener("popstate", e => { applyHistoryState(e.state); });
+  history.replaceState({ v: "archive", d: 0 }, "", location.pathname);
+  function step(d) {
+    if (!visible.length) return;
+    lbIndex = (lbIndex + d + visible.length) % visible.length;
+    updateLb();
+  }
+
+  // Swipe left/right on the photo stage to move between photos (touch devices).
+  (function enableSwipe() {
+    const stage = document.querySelector(".lb-stage");
+    if (!stage) return;
+    let x0 = null, y0 = null;
+    stage.addEventListener("touchstart", e => {
+      if (e.touches.length !== 1) { x0 = null; return; }
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+    }, { passive: true });
+    stage.addEventListener("touchend", e => {
+      if (x0 === null || !e.changedTouches.length) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      // horizontal, long enough, and not a vertical scroll
+      if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
+      x0 = null;
+    }, { passive: true });
+  })();
+  function updateLb() {
+    const p = visible[lbIndex];
+    if (!p) return closeLb();
+    const lbIssue = previewIssue(p);
+    if (lbIssue) {
+      const dlHtml = (p.downloadAllowed && p.downloadUrl)
+        ? `<br><br><a class="back-pill show" style="display:inline-block" href="${esc(p.downloadUrl)}" target="_blank" rel="noopener">⤓ Atsisiųsti originalą</a>`
+        : "";
+      $("lbImg").innerHTML = `<div class="lb-notice"><span class="np-ico">⚠</span>${esc(lbIssue)}${dlHtml}</div>`;
+    } else {
+      $("lbImg").innerHTML = `<div class="spinner" aria-label="Kraunama"></div><img src="${esc(p.viewUrl)}" alt="${esc(p.name)}">`;
+      const lbIm = $("lbImg").querySelector("img");
+      const lbDone = () => { lbIm.classList.add("loaded"); $("lbImg").querySelector(".spinner")?.remove(); };
+      const lbFail = () => {
+        $("lbImg").innerHTML = `<div class="lb-notice"><span class="np-ico">⚠</span>Nepavyko užkrauti nuotraukos „${esc(p.name)}“. Pabandykite dar kartą.</div>`;
+        toast("Nepavyko užkrauti nuotraukos: " + p.name);
+      };
+      if (lbIm.complete && lbIm.naturalWidth) lbDone();
+      else { lbIm.onload = lbDone; lbIm.onerror = lbFail; }
+    }
+    $("lbTitle").textContent = p.name;
+    $("lbTag").textContent = currentAlbum ? currentAlbum.name : "";
+    $("lbCounter").textContent = `${lbIndex + 1} / ${visible.length}`;
+    const dl = $("lbDown");
+    if (p.downloadAllowed && p.downloadUrl) { dl.style.display = ""; dl.title = "Atsisiųsti originalą"; }
+    else dl.style.display = "none";
+    syncLbFav();
+    renderInfo();
+  }
+  function syncLbFav() {
+    const p = visible[lbIndex];
+    if (!p) return;
+    const on = favs.has(p.path);
+    $("lbFav").textContent = on ? "♥" : "♡";
+    $("lbFav").classList.toggle("on", on);
+  }
+
+  async function renderInfo() {
+    const p = visible[lbIndex];
+    if (!p || !currentAlbum) return;
+    const rows = [
+      currentAlbum.subtitle ? ["Paantraštė", currentAlbum.subtitle] : null,
+      ["Albumas", currentAlbum.name],
+      ["Nuotrauka", p.name],
+      currentAlbum.eventPlace ? ["Vieta", currentAlbum.eventPlace] : null,
+      dateLabel(currentAlbum) ? ["Renginio data", dateLabel(currentAlbum)] : null,
+      p.originalSize ? ["Dydis", fmtBytes(p.originalSize)] : null,
+      compactUI() ? null : ["Įsiminta", favs.has(p.path) ? "♥ taip" : "—"],
+    ].filter(Boolean);
+    drawInfo(rows.concat([["…", "kraunama EXIF"]]));
+
+    let meta = metaCache.get(p.path);
+    if (meta === undefined && p.metaUrl) {
+      try {
+        const r = await fetch(p.metaUrl, { headers: { Accept: "application/json" } });
+        meta = r.ok ? await r.json() : null;
+      } catch (e) { meta = null; }
+      metaCache.set(p.path, meta);
+    }
+    if (visible[lbIndex] !== p) return;
+    const extra = [];
+    if (meta) {
+      const exif = meta.exif || {};
+      const taken = (exif.dateTaken || "").replace(/^([0-9]{4}):([0-9]{2}):([0-9]{2})/, "$1-$2-$3");
+      if (meta.title && meta.title !== p.name) extra.push(["Antraštė", meta.title]);
+      if (meta.description) extra.push(["Aprašymas", meta.description]);
+      if (taken) extra.push(["Fotografuota", taken]);
+      const cam = [exif.cameraMake, exif.cameraModel].filter(Boolean).join(" ");
+      if (cam) extra.push(["Kamera", cam]);
+      const v = meta.imageViews ?? meta.views;
+      if (v !== undefined && v !== null && v !== "") extra.push(["Peržiūros", fmtN(v)]);
+    }
+    const tail = [];
+    if (currentAlbum.description) tail.push(["Aprašymas", currentAlbum.description]);
+    const links = [
+      ["DB sportas", currentAlbum.dbsportasUrl],
+      ["klajunas.lt", currentAlbum.klajunasUrl],
+      ["Kita nuoroda", currentAlbum.otherUrl],
+    ].filter(([, u]) => u);
+    links.forEach(([k, u]) => tail.push([k, { link: u }]));
+    drawInfo(rows.concat(extra).concat(tail));
+  }
+
+  function drawInfo(rows) {
+    $("infoTable").innerHTML = rows
+      .map(([k, v]) => {
+        if (v && typeof v === "object" && v.link) {
+          return `<tr><td class="k">${esc(k)}</td><td class="v"><a href="${esc(v.link)}" target="_blank" rel="noopener noreferrer" style="color:var(--amber-ink);text-decoration:underline;text-underline-offset:2px;word-break:break-all">${esc(v.link.replace(/^https?:\/\//, ""))}</a></td></tr>`;
+        }
+        return `<tr><td class="k">${esc(k)}</td><td class="v">${esc(v)}</td></tr>`;
+      })
+      .join("");
+  }
+
+  // ================= Events =================
+  // Logo returns to the archive, unwinding however deep we are, so the Back
+  // button afterwards still leads out of the site rather than back into an album.
+  $("btnBrand").onclick = () => {
+    $("q").value = ""; $("tagFilter").value = ""; $("sort").value = "event_desc";
+    const depth = (history.state && history.state.d) || 0;
+    if (depth > 0) history.go(-depth); else renderArchive();
+  };
+  $("btnBack").onclick = () => history.back();
+  $("themeToggle").onclick = () => {
+    const dark = document.body.classList.toggle("dark");
+    $("themeToggle").textContent = dark ? "◑ Light" : "◐ Dark";
+  };
+  // Admin panel is desktop-only: drop the entry point on phones/tablets.
+  // Covers iPadOS, which reports itself as "Macintosh" but exposes touch points.
+  const isTouchDevice =
+    window.matchMedia("(hover: none) and (pointer: coarse)").matches ||
+    /Android|iPhone|iPod|iPad|Mobile|Tablet|Silk|Kindle|Opera Mini|IEMobile/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints > 1 && /Mac/i.test(navigator.platform || ""));
+
+  if (isTouchDevice) {
+    const ab = $("btnAdmin"); if (ab) ab.remove();
+    const ap = $("adminPanel"); if (ap) ap.remove();
+  } else {
+    $("btnAdmin").onclick = () => { window.location.href = "/admin/"; };
+    $("btnAdminClose").onclick = () => { $("adminPanel").hidden = true; };
+  }
+  $("favFilter").onclick = () => { favsOnly = !favsOnly; syncFavChip(); applyPhotoFilter(true); };
+  $("vSmall").onclick = () => setView(false);
+  $("vLarge").onclick = () => setView(true);
+  function setView(large) {
+    $("photoGrid").classList.toggle("large", large);
+    $("vSmall").classList.toggle("active", !large);
+    $("vLarge").classList.toggle("active", large);
+  }
+  $("q").oninput = () => currentAlbum === null ? renderArchive() : applyPhotoFilter(true);
+  $("tagFilter").onchange = renderArchive;
+  $("sort").onchange = renderArchive;
+
+  $("lbClose").onclick = () => history.back();
+  $("lbBack").onclick = () => history.back();
+  $("lbPrev").onclick = () => step(-1);
+  $("lbNext").onclick = () => step(1);
+  $("lbFav").onclick = () => { const p = visible[lbIndex]; if (p) toggleFav(p.path); };
+  $("lbDown").onclick = () => { const p = visible[lbIndex]; if (p && p.downloadAllowed && p.downloadUrl) window.open(p.downloadUrl, "_blank", "noopener"); };
+  // /a/<slug> eina per og.php — dalinantis WhatsApp/FB rodo viršelį ir pavadinimą.
+  async function shareLink(url, title, confirmFn) {
+    if (navigator.share) {
+      try { await navigator.share({ title, url }); } catch (e) { /* atsisakė — ok */ }
+    } else {
+      try { await navigator.clipboard.writeText(url); confirmFn(); }
+      catch (e) { prompt("Kopijuok nuorodą:", url); }
+    }
+  }
+  $("lbShare").onclick = () => {
+    if (!currentAlbum) return;
+    const url = location.origin + "/a/" + encodeURIComponent(currentAlbum.path)
+      + (lbIndex >= 0 ? "?f=" + (lbIndex + 1) : "");
+    shareLink(url, currentAlbum.name, () => {
+      const b = $("lbShare"), old = b.innerHTML;
+      b.innerHTML = "✓";
+      setTimeout(() => { b.innerHTML = old; }, 1200);
+    });
+  };
+  $("albumShare").onclick = () => {
+    if (!currentAlbum) return;
+    const url = location.origin + "/a/" + encodeURIComponent(currentAlbum.path);
+    shareLink(url, currentAlbum.name, () => {
+      const l = $("albumShareLabel"), old = l.textContent;
+      l.textContent = "Nukopijuota ✓";
+      setTimeout(() => { l.textContent = old; }, 1400);
+    });
+  };
+  function syncInfoOpen() {
+    $("lb").classList.toggle("info-open", $("infoPanel").classList.contains("show"));
+  }
+  $("lbInfo").onclick = () => {
+    $("infoPanel").classList.toggle("show");
+    $("lbInfo").classList.toggle("on");
+    syncInfoOpen();
+  };
+  $("infoClose").onclick = () => {
+    $("infoPanel").classList.remove("show");
+    $("lbInfo").classList.remove("on");
+    syncInfoOpen();
+  };
+  $("lb").onclick = e => { if (e.target === $("lb")) history.back(); };
+
+  document.addEventListener("keydown", e => {
+    const lbOpen = $("lb").classList.contains("open");
+    if (e.key === "Escape") {
+      if (lbOpen || currentAlbum !== null) history.back();
+      return;
+    }
+    if (!lbOpen) return;
+    if (e.key === "ArrowLeft") step(-1);
+    if (e.key === "ArrowRight") step(1);
+    if (e.key.toLowerCase() === "f") { const p = visible[lbIndex]; if (p) toggleFav(p.path); }
+    if (e.key.toLowerCase() === "i") $("lbInfo").click();
+  });
+
+  let swipeX = null;
+  $("lb").addEventListener("touchstart", e => { swipeX = e.touches[0].clientX; }, { passive: true });
+  $("lb").addEventListener("touchend", e => {
+    if (swipeX === null) return;
+    const dx = e.changedTouches[0].clientX - swipeX;
+    if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1);
+    swipeX = null;
+  }, { passive: true });
+
+  loadAlbums();
+})();
+</script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}</script>
+</body>
+</html>
