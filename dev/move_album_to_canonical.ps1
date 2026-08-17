@@ -110,15 +110,23 @@ foreach ($a in $albums) {
     # 4) senas aplankas - tik dabar
     $check = Db-Read 'SELECT source_path FROM albums WHERE id=?' @($id)
     if (([string]$check[0].source_path).TrimEnd('/') -ne $new) { Write-Output '   DB kelias neatitinka - seno aplanko netrinam'; continue }
-    $del = 0
+    $del = 0; $delFail = @()
     foreach ($k in $src.Keys) {
         try {
             Invoke-RestMethod -Uri ($auth.apiUrl + '/b2api/v2/b2_delete_file_version') -Method Post `
                 -Headers @{ Authorization = $auth.authorizationToken } `
                 -Body (@{ fileId = $src[$k].Id; fileName = $k } | ConvertTo-Json) -ContentType 'application/json' | Out-Null
             $del++
-        } catch {}
+        } catch {
+            # Anksciau klaida buvo praryjama tyliai, ir senas aplankas likdavo su
+            # vienu kitu failu, o ataskaita rode svaru rezultata.
+            $delFail += $k
+        }
     }
     Write-Output ("   senas aplankas isvalytas: {0} failu" -f $del)
+    if ($delFail.Count) {
+        Write-Output ("   NEISTRINTA {0} failu - aplankas liko:" -f $delFail.Count)
+        $delFail | Select-Object -First 5 | ForEach-Object { Write-Output ('      ' + $_) }
+    }
 }
 if (-not $Execute) { Write-Output "`n(bandomasis rezimas - pridek -Execute)" }
