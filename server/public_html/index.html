@@ -952,11 +952,38 @@
   }
 
   // ================= Infinite scroll =================
+  // IntersectionObserver praneša tik apie ribos KIRTIMĄ. Užkrovus vieną dalį
+  // žymeklis dažniausiai lieka matomas (ypač kai dalis maža arba langas
+  // aukštas), naujo įvykio nebūna, ir slinkimas užstringa ties užrašu
+  // „bus užkrauta daugiau" – nors likusios nuotraukos yra. Todėl po kiekvieno
+  // įkėlimo patys pasitikrinam, ar žymeklis vis dar matomas, ir kraunam toliau.
+  let scrollBusy = false;
+  async function loadMoreIfNeeded() {
+    if (scrollBusy || currentAlbum === null) return;
+    const el = $("sentinel");
+    if (!el) return;
+    scrollBusy = true;
+    try {
+      let guard = 0;
+      while (guard++ < 40) {
+        const r = el.getBoundingClientRect();
+        if (r.top > window.innerHeight + 700) break;      // žymeklis toli – gana
+        if (renderedCount < visible.length) renderMore();
+        else if (nextCursor && !loadingPhotos) await fetchPhotos();
+        else break;                                        // daugiau nėra ko krauti
+        await new Promise(requestAnimationFrame);
+      }
+    } finally {
+      scrollBusy = false;
+    }
+  }
   new IntersectionObserver(entries => {
-    if (!entries[0].isIntersecting || currentAlbum === null) return;
-    if (renderedCount < visible.length) renderMore();
-    else if (nextCursor && !loadingPhotos) fetchPhotos();
+    if (!entries[0].isIntersecting) return;
+    loadMoreIfNeeded();
   }, { rootMargin: "700px" }).observe($("sentinel"));
+  // Atsarginis kelias: jei stebėtojas dėl kokios nors priežasties nesuveikia,
+  // slinkimas vis tiek pakrauna.
+  window.addEventListener("scroll", () => { loadMoreIfNeeded(); }, { passive: true });
 
   // ================= Lightbox =================
   function openLb(vi) {

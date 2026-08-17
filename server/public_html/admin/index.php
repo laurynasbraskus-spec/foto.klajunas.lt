@@ -2712,6 +2712,33 @@ function takeout_event_date(?array $albumJson, array $sidecars, array $files): ?
  *   keliu dienu tame paciame menesyje -> 2022-05-06_08
  *   keliu dienu per menesio riba       -> 2022-07-31_08-02
  */
+/**
+ * Romeniska eiles numeri aplanko varde keiciam iprastu: "XVI-begimas" -> "16-begimas".
+ *
+ * Keiciamas TIK pirmas zodis ir tik tada, kai jis tikrai romeniskas skaicius:
+ * atgal paverstas i romeniska turi sutapti raide i raide (todel "LC" - is "LČ" -
+ * atkrenta, nes 150 rasoma "CL"), o reiksme turi buti <= 100 (todel "MIX",
+ * kuris formaliai yra 1009, lieka nepaliestas).
+ */
+function roman_head_to_arabic(string $name): string {
+    if (!preg_match('/^([IVXLCDM]+)(?=$|[-_])/', $name, $m)) return $name;
+    $token = $m[1];
+    $map = ['I' => 1, 'V' => 5, 'X' => 10, 'L' => 50, 'C' => 100, 'D' => 500, 'M' => 1000];
+    $total = 0; $prev = 0;
+    for ($i = strlen($token) - 1; $i >= 0; $i--) {
+        $cur = $map[$token[$i]];
+        if ($cur < $prev) { $total -= $cur; } else { $total += $cur; $prev = $cur; }
+    }
+    if ($total < 1 || $total > 100) return $name;
+    $back = ''; $n = $total;
+    foreach ([1000 => 'M', 900 => 'CM', 500 => 'D', 400 => 'CD', 100 => 'C', 90 => 'XC',
+              50 => 'L', 40 => 'XL', 10 => 'X', 9 => 'IX', 5 => 'V', 4 => 'IV', 1 => 'I'] as $v => $r) {
+        while ($n >= $v) { $back .= $r; $n -= $v; }
+    }
+    if ($back !== $token) return $name;
+    return (string)$total . substr($name, strlen($token));
+}
+
 function canonical_album_prefix(string $title, ?string $eventDate = null, ?string $eventDateEnd = null): string {
     $year = $eventDate ? substr($eventDate, 0, 4) : date('Y');
     $name = b2_folder_slug($title);
@@ -2746,6 +2773,12 @@ function canonical_album_prefix(string $title, ?string $eventDate = null, ?strin
     }, $name) ?? $name;
     $name = trim((string)preg_replace('/[-_]{2,}/', '-', $name), '-_');
     if ($name === '') $name = 'albumas';
+    // Metai grazinami i pavadinimo gala. Auksciau jie nuimami tam, kad butu
+    // nesvarbu, kokiu pavidalu ivesti ("Telse 2017", "2017 m. Telse",
+    // "Telse (2017-08-12)") - po nuemimo visi virsta vienodu vardu, o cia
+    // pridedami vienodai. Aplanko varde metai visada matomi ir visada gale.
+    $name = roman_head_to_arabic($name);
+    $name .= '-'.$year;
 
     return 'albums/'.$year.'/'.$dateKey.'__'.$name;
 }

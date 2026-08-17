@@ -801,28 +801,53 @@ $albumPhotoViewTotals = manifest_album_photo_view_totals();
 // files — the bucket holds more than twice that, so everything alphabetically
 // after roughly 2013 was dropped. B2 allows 10 000 per request, so the whole
 // bucket now arrives in fewer requests than before, not more.
-$files = [];
-$b2Cursor = '';
-$guard = 0;
-do {
-    $post = [
-        'bucketId'      => (string)B2_BUCKET_ID,
-        'prefix'        => $prefix,
-        'maxFileCount'  => 10000,
-    ];
-    if ($b2Cursor !== '') $post['startFileName'] = $b2Cursor;
+//
+// Sis sarasas pertraukiamas i disko talpykla. Be jos KIEKVIENA uzklausa -
+// kiekvienas archyvo puslapis, kiekvienas atidarytas albumas - is naujo
+// perskaito visa bucket'a (24 tūkst. failu, keli kreipiniai i B2). Naudotojui
+// tai atrodo kaip "dirbtine pauze" pries kiekviena nauja dali.
+$files = null;
+$listCacheDir = dirname(__DIR__) . '/cache/b2_list';
+$listCacheFile = $listCacheDir . '/' . hash('sha256', (string)B2_BUCKET_ID . '|' . $prefix) . '.json';
+$listCacheTtl = 600;   // 10 min: nuotraukos keiciasi retai, o skirtumas juntamas is karto
+if (is_file($listCacheFile) && (time() - (int)@filemtime($listCacheFile)) < $listCacheTtl) {
+    $cached = @json_decode((string)@file_get_contents($listCacheFile), true);
+    if (is_array($cached)) $files = $cached;
+}
+if ($files === null) {
+    $files = [];
+    $b2Cursor = '';
+    $guard = 0;
+    do {
+        $post = [
+            'bucketId'      => (string)B2_BUCKET_ID,
+            'prefix'        => $prefix,
+            'maxFileCount'  => 10000,
+        ];
+        if ($b2Cursor !== '') $post['startFileName'] = $b2Cursor;
 
-    $data = curl_json_request(
-        $apiUrl . '/b2api/v2/b2_list_file_names',
-        ["Authorization: {$authToken}", "Content-Type: application/json"],
-        $post
-    );
+        $data = curl_json_request(
+            $apiUrl . '/b2api/v2/b2_list_file_names',
+            ["Authorization: {$authToken}", "Content-Type: application/json"],
+            $post
+        );
 
-    $pageFiles = $data['files'] ?? [];
-    if (is_array($pageFiles)) $files = array_merge($files, $pageFiles);
-    $b2Cursor = (string)($data['nextFileName'] ?? '');
-    $guard++;
-} while ($b2Cursor !== '' && $guard < 40);
+        $pageFiles = $data['files'] ?? [];
+        if (is_array($pageFiles)) $files = array_merge($files, $pageFiles);
+        $b2Cursor = (string)($data['nextFileName'] ?? '');
+        $guard++;
+    } while ($b2Cursor !== '' && $guard < 40);
+
+    // Rasom per laikina faila ir pervadinam - kad lygiagreti uzklausa niekada
+    // nepamatytu pusiau irasyto saraso.
+    if (!is_dir($listCacheDir)) @mkdir($listCacheDir, 0775, true);
+    $tmp = $listCacheFile . '.' . getmypid() . '.tmp';
+    if (@file_put_contents($tmp, json_encode($files)) !== false) {
+        @rename($tmp, $listCacheFile);
+    } else {
+        @unlink($tmp);
+    }
+}
 
 $nextCursor = '';
 

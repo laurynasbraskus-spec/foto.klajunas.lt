@@ -114,10 +114,10 @@ foreach ($r in $todo) {
         Kelias = [string]$r.source_path
     }
 }
-$res | Sort-Object -Property @{e = { -$_.Sutapo }}, Pavadinimas | Export-Csv $Out -NoTypeInformation -Encoding UTF8
-$found = @($res | Where-Object { $_.SiuloData -ne '' })
-$same  = @($found | Where-Object { $_.SiuloData -eq $_.DabartineData })
-Write-Output ("`nrastas kandidatas   : {0}" -f $found.Count)
-Write-Output ("  is ju sutampa su turima data: {0}" -f $same.Count)
-Write-Output ("kandidato nerasta   : {0}" -f ($res.Count - $found.Count))
+$res | Sort-Object -Property Verdiktas, Pavadinimas | Export-Csv $Out -NoTypeInformation -Encoding UTF8
+Write-Output ''
+foreach ($v in @('patvirtina', 'PRIESTARAUJA', 'albumas be datos', 'saltinio nerasta')) {
+    $n = @($res | Where-Object { $_.Verdiktas -eq $v }).Count
+    Write-Output ("{0,-18} {1}" -f $v, $n)
+}
 Write-Output ("`nCSV: {0}" -f $Out)

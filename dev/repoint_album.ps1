@@ -18,6 +18,11 @@ param(
     [string]$Date = '',
     [string]$DateEnd = '',
     [string]$ConfigPhp = 'C:\Users\Klajūnas\Documents\Claude\foto.klajunas.lt\server\b2-config.php',
+    # Kai tas pats failas dviejuose aplankuose pavadintas skirtingai
+    # ("0001_2016-09-18-12.49.41.jpg" ir "2016-09-18 12.49.41.jpg"), tapatybe
+    # irodo dydis. Naudojama TIK jei tokio dydzio failas abiejuose aplankuose
+    # yra lygiai vienas - kitaip nebutu aisku, kuris kuriam.
+    [switch]$MatchBySize,
     [switch]$Execute
 )
 $ErrorActionPreference = 'Stop'
@@ -57,6 +62,11 @@ foreach ($p in $photos) {
         if (($tn -replace '^\d{4}_', '') -ne $bare) { continue }
         if ($size -gt 0 -and $target[$tn] -ne $size) { continue }
         $hit = $tn; break
+    }
+    if (-not $hit -and $MatchBySize -and $size -gt 0) {
+        $sameSize = @($target.Keys | Where-Object { $target[$_] -eq $size })
+        $mineSame = @($photos | Where-Object { [int64]$_.file_size -eq $size })
+        if ($sameSize.Count -eq 1 -and $mineSame.Count -eq 1) { $hit = $sameSize[0] }
     }
     if ($hit) { $map[[int]$p.id] = ($To.TrimEnd('/') + '/originals/' + $hit) } else { $bad += $name }
 }
