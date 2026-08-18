@@ -27,13 +27,25 @@ $bid = [regex]::Match($cfg, "B2_BUCKET_ID',\s*'([^']+)").Groups[1].Value
 $auth = Invoke-RestMethod -Uri 'https://api.backblazeb2.com/b2api/v2/b2_authorize_account' `
     -Headers @{ Authorization = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$kid`:$key")) }
 
+# B2 vardai gali tureti lietuvisku raidziu. Invoke-RestMethod su TEKSTINIU kunu
+# ir "application/json" be charset siuncia ji NE UTF-8 koduote, ir serveris gauna
+# iskraipyta varda: "Šironija2013.jpg" nukeliavo kaip "Sironija2013.jpg", o
+# patikra po to teisingai pranese, kad failo truksta. Todel kuna visada
+# siunciam kaip UTF-8 baitus.
+function B2-Post([string]$url, [hashtable]$body) {
+    $json = $body | ConvertTo-Json -Compress
+    $bytes = [Text.Encoding]::UTF8.GetBytes($json)
+    return Invoke-RestMethod -Uri $url -Method Post `
+        -Headers @{ Authorization = $auth.authorizationToken } `
+        -Body $bytes -ContentType 'application/json; charset=utf-8'
+}
+
 function B2-List([string]$prefix) {
     $m = @{}; $s = $null
     do {
         $b = @{ bucketId = $bid; prefix = $prefix; maxFileCount = 1000 }
         if ($s) { $b.startFileName = $s }
-        $r = Invoke-RestMethod -Uri ($auth.apiUrl + '/b2api/v2/b2_list_file_names') -Method Post `
-            -Headers @{ Authorization = $auth.authorizationToken } -Body ($b | ConvertTo-Json) -ContentType 'application/json'
+        $r = B2-Post ($auth.apiUrl + '/b2api/v2/b2_list_file_names') $b
         foreach ($f in $r.files) { $m[[string]$f.fileName] = [pscustomobject]@{ Id = [string]$f.fileId; Size = [int64]$f.contentLength } }
         $s = $r.nextFileName
     } while ($s)
@@ -79,9 +91,7 @@ foreach ($a in $albums) {
         $target = $new + $k.Substring($old.Length)
         if ($dst.ContainsKey($target) -and $dst[$target].Size -eq $src[$k].Size) { continue }
         try {
-            Invoke-RestMethod -Uri ($auth.apiUrl + '/b2api/v2/b2_copy_file') -Method Post `
-                -Headers @{ Authorization = $auth.authorizationToken } `
-                -Body (@{ sourceFileId = $src[$k].Id; fileName = $target } | ConvertTo-Json) -ContentType 'application/json' | Out-Null
+            B2-Post ($auth.apiUrl + '/b2api/v2/b2_copy_file') @{ sourceFileId = $src[$k].Id; fileName = $target } | Out-Null
             $copied++
         } catch { $failed++; Write-Output ('   kopijuoti nepavyko: ' + $target) }
     }
@@ -113,9 +123,7 @@ foreach ($a in $albums) {
     $del = 0; $delFail = @()
     foreach ($k in $src.Keys) {
         try {
-            Invoke-RestMethod -Uri ($auth.apiUrl + '/b2api/v2/b2_delete_file_version') -Method Post `
-                -Headers @{ Authorization = $auth.authorizationToken } `
-                -Body (@{ fileId = $src[$k].Id; fileName = $k } | ConvertTo-Json) -ContentType 'application/json' | Out-Null
+            B2-Post ($auth.apiUrl + '/b2api/v2/b2_delete_file_version') @{ fileId = $src[$k].Id; fileName = $k } | Out-Null
             $del++
         } catch {
             # Anksciau klaida buvo praryjama tyliai, ir senas aplankas likdavo su

@@ -23,13 +23,22 @@ $bid = [regex]::Match($cfg, "B2_BUCKET_ID',\s*'([^']+)").Groups[1].Value
 $auth = Invoke-RestMethod -Uri 'https://api.backblazeb2.com/b2api/v2/b2_authorize_account' `
     -Headers @{ Authorization = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$kid`:$key")) }
 
+# Kuna siunciam UTF-8 baitais: su tekstiniu kunu ir "application/json" be
+# charset lietuviskos raides varde iskraipomos ir B2 gauna kita faila
+# ("Šironija.jpg" -> "Sironija.jpg"). Trinant tai reikstu, kad failas lieka.
+function B2-Post([string]$url, [hashtable]$body) {
+    $json = $body | ConvertTo-Json -Compress
+    return Invoke-RestMethod -Uri $url -Method Post `
+        -Headers @{ Authorization = $auth.authorizationToken } `
+        -Body ([Text.Encoding]::UTF8.GetBytes($json)) -ContentType 'application/json; charset=utf-8'
+}
+
 $files = @{}
 $start = $null
 do {
     $body = @{ bucketId = $bid; prefix = 'albums/'; maxFileCount = 10000 }
     if ($start) { $body.startFileName = $start }
-    $r = Invoke-RestMethod -Uri ($auth.apiUrl + '/b2api/v2/b2_list_file_names') -Method Post `
-        -Headers @{ Authorization = $auth.authorizationToken } -Body ($body | ConvertTo-Json) -ContentType 'application/json'
+    $r = B2-Post ($auth.apiUrl + '/b2api/v2/b2_list_file_names') $body
     foreach ($f in $r.files) { $files[[string]$f.fileName] = [int64]$f.contentLength }
     $start = $r.nextFileName
 } while ($start)
@@ -118,13 +127,10 @@ foreach ($d in $delete) {
     do {
         $body = @{ bucketId = $bid; prefix = ($d.Path + '/'); maxFileCount = 1000 }
         if ($start) { $body.startFileName = $start }
-        $r = Invoke-RestMethod -Uri ($auth.apiUrl + '/b2api/v2/b2_list_file_versions') -Method Post `
-            -Headers @{ Authorization = $auth.authorizationToken } -Body ($body | ConvertTo-Json) -ContentType 'application/json'
+        $r = B2-Post ($auth.apiUrl + '/b2api/v2/b2_list_file_versions') $body
         foreach ($f in $r.files) {
             try {
-                Invoke-RestMethod -Uri ($auth.apiUrl + '/b2api/v2/b2_delete_file_version') -Method Post `
-                    -Headers @{ Authorization = $auth.authorizationToken } `
-                    -Body (@{ fileId = $f.fileId; fileName = $f.fileName } | ConvertTo-Json) -ContentType 'application/json' | Out-Null
+                B2-Post ($auth.apiUrl + '/b2api/v2/b2_delete_file_version') @{ fileId = $f.fileId; fileName = $f.fileName } | Out-Null
                 $del++
             } catch { $err++ }
         }
