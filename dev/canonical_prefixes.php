@@ -49,11 +49,24 @@ function roman_head_to_arabic(string $name): string {
 }
 
 function canonical_album_prefix(string $title, ?string $eventDate = null, ?string $eventDateEnd = null): string {
+    // Pavadinimo gale einantys skliaustai su metais ("(2016)", "(Telšiai, 2017)")
+    // yra rodymo dalykas, ne kelio: vieta turi atskira lauka, o metai i kelia
+    // pridedami zemiau. Ju cia nenuimant, vietos irasymas i pavadinima butu
+    // pakeites 163 albumu kelius ir pareikalaves antro perkelimo be jokios
+    // naudos.
+    // Skliaustus su metais nuimam VISUR, ne tik gale: pavadinimas gali tureti
+    // priesaga po ju ("(Suginčiai, 2023) - E. Songailos nuotraukos"). Skliaustai
+    // be keturzenklio skaiciaus ("(Spring cup WRE, ilga)", "(50)") lieka - jie
+    // yra pavadinimo dalis.
+    $title = preg_replace('/\s*\(([^()]*\d{4}[^()]*)\)/', '', $title) ?? $title;
+    $title = trim((string)preg_replace('/\s{2,}/', ' ', $title));
     $year = $eventDate ? substr($eventDate, 0, 4) : date('Y');
     $name = b2_folder_slug($title);
 
     if (!$eventDate || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $eventDate)) {
-        return 'albums/'.$year.'/'.$name;
+        // Be datos metai butu siandienos - t.y. melagingi. Tokie albumai guli
+        // atskirai, kad kelias nesakytu to, ko nezinom.
+        return 'albums/nezinoma/'.$name;
     }
 
     $dateKey = $eventDate;
