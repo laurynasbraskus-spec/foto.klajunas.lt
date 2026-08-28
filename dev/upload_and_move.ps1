@@ -55,6 +55,25 @@ function Get-B2Map([string]$prefix) {
     } while ($start)
     return $map
 }
+# B2 nuotraukos gali guleti su rikiavimo priesaga ("0001_DSC09612.jpg"), o
+# vietinis archyvas turi originalu varda ("DSC09612.JPG"). Lyginant vien varda
+# toks failas atrodo neikeltas, ir jis ikeliamas antra karta - 2026-08-27 taip
+# atsirado 474 kopijos 23 albumuose. Todel atitikmens ieskom ir su priesaga.
+function Find-Remote([hashtable]$map, [string]$remote, [int64]$size) {
+    if ($map.ContainsKey($remote) -and $map[$remote] -eq $size) { return $remote }
+    $i = $remote.LastIndexOf('/')
+    if ($i -lt 0) { return $null }
+    $dir = $remote.Substring(0, $i); $name = $remote.Substring($i + 1)
+    if ($name -match '^\d{4}_') { return $null }
+    foreach ($k in $map.Keys) {
+        if (-not $k.StartsWith($dir + '/')) { continue }
+        $kn = $k.Substring($dir.Length + 1)
+        if ($kn -notmatch '^\d{4}_(.+)$') { continue }
+        if ($Matches[1] -ieq $name -and $map[$k] -eq $size) { return $k }
+    }
+    return $null
+}
+
 $uploadUrl = $null
 function Send-File([string]$local, [string]$remote) {
     $bytes = [IO.File]::ReadAllBytes($local)
@@ -132,7 +151,7 @@ foreach ($al in $plan) {
     $existing = Get-B2Map $al.Prefix
     $up = 0
     foreach ($f in $al.Files) {
-        if ($existing.ContainsKey($f.Remote) -and $existing[$f.Remote] -eq $f.Size) { continue }
+        if (Find-Remote $existing $f.Remote $f.Size) { continue }
         Send-File $f.Local $f.Remote
         $up++; $sentBytes += $f.Size
     }
@@ -140,8 +159,11 @@ foreach ($al in $plan) {
     $after = Get-B2Map $al.Prefix
     $bad = @()
     foreach ($f in $al.Files) {
-        if (-not $after.ContainsKey($f.Remote)) { $bad += ('truksta: ' + $f.Remote); continue }
-        if ($after[$f.Remote] -ne $f.Size) { $bad += ('dydis skiriasi: ' + $f.Remote) }
+        $hit = Find-Remote $after $f.Remote $f.Size
+        if (-not $hit) {
+            if ($after.ContainsKey($f.Remote)) { $bad += ('dydis skiriasi: ' + $f.Remote) }
+            else { $bad += ('truksta: ' + $f.Remote) }
+        }
     }
     if ($bad.Count) {
         $left += [pscustomobject]@{ Album = $al.Name; Priezastis = ($bad | Select-Object -First 3) -join '; ' }

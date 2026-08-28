@@ -66,17 +66,12 @@ if ($pj -and (Test-Path $pj)) {
     exit 1
 }
 
-# Jau esantys DB albumai: importas juos atpazista pagal slug'a (unikalus raktas).
-# Be sio zemelapio CSV kurtu naujus juodrascius vietoj to, kad atnaujintu esamus -
-# taip ir atsitiko bandant su penkiais.
-$dbBySlug = @{}
-$mp = Join-Path $Base 'db_album_match.csv'
-if (Test-Path $mp) {
-    foreach ($m in @(Import-Csv $mp)) { $dbBySlug[[string]$m.Local] = $m }
-    Write-Output ("  esamu DB albumu zemelapyje: {0}" -f $dbBySlug.Count)
-} else {
-    Write-Output '  ISPEJIMAS: nerastas db_album_match.csv - visi albumai bus laikomi naujais.'
-}
+# db_album_match.csv cia buvo naudojamas source_path perrasyti senuoju DB keliu.
+# Ta prasme jis turejo tol, kol DB keliai dar nebuvo kanoniniai. Po migracijos
+# failas paseno ir eme daryti prieszinga: 10 albumu gaudavo iki migracijos
+# buvusi kelia, todel importas ju nebeatpazindavo ir laike naujais. Saka isimta
+# 2026-08-27 - source_path visada imamas is prefix_out.json, o slug generuojamas
+# is to paties kelio zemiau.
 
 $protoByDate = @{}
 foreach ($a in (Load-Csv 'klajunas_archive_index.csv')) {
@@ -100,14 +95,6 @@ foreach ($rt in $roots) { Get-ChildItem $rt -Directory -Recurse -Depth 1 -EA Sil
             return
         }
         $sourcePath = $canonByName[$name]
-        $dbSlug = ''
-        if ($dbBySlug.ContainsKey($name)) {
-            $dbSlug = [string]$dbBySlug[$name].DbSlug
-            # Esamo albumo failai tebeguli senajame B2 kelyje - jo NEKEICIAM,
-            # kitaip DB rodytu ten, kur failu nera. Kelia sutvarkys migracija.
-            $existingSource = [string]$dbBySlug[$name].DbSource
-            if ($existingSource -ne '') { $sourcePath = $existingSource }
-        }
 
         $post = if ($postByAlbum.ContainsKey($name)) { $postByAlbum[$name] } else { '' }
         $dbs = ''; $other = ''
@@ -130,7 +117,7 @@ foreach ($rt in $roots) { Get-ChildItem $rt -Directory -Recurse -Depth 1 -EA Sil
         $rows += [pscustomobject]@{
             source_path      = $sourcePath
             title            = [string]$a.displayName
-            slug             = $dbSlug
+            slug             = ''
             event_date       = [string]$a.date
             event_date_end   = [string]$a.dateEnd
             location_name    = [string]$a.eventPlace

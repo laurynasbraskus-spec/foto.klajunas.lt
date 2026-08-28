@@ -45,7 +45,9 @@ function Is-FolderTitle([string]$t) {
     # atskirame lauke, todel pavadinime ji tik kartojasi. Toki pavadinima
     # laikom laikinu ir keiciam tvarkingu.
     if ($t -match '\((19|20)\d{2}([-/]\d{2})') { return $true }
-    if ($t -match '\((19|20)\d{2}\)\s*$') { return $true }
+    # "Klubu taure (2016)" NEBERA laikinas pavadinimas - tai kaip tik standartas
+    # (zr. titles_year_only.ps1). Kol si eilute cia buvo, importas 249 albumams
+    # siulydavo atsukti DB pavadinima atgal i album.json pavidala.
     return $false
 }
 
