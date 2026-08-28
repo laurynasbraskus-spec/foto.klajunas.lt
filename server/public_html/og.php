@@ -20,25 +20,48 @@ function og_e(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-
 $slug = trim((string)($_GET['a'] ?? ''), "/ \t\n\r\0\x0B");
 $f = max(0, (int)($_GET['f'] ?? 0));
 $base = 'https://foto.klajunas.lt';
-$spaUrl = $base . '/?a=' . rawurlencode($slug) . ($f >= 1 ? '&f=' . $f : '');
+
+/**
+ * Pastovi nuoroda pagal albumo ID: /a/id580 (arba /a/580, ?id=580).
+ *
+ * Albumų pavadinimai ir slug'ai laikui bėgant tikslinami — kanoninamas kelias,
+ * taisoma rašyba, albumas skaidomas. Slug'u paremta nuoroda po tokio pakeitimo
+ * miršta, o ID nesikeičia niekada. Todėl dalinimuisi naudojam ID, o dabartinį
+ * slug'ą pasiimam iš DB čia pat ir toliau viskas veikia kaip anksčiau.
+ */
+$albumId = 0;
+if (preg_match('~^id[:\-]?(\d+)$~i', $slug, $m)) $albumId = (int)$m[1];
+elseif ($slug !== '' && ctype_digit($slug)) $albumId = (int)$slug;
+elseif (isset($_GET['id']) && ctype_digit((string)$_GET['id'])) $albumId = (int)$_GET['id'];
 
 $title = 'foto.klajunas.lt — albumai';
 $desc = 'OK Klajūnas nuotraukų archyvas — orientavimosi sporto, bėgimo ir žygių renginių albumai.';
 $image = '';
-$canonical = $base . '/a/' . rawurlencode($slug);
+$found = false;
 
-if ($slug !== '') {
+if ($slug !== '' || $albumId > 0) {
     try {
         $pdo = new PDO(
             'mysql:host=' . GALLERY_DB_HOST . ';dbname=' . GALLERY_DB_NAME . ';charset=utf8mb4',
             GALLERY_DB_USER, GALLERY_DB_PASS,
             [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
         );
-        $q = $pdo->prepare("SELECT id,title,subtitle,description,event_date,location_name,cover_photo_id
-                              FROM albums WHERE visibility='published' AND (slug=? OR source_path=?) LIMIT 1");
-        $q->execute([$slug, $slug]);
+        if ($albumId > 0) {
+            $q = $pdo->prepare("SELECT id,slug,title,subtitle,description,event_date,location_name,cover_photo_id
+                                  FROM albums WHERE visibility='published' AND id=? LIMIT 1");
+            $q->execute([$albumId]);
+        } else {
+            $q = $pdo->prepare("SELECT id,slug,title,subtitle,description,event_date,location_name,cover_photo_id
+                                  FROM albums WHERE visibility='published' AND (slug=? OR source_path=?) LIMIT 1");
+            $q->execute([$slug, $slug]);
+        }
         $al = $q->fetch();
         if ($al) {
+            $found = true;
+            // Nuo čia dirbam su DABARTINIU slug'u — jis keliauja ir į SPA
+            // nuorodą, ir į canonical, tad ID nuoroda visada atveda į teisingą
+            // albumą, kad ir kiek kartų jis būtų pervadintas.
+            $slug = trim((string)$al['slug'], "/ \t\n\r\0\x0B");
             $title = (string)$al['title'];
             $bits = array_filter([
                 (string)($al['event_date'] ?? ''),
@@ -73,6 +96,15 @@ if ($slug !== '') {
         // DB nepasiekiama — atiduodam bendrą puslapį su redirect'u, nieko nelaužom.
     }
 }
+
+// ID nerastas (albumas ištrintas ar paslėptas) — vedam į albumų sąrašą, o ne
+// į "?a=id580", kur SPA parodytų tuščią langą.
+if ($albumId > 0 && !$found) $slug = '';
+
+// Skaičiuojam TIK dabar: iki šios vietos $slug galėjo būti ID pavidalo ("id580"),
+// o po paieškos jis jau yra tikrasis albumo slug'as.
+$spaUrl = $slug !== '' ? $base . '/?a=' . rawurlencode($slug) . ($f >= 1 ? '&f=' . $f : '') : $base . '/';
+$canonical = $slug !== '' ? $base . '/a/' . rawurlencode($slug) : $base . '/';
 
 header('Content-Type: text/html; charset=utf-8');
 header('Cache-Control: public, max-age=600, s-maxage=3600');

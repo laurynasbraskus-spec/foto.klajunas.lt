@@ -1235,7 +1235,16 @@
   $("lbNext").onclick = () => step(1);
   $("lbFav").onclick = () => { const p = visible[lbIndex]; if (p) toggleFav(p.path); };
   $("lbDown").onclick = () => { const p = visible[lbIndex]; if (p && p.downloadAllowed && p.downloadUrl) window.open(p.downloadUrl, "_blank", "noopener"); };
-  // /a/<slug> eina per og.php — dalinantis WhatsApp/FB rodo viršelį ir pavadinimą.
+  // Dalinamės nuoroda pagal albumo ID (/a/id<N>), o ne pagal slug'ą: pavadinimai
+  // ir keliai laikui bėgant tikslinami, ID nesikeičia niekada. og.php pagal ID
+  // pasiima dabartinį slug'ą, tad kartą išsiųsta nuoroda nemiršta po pervadinimo.
+  // Seni albumai be ID (jei API jo negrąžintų) krenta atgal į slug'ą.
+  function shareUrl(al, photoNo) {
+    const token = al && al.id ? "id" + al.id : encodeURIComponent(al ? al.path : "");
+    return location.origin + "/a/" + token + (photoNo >= 1 ? "?f=" + photoNo : "");
+  }
+
+  // /a/<žetonas> eina per og.php — dalinantis WhatsApp/FB rodo viršelį ir pavadinimą.
   async function shareLink(url, title, confirmFn) {
     if (navigator.share) {
       try { await navigator.share({ title, url }); } catch (e) { /* atsisakė — ok */ }
@@ -1246,8 +1255,7 @@
   }
   $("lbShare").onclick = () => {
     if (!currentAlbum) return;
-    const url = location.origin + "/a/" + encodeURIComponent(currentAlbum.path)
-      + (lbIndex >= 0 ? "?f=" + (lbIndex + 1) : "");
+    const url = shareUrl(currentAlbum, lbIndex >= 0 ? lbIndex + 1 : 0);
     shareLink(url, currentAlbum.name, () => {
       const b = $("lbShare"), old = b.innerHTML;
       b.innerHTML = "✓";
@@ -1256,7 +1264,7 @@
   };
   $("albumShare").onclick = () => {
     if (!currentAlbum) return;
-    const url = location.origin + "/a/" + encodeURIComponent(currentAlbum.path);
+    const url = shareUrl(currentAlbum, 0);
     shareLink(url, currentAlbum.name, () => {
       const l = $("albumShareLabel"), old = l.textContent;
       l.textContent = "Nukopijuota ✓";

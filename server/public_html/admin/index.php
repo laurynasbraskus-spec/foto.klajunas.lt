@@ -1976,6 +1976,29 @@ function album_edit(): void {
     echo '<div><label>Cover photo</label><select name="cover_photo_id"><option value="__auto__"'.($coverMode==='auto'?' selected':'').'>Auto</option><option value="__none__"'.($coverMode==='none'?' selected':'').'>None</option>';
     if ($id) { $ps=db()->prepare("SELECT id,original_filename FROM photos WHERE album_id=? ORDER BY sort_order,id LIMIT 500"); $ps->execute([$id]); foreach($ps as $p) echo '<option value="'.e($p['id']).'"'.((int)$r['cover_photo_id']===(int)$p['id']?' selected':'').'>'.e($p['original_filename']).'</option>'; }
     echo '</select></div><div class="actions" style="align-items:center;margin-top:22px"><label><input type="checkbox" name="download_enabled" value="1" '.($r['download_enabled']?'checked':'').'> Downloads enabled</label></div></div><p class="muted small">Title/date/slug define the public album identity and ordering. Cover and visibility control public display.</p></section>';
+
+    // Pastovi dalinimosi nuoroda. Remiasi albumo ID, o ne slug'u: pavadinimai ir
+    // keliai laikui begant tikslinami, ID nesikeicia niekada, todel karta
+    // issiusta nuoroda nemirsta. Naujam albumui ID atsiranda tik issaugojus.
+    $shareUrl = $id ? 'https://foto.klajunas.lt/a/id'.$id : '';
+    echo '<section class="album-field-panel"><h3>Pastovi nuoroda</h3>';
+    if ($shareUrl !== '') {
+        echo '<div class="actions" style="gap:8px;align-items:center;flex-wrap:wrap">'
+            .'<input id="albumShareUrl" readonly value="'.e($shareUrl).'" onfocus="this.select()" style="flex:1;min-width:240px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">'
+            .'<button type="button" class="btn mini" id="albumShareCopy">Kopijuoti</button>'
+            .'<a class="btn mini" href="'.e($shareUrl).'" target="_blank" rel="noopener">Atidaryti</a>'
+            .'</div>'
+            .'<p class="muted small">Dalinkis šia, o ne adresu iš naršyklės juostos: ji veikia ir pervadinus albumą ar pakeitus slug\'ą. Nuotraukai pridėk <code>?f=3</code>.</p>'
+            .'<script>document.getElementById("albumShareCopy").addEventListener("click",function(){'
+            .'var i=document.getElementById("albumShareUrl"),b=this,t=b.textContent;i.select();'
+            .'var ok=function(){b.textContent="Nukopijuota ✓";setTimeout(function(){b.textContent=t},1400)};'
+            .'if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(i.value).then(ok,function(){try{document.execCommand("copy");ok()}catch(e){}})}'
+            .'else{try{document.execCommand("copy");ok()}catch(e){}}});</script>';
+    } else {
+        echo '<p class="muted small">Pastovi dalinimosi nuoroda <code>/a/id&lt;ID&gt;</code> atsiras iš karto, kai albumą išsaugosi — ji remiasi albumo ID, tad veikia ir vėliau pervadinus.</p>';
+    }
+    echo '</section>';
+
     $selectedTagIds = [];
     $tags='';
     if($id){

@@ -429,7 +429,10 @@ if ($path !== '' && $cursor === '') {
 }
 
 $listCacheKey = json_encode([
-    'v' => 14,
+    // 15: atsakyme atsirado albumo 'id' (pastoviai /a/id<N> nuorodai).
+    // Versija keliama kaskart, kai keiciasi atsakymo forma - kitaip seni
+    // irasai podelyje dar 5 min. atiduotu atsakyma be naujo lauko.
+    'v' => 15,
     'path' => $path,
     'storagePath' => $storagePath,
     'limit' => $limit,
@@ -564,6 +567,10 @@ function manifest_album_rows(): array {
         }
         $out[] = [
             'type' => 'folder',
+            // Albumo ID keliauja i prieki tam, kad dalinimosi nuoroda butu
+            // /a/id<N>, o ne /a/<slug>: pavadinimai ir keliai tikslinami,
+            // ID - ne, todel tik ID paremta nuoroda islieka gyva po pervadinimo.
+            'id' => (int)$album['id'],
             'name' => (string)$album['title'],
             'path' => $path,
             'sourcePath' => trim((string)($album['source_path'] ?? ''), "/ \t\n\r\0\x0B"),
@@ -1036,6 +1043,11 @@ if (is_array($albumMeta)) {
 foreach ($folders as $fo) {
     $it = [
         'type' => 'folder',
+        // Albumo ID keliauja kartu su vardu ir keliu, o ne tarp neprivalomu
+        // lauku zemiau: is jo sudaroma pastovi dalinimosi nuoroda /a/id<N>.
+        // Is B2 sudarytiems aplankams ID nera - tada lieka 0, o galerija
+        // dalinimosi nuorodai krenta atgal i slug'a.
+        'id' => (int)($fo['id'] ?? 0),
         'name' => $fo['name'],
         'path' => $fo['path'],
         'count' => $fo['count'],

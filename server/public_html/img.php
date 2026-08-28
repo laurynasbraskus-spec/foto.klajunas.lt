@@ -155,6 +155,49 @@ function safe_file(string $file): string {
     return $file;
 }
 
+/**
+ * Nuotraukos B2 raktas pagal jos ID.
+ *
+ * Kelias saugykloje kinta: albumas pervadinamas arba perkeliamas į kanoninį
+ * kelią, ir tada `?file=albums/2013/…` nuoroda miršta. Nuotraukos ID nekinta,
+ * todėl straipsniuose ir skelbimuose dedam `?p=<ID>`, o tikrąjį kelią imam čia
+ * iš DB — lygiai kaip /a/id<N> pasiima dabartinį albumo slug'ą.
+ *
+ * Rodom tik tai, ką rodo ir vieša galerija: paskelbtas albumas, paskelbta
+ * nuotrauka, failas vietoje. Be šio filtro ID būtų galima persirinkti iš eilės
+ * ir taip pasiekti juodraščius — kelio atveju tokios rizikos nėra, nes kelio
+ * neatspėsi.
+ */
+function photo_key_by_id(int $id): string {
+    $cfg = __DIR__ . '/../../foto-db-config.php';
+    if (!is_file($cfg)) return '';
+    require_once $cfg;
+    if (!defined('GALLERY_DB_HOST') || !defined('GALLERY_DB_NAME')) return '';
+    try {
+        $pdo = new PDO(
+            'mysql:host=' . GALLERY_DB_HOST . ';dbname=' . GALLERY_DB_NAME . ';charset=utf8mb4',
+            GALLERY_DB_USER,
+            GALLERY_DB_PASS,
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+        );
+        $q = $pdo->prepare(
+            "SELECT COALESCE(NULLIF(p.compatibility_b2_key, ''), p.b2_key) k
+               FROM photos p
+               JOIN albums a ON a.id = p.album_id
+              WHERE p.id = ?
+                AND p.visibility = 'published'
+                AND p.is_missing = 0
+                AND a.visibility = 'published'
+              LIMIT 1"
+        );
+        $q->execute([$id]);
+        return trim((string)($q->fetchColumn() ?: ''), "/ \t\n\r\0\x0B");
+    } catch (Throwable $e) {
+        gallery_log($e);
+        return '';
+    }
+}
+
 function b2_file_url(string $downloadUrl, string $bucketName, string $fileName): string {
     $encoded = str_replace('%2F', '/', rawurlencode($fileName));
     return rtrim($downloadUrl, '/') . '/file/' . rawurlencode($bucketName) . '/' . $encoded;
@@ -709,9 +752,18 @@ try {
         }
     }
 
-    $file = safe_file((string)($_GET['file'] ?? ''));
-    if ($file === '') {
-        respond_text("img.php is OK.\n\nUse:\n  /img.php?file=PATH/TO/IMAGE.JPG&w=420\n  /img.php?file=PATH/TO/IMAGE.JPG&w=420&h=420&fit=cover\n");
+    // ?p=<nuotraukos ID> — pastovus adresas, atsparus albumo pervadinimui.
+    // ?file=<kelias> lieka veikti kaip veikęs (jį naudoja pati galerija).
+    //
+    // Podėlio raktas ID atveju yra pats ID, ne kelias: nuotrauka po albumo
+    // perkėlimo lieka ta pati, tad ir miniatiūra ta pati. Dėl to podėlio
+    // pataikymas apačioje apsieina be DB — o straipsnio puslapyje tokių
+    // užklausų būna dešimtys.
+    $photoId = (int)($_GET['p'] ?? 0);
+    $file = $photoId > 0 ? '' : safe_file((string)($_GET['file'] ?? ''));
+    $cacheKey = $photoId > 0 ? 'photo-id/' . $photoId : $file;
+    if ($cacheKey === '') {
+        respond_text("img.php is OK.\n\nUse:\n  /img.php?file=PATH/TO/IMAGE.JPG&w=420\n  /img.php?file=PATH/TO/IMAGE.JPG&w=420&h=420&fit=cover\n  /img.php?p=12345&w=420            (pastovus adresas pagal nuotraukos ID)\n");
     }
 
     if (is_blocked()) {
@@ -730,9 +782,16 @@ try {
 
     if ($w <= 0 && $h <= 0) $w = 420; // default for grid thumbs
 
-    $thumbPath = thumb_cache_path((string)B2_BUCKET, $file, $w, $h, $fit, $q, $fmt);
+    $thumbPath = thumb_cache_path((string)B2_BUCKET, $cacheKey, $w, $h, $fit, $q, $fmt);
     if (is_file($thumbPath) && filesize($thumbPath) > 0) {
         output_file($thumbPath, output_mime($fmt));
+    }
+
+    // Podėlyje nėra — tik dabar prireikia tikrojo B2 kelio.
+    if ($photoId > 0) {
+        $keyById = photo_key_by_id($photoId);
+        if ($keyById === '') respond_text('Not found', 404);
+        $file = safe_file($keyById);
     }
 
     $lockPath = $thumbPath . '.lock';
