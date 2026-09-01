@@ -443,7 +443,11 @@ $listCacheKey = json_encode([
     'manifestVersion' => manifest_state_version($path),
 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 if (is_string($listCacheKey)) {
-    $cachedList = gallery_read_cache('b2_list', $listCacheKey, $path === '' ? 300 : 30);
+    // Sakniniam sarasui 30 min. Sena vertė buvo 5 min., bet TTL cia ir taip
+    // retai nulemia: rakte yra manifestVersion (albumu ir nuotrauku laukai is DB)
+    // ir views versija, tad bet koks redagavimas ar net albumo atidarymas
+    // pasidaro nauja rakta. TTL saugo tik tuos atvejus, kai niekas nepasikeitė.
+    $cachedList = gallery_read_cache('b2_list', $listCacheKey, $path === '' ? 1800 : 30);
     if ($cachedList !== null) {
         header('X-Foto-Origin-Cache: HIT');
         echo $cachedList;
@@ -816,14 +820,13 @@ $albumPhotoViewTotals = manifest_album_photo_view_totals();
 $files = null;
 $listCacheDir = dirname(__DIR__) . '/cache/b2_list';
 $listCacheFile = $listCacheDir . '/' . hash('sha256', (string)B2_BUCKET_ID . '|' . $prefix) . '.json';
-$listCacheTtl = 600;   // 10 min: nuotraukos keiciasi retai, o skirtumas juntamas is karto
-if (is_file($listCacheFile) && (time() - (int)@filemtime($listCacheFile)) < $listCacheTtl) {
-    $cached = @json_decode((string)@file_get_contents($listCacheFile), true);
-    if (is_array($cached)) $files = $cached;
-}
-if ($files === null) {
+/**
+ * Viso bucket'o failu sarasas is B2. Butent tai ir yra brangusis kelias:
+ * ~26 tūkst. irasu, keli kreipiniai, apie 4 s.
+ */
+function b2_fetch_file_list(string $apiUrl, string $authToken, string $prefix): array {
     $files = [];
-    $b2Cursor = '';
+    $cursor = '';
     $guard = 0;
     do {
         $post = [
@@ -831,7 +834,7 @@ if ($files === null) {
             'prefix'        => $prefix,
             'maxFileCount'  => 10000,
         ];
-        if ($b2Cursor !== '') $post['startFileName'] = $b2Cursor;
+        if ($cursor !== '') $post['startFileName'] = $cursor;
 
         $data = curl_json_request(
             $apiUrl . '/b2api/v2/b2_list_file_names',
@@ -841,20 +844,76 @@ if ($files === null) {
 
         $pageFiles = $data['files'] ?? [];
         if (is_array($pageFiles)) $files = array_merge($files, $pageFiles);
-        $b2Cursor = (string)($data['nextFileName'] ?? '');
+        $cursor = (string)($data['nextFileName'] ?? '');
         $guard++;
-    } while ($b2Cursor !== '' && $guard < 40);
+    } while ($cursor !== '' && $guard < 40);
 
-    // Rasom per laikina faila ir pervadinam - kad lygiagreti uzklausa niekada
-    // nepamatytu pusiau irasyto saraso.
-    if (!is_dir($listCacheDir)) @mkdir($listCacheDir, 0775, true);
-    $tmp = $listCacheFile . '.' . getmypid() . '.tmp';
+    return $files;
+}
+
+/**
+ * Rasom per laikina faila ir pervadinam - kad lygiagreti uzklausa niekada
+ * nepamatytu pusiau irasyto saraso.
+ *
+ * Tuscio saraso NERASOM: tai beveik visada nutrukes atsakymas is B2, o ne
+ * tustias bucket'as. Uzrasius ji ant gero saraso, galerija liktu tuscia visai
+ * hard TTL trukmei.
+ */
+function b2_write_list_cache(string $dir, string $file, array $files): void {
+    if (!$files) return;
+    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    $tmp = $file . '.' . getmypid() . '.tmp';
     if (@file_put_contents($tmp, json_encode($files)) !== false) {
-        @rename($tmp, $listCacheFile);
+        @rename($tmp, $file);
     } else {
         @unlink($tmp);
     }
 }
+
+// Ar sis PHP moka atiduoti atsakyma ir dirbti toliau jau be narsykles?
+function gallery_can_finish_request(): bool {
+    return function_exists('fastcgi_finish_request') || function_exists('litespeed_finish_request');
+}
+function gallery_finish_request(): void {
+    if (function_exists('fastcgi_finish_request')) { fastcgi_finish_request(); return; }
+    if (function_exists('litespeed_finish_request')) { litespeed_finish_request(); }
+}
+
+// Du slenksciai vietoj vieno TTL. Su vienu TTL sarasas pasibaigus galiojimui
+// tiesiog dingdavo, ir tas ~4 s skaitymas tekdavo pirmam pasitaikiusiam
+// lankytojui - t.y. kas valanda kazkas gaudavo leta puslapi. Dabar pasenes
+// sarasas VIS TIEK atiduodamas is karto, o naujas parsiunciamas jau atidavus
+// atsakyma, tad i ta pauze nebeatsitrenkia niekas.
+//
+// Albumo turinys galerijai ateina is DB, o ne is sio saraso, tad senstelejes
+// sarasas veluoja tik tai, kas i B2 ideta apeinant admin sasaja; tokiu atveju
+// uztenka istrinti cache/b2_list.
+$listCacheTtlSoft = 3600;        // po valandos verta atnaujinti
+$listCacheTtlHard = 7 * 86400;   // tokio seno nebenaudojam net laikinai
+$listRefreshAfterResponse = false;
+
+$listAge = is_file($listCacheFile) ? max(0, time() - (int)@filemtime($listCacheFile)) : PHP_INT_MAX;
+if ($listAge < $listCacheTtlHard) {
+    $cached = @json_decode((string)@file_get_contents($listCacheFile), true);
+    if (is_array($cached) && $cached) $files = $cached;
+}
+if ($files !== null && $listAge >= $listCacheTtlSoft) {
+    // Nustumti atnaujinima galim tik ten, kur PHP moka uzbaigti atsakyma ir
+    // dirbti toliau. Kitur elgiames kaip anksciau - kitaip lankytojas lauktu
+    // tos pacios pauzes, tik jau po to, kai atsakymas paruostas.
+    if (gallery_can_finish_request()) $listRefreshAfterResponse = true;
+    else $files = null;
+}
+if ($files === null) {
+    $files = b2_fetch_file_list($apiUrl, $authToken, $prefix);
+    b2_write_list_cache($listCacheDir, $listCacheFile, $files);
+}
+
+// Diagnostikai: is karto matyti, kuriuo keliu nuejo si uzklausa ir ar sis PHP
+// apskritai moka atideti atnaujinima ("inline" ten, kur tiketasi "deferred",
+// reiskia, kad fastcgi_finish_request/litespeed_finish_request nera).
+$listMode = $listRefreshAfterResponse ? 'deferred' : ($listAge < $listCacheTtlSoft ? 'fresh' : 'inline');
+header('X-Foto-List: ' . $listMode . '; age=' . ($listAge === PHP_INT_MAX ? 'none' : (string)$listAge));
 
 $nextCursor = '';
 
@@ -1138,4 +1197,29 @@ if (isset($listCacheKey) && is_string($listCacheKey)) {
 }
 header('X-Foto-Origin-Cache: MISS');
 echo $response;
+
+// Pasenusi B2 sarasa atnaujinam tik dabar - narsykle atsakyma jau gavo, tad si
+// kelio dalis jos nebeveluoja. Uzraktas neblokuojantis: jei kita uzklausa jau
+// atnaujina, si tiesiog praeina pro sali, kad nesusidarytu eile prie B2.
+if (!empty($listRefreshAfterResponse)) {
+    $lock = @fopen($listCacheFile . '.refresh.lock', 'c');
+    if ($lock !== false) {
+        if (flock($lock, LOCK_EX | LOCK_NB)) {
+            gallery_finish_request();
+            ignore_user_abort(true);
+            @set_time_limit(180);
+            try {
+                b2_write_list_cache(
+                    $listCacheDir,
+                    $listCacheFile,
+                    b2_fetch_file_list($apiUrl, $authToken, $prefix)
+                );
+            } catch (Throwable $e) {
+                gallery_log($e);
+            }
+            flock($lock, LOCK_UN);
+        }
+        fclose($lock);
+    }
+}
 exit;

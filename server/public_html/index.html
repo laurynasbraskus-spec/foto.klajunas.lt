@@ -712,7 +712,12 @@
       const tStart = performance.now();
       dlog("albumų sąrašas: pradedam");
       do {
-        const params = { withCovers: 1 };
+        // limit=200 (API leidžia daugiausia tiek). Vienos užklausos kaina beveik
+        // nepriklauso nuo albumų kiekio joje - matuota 24→485 ms, 60→501 ms,
+        // 200→656 ms - tad svarbu ne dalies dydis, o kiek kartų tą kainą sumoki.
+        // 296 albumai: su 60 tai 5 užklausos ir ~2,0 s, su 200 - 2 užklausos ir
+        // ~0,8 s. Pirmas parodymas nesikeičia (425 ms prieš 439 ms).
+        const params = { withCovers: 1, limit: 200 };
         if (cursor) params.cursor = cursor;
         const t0 = performance.now();
         const page = await api(params);
