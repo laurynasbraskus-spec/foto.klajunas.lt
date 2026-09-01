@@ -880,7 +880,11 @@
     loadingPhotos = true;
     note("Kraunamos nuotraukos…");
     try {
-      const params = { path: currentAlbum.path };
+      // Kaip ir albumų sąraše: vienos užklausos kaina beveik nepriklauso nuo
+      // nuotraukų kiekio joje (matuota ~62 ms su 60 ir su 200), tad svarbu, kiek
+      // kartų tą kainą sumoki. 604 nuotraukų albumas su 60 tai 11 užklausų,
+      // su 200 — 4.
+      const params = { path: currentAlbum.path, limit: 200 };
       if (nextCursor) params.cursor = nextCursor;
       const d = await api(params);
       photos.push(...(d.items || []).filter(i => i.type === "photo"));
@@ -928,6 +932,37 @@
     emp.textContent = favsOnly ? "Šiame albume dar nėra ♥ pažymėtų nuotraukų." : "Pagal paiešką nieko nerasta.";
   }
 
+  // Kito ekrano miniatiūros paruošiamos iš anksto. img.php pirmą kartą užtrunka
+  // ~450 ms (parsiunčia originalą iš B2 ir perdaro), o jau paruoštą atiduoda per
+  // ~4 ms — tad svarbu ne sumažinti užklausų, o kad tas pirmas kartas įvyktų
+  // ANKSČIAU, nei naudotojas nuslinks. Bendras užklausų kiekis nesikeičia: tos
+  // pačios miniatiūros būtų užsakytos ir taip, tik vėliau ir laukiant.
+  //
+  // Lygiagrečių ribojam iki keturių: img.php turi 300 užklausų per minutę ribą,
+  // o ir naršyklė vienam serveriui daugiau nei šešias vis tiek neatidaro.
+  const prefetchedThumbs = new Set();
+  let prefetchBusy = 0;
+  const PREFETCH_MAX = 4;
+  function prefetchThumbs(from, count) {
+    const queue = [];
+    for (let i = from; i < Math.min(from + count, visible.length); i++) {
+      const u = visible[i] && visible[i].thumbUrl;
+      if (u && !prefetchedThumbs.has(u)) { prefetchedThumbs.add(u); queue.push(u); }
+    }
+    const pump = () => {
+      while (prefetchBusy < PREFETCH_MAX && queue.length) {
+        const u = queue.shift();
+        prefetchBusy++;
+        const im = new Image();
+        const done = () => { prefetchBusy--; pump(); };
+        im.onload = done;
+        im.onerror = done;
+        im.src = u;
+      }
+    };
+    pump();
+  }
+
   function renderMore() {
     const g = $("photoGrid");
     const end = Math.min(renderedCount + CHUNK, visible.length);
@@ -960,6 +995,7 @@
       g.appendChild(card);
     }
     renderedCount = end;
+    prefetchThumbs(end, CHUNK);   // kitas ekranas ruošiamas fone
     // Totals are only known progressively (cursor pagination), so every badge's
     // "/ N" is rewritten here — otherwise tiles rendered before later pages
     // arrive would keep a stale, too-small total. With no filter active the
