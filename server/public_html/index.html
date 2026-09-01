@@ -608,6 +608,30 @@
 (function () {
   const API = "b2-gallery.php";
   const $ = id => document.getElementById(id);
+
+  // Diagnostika TIK kūrimo režimu: ?debug=1 arba localStorage klajunas_debug=1.
+  // Be šio jungiklio nespausdinama nė viena eilutė ir nekabinamas stebėtojas,
+  // tad viešam lankytojui puslapis elgiasi lygiai taip pat kaip anksčiau.
+  const DEBUG = (function () {
+    try {
+      if (new URLSearchParams(location.search).get("debug") === "1") return true;
+      return localStorage.getItem("klajunas_debug") === "1";
+    } catch (e) { return false; }
+  })();
+  const dlog = (...a) => { if (DEBUG) console.log("[foto]", ...a); };
+
+  // Viršelių užklausų skaičius imamas iš tinklo įrašų, o ne iš DOM: paveikslėliai
+  // yra loading="lazy", tad <img> elementų puslapyje visada daugiau, nei realiai
+  // nuėjo užklausų.
+  let coverRequests = 0;
+  if (DEBUG && window.PerformanceObserver) {
+    try {
+      new PerformanceObserver(list => {
+        for (const e of list.getEntries()) if (e.name.indexOf("img.php") !== -1) coverRequests++;
+      }).observe({ type: "resource", buffered: true });
+    } catch (e) {}
+  }
+
   const esc = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const fmtN = n => Number(n || 0).toLocaleString("lt-LT");
   const fmtBytes = n => { n = Number(n); if (!Number.isFinite(n) || n <= 0) return ""; const u = ["B", "KB", "MB", "GB"]; let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return (i ? n.toFixed(1) : Math.round(n)) + " " + u[i]; };
@@ -684,10 +708,18 @@
       let cursor = "";
       let guard = 0;
       let first = true;
+      let pageNo = 0;
+      const tStart = performance.now();
+      dlog("albumų sąrašas: pradedam");
       do {
         const params = { withCovers: 1 };
         if (cursor) params.cursor = cursor;
+        const t0 = performance.now();
         const page = await api(params);
+        const dt = performance.now() - t0;
+        pageNo++;
+        dlog(`albumų JSON #${pageNo}${cursor ? " (cursor=" + cursor + ")" : ""}: ` +
+             `${Math.round(dt)} ms, gauta ${(page.items || []).length}`);
         ALBUMS.push(...(page.items || []).filter(i => i.type === "folder"));
         refreshTagOptions();
         renderArchive();
@@ -701,6 +733,11 @@
         $("status").textContent = cursor ? `Kraunami albumai… ${ALBUMS.length}` : "";
       } while (cursor && ++guard < 40);
       $("status").textContent = "";
+      dlog(`albumų sąrašas baigtas: ${pageNo} užklausos, ${ALBUMS.length} albumai, ` +
+           `${Math.round(performance.now() - tStart)} ms`);
+      // Viršelius traukia naršyklė, kai kortelė priartėja prie ekrano, tad
+      // skaičių rodom kitame kadre - iš karto po render'io jis dar būtų 0.
+      if (DEBUG) setTimeout(() => dlog(`viršelių (img.php) užklausų iki šiol: ${coverRequests}`), 1500);
       // Jei nuoroda rode i albuma, kuris atejo velesneje dalyje - atidarom dabar.
       if (!currentAlbum) await openFromUrl();
     } catch (e) {
