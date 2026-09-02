@@ -55,6 +55,34 @@ function cache_dir(): string {
     return $dir;
 }
 
+/**
+ * Atlaisvinam ir PASALINAM uzrakto faila.
+ *
+ * Anksciau .lock likdavo amzinai - po viena beveik kiekvienai kada nors
+ * sugeneruotai miniatiurai. 2026-09-02 ju buvo susikaupe 6497. Trinam dar
+ * laikydami uzrakta, kad tuo tarpu niekas nespetu jo atsidaryti is naujo.
+ * Blogiausiu atveju dvi lygiagrecios uzklausos sugeneruos ta pacia miniatiura -
+ * tai nekenksminga, nes rezultatas idedamas atominiu rename().
+ */
+function release_thumb_lock($lock, string $lockPath): void {
+    @unlink($lockPath);
+    @flock($lock, LOCK_UN);
+    @fclose($lock);
+}
+
+/**
+ * Isvalo pamestus .lock failus. Reikalingas ne tik del praeities palikimo:
+ * procesui nukritus (timeout, OOM) uzraktas lieka ir be sio valymo.
+ */
+function prune_stale_locks(string $dir, int $maxAgeSeconds): void {
+    if (!is_dir($dir)) return;
+    $now = time();
+    foreach ((glob($dir . '/*.lock') ?: []) as $f) {
+        $m = @filemtime($f);
+        if ($m !== false && ($now - $m) > $maxAgeSeconds) @unlink($f);
+    }
+}
+
 function output_extension(string $fmt): string {
     return $fmt === 'webp' ? 'webp' : 'jpg';
 }
@@ -805,8 +833,7 @@ try {
     }
 
     if (is_file($thumbPath) && filesize($thumbPath) > 0) {
-        flock($lock, LOCK_UN);
-        fclose($lock);
+        release_thumb_lock($lock, $lockPath);
         output_file($thumbPath, output_mime($fmt));
     }
 
@@ -827,23 +854,21 @@ try {
 
     if (!is_file($tmpThumb) || filesize($tmpThumb) <= 0) {
         @unlink($tmpThumb);
-        flock($lock, LOCK_UN);
-        fclose($lock);
+        release_thumb_lock($lock, $lockPath);
         respond_text("Failed to create thumbnail", 500);
     }
 
     @rename($tmpThumb, $thumbPath);
     if (!is_file($thumbPath) || filesize($thumbPath) <= 0) {
         @unlink($tmpThumb);
-        flock($lock, LOCK_UN);
-        fclose($lock);
+        release_thumb_lock($lock, $lockPath);
         respond_text("Failed to save thumbnail", 500);
     }
-    flock($lock, LOCK_UN);
-    fclose($lock);
+    release_thumb_lock($lock, $lockPath);
 
     if (random_int(1, 100) === 1) {
         gallery_prune_cache_dir(cache_dir(), 300 * 1024 * 1024, 90 * 86400);
+        prune_stale_locks(cache_dir(), 3600);
     }
 
     output_file($thumbPath, output_mime($fmt));
