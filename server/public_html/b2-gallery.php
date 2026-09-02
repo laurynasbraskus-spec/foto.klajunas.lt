@@ -818,7 +818,13 @@ $albumPhotoViewTotals = manifest_album_photo_view_totals();
 // perskaito visa bucket'a (24 tūkst. failu, keli kreipiniai i B2). Naudotojui
 // tai atrodo kaip "dirbtine pauze" pries kiekviena nauja dali.
 $files = null;
-$listCacheDir = dirname(__DIR__) . '/cache/b2_list';
+// Neapdorotas B2 failu sarasas laikomas ATSKIRAI nuo atsakymu podelio.
+// Anksciau abu gulejo cache/b2_list, o atsakymu podelis ten raso po nauja faila
+// kiekvienam raktui; raktas keiciasi vos kam nors atidarius albuma (i ji ieina
+// perziuru versija), tad katalogas augo be jokios ribos - valymo jam, skirtingai
+// nei miniatiuroms, niekada nebuvo. Sarasui toks kaimynas pavojingas: jis vienas,
+// didelis ir butinas.
+$listCacheDir = dirname(__DIR__) . '/cache/b2_filelist';
 $listCacheFile = $listCacheDir . '/' . hash('sha256', (string)B2_BUCKET_ID . '|' . $prefix) . '.json';
 /**
  * Viso bucket'o failu sarasas is B2. Butent tai ir yra brangusis kelias:
@@ -855,65 +861,57 @@ function b2_fetch_file_list(string $apiUrl, string $authToken, string $prefix): 
  * Rasom per laikina faila ir pervadinam - kad lygiagreti uzklausa niekada
  * nepamatytu pusiau irasyto saraso.
  *
+ * Grazina, KAS nutiko, o ne void: klaidos anksciau buvo nurytos per @, ir del to
+ * 2026-09-01 nepavykes irasymas liko nematomas - sarasas atrode esantis, bet
+ * niekada nepasinaujindavo, o kiekviena uzklausa is naujo skaite visa bucket'a.
+ *
  * Tuscio saraso NERASOM: tai beveik visada nutrukes atsakymas is B2, o ne
- * tustias bucket'as. Uzrasius ji ant gero saraso, galerija liktu tuscia visai
- * hard TTL trukmei.
+ * tustias bucket'as, ir uzrasytas ant gero saraso jis paliktu tuscia galerija.
  */
-function b2_write_list_cache(string $dir, string $file, array $files): void {
-    if (!$files) return;
-    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+function b2_write_list_cache(string $dir, string $file, array $files): string {
+    if (!$files) return 'empty';
+    if (!is_dir($dir) && !@mkdir($dir, 0775, true)) return 'nodir';
+    $json = json_encode($files);
+    if (!is_string($json)) return 'encode';
     $tmp = $file . '.' . getmypid() . '.tmp';
-    if (@file_put_contents($tmp, json_encode($files)) !== false) {
-        @rename($tmp, $file);
-    } else {
-        @unlink($tmp);
-    }
+    if (@file_put_contents($tmp, $json) === false) { @unlink($tmp); return 'nowrite'; }
+    if (!@rename($tmp, $file)) { @unlink($tmp); return 'norename'; }
+    return 'ok';
 }
 
-// Ar sis PHP moka atiduoti atsakyma ir dirbti toliau jau be narsykles?
-function gallery_can_finish_request(): bool {
-    return function_exists('fastcgi_finish_request') || function_exists('litespeed_finish_request');
-}
-function gallery_finish_request(): void {
-    if (function_exists('fastcgi_finish_request')) { fastcgi_finish_request(); return; }
-    if (function_exists('litespeed_finish_request')) { litespeed_finish_request(); }
-}
-
-// Du slenksciai vietoj vieno TTL. Su vienu TTL sarasas pasibaigus galiojimui
-// tiesiog dingdavo, ir tas ~4 s skaitymas tekdavo pirmam pasitaikiusiam
-// lankytojui - t.y. kas valanda kazkas gaudavo leta puslapi. Dabar pasenes
-// sarasas VIS TIEK atiduodamas is karto, o naujas parsiunciamas jau atidavus
-// atsakyma, tad i ta pauze nebeatsitrenkia niekas.
+// Vienas TTL, bet ilgas. Skaitymas is B2 kainuoja apie 12 s (25 tūkst. irasu
+// trimis kreipiniais), tad ji verta kartoti kuo reciau. Atidejimo po atsakymo
+// cia NEBERA: 2026-09-01 paaiskejo, kad fastcgi_finish_request sioje sistemoje
+// egzistuoja, bet priesakinis Apache atsakymo vis tiek neatiduoda, kol backend'as
+// nebaigia - klientas laukdavo lygiai tiek pat.
 //
 // Albumo turinys galerijai ateina is DB, o ne is sio saraso, tad senstelejes
 // sarasas veluoja tik tai, kas i B2 ideta apeinant admin sasaja; tokiu atveju
-// uztenka istrinti cache/b2_list.
-$listCacheTtlSoft = 3600;        // po valandos verta atnaujinti
-$listCacheTtlHard = 7 * 86400;   // tokio seno nebenaudojam net laikinai
-$listRefreshAfterResponse = false;
+// uztenka istrinti cache/b2_filelist.
+$listCacheTtl = 6 * 3600;
+$listWrite = 'skip';
 
 $listAge = is_file($listCacheFile) ? max(0, time() - (int)@filemtime($listCacheFile)) : PHP_INT_MAX;
-if ($listAge < $listCacheTtlHard) {
+if ($listAge < $listCacheTtl) {
     $cached = @json_decode((string)@file_get_contents($listCacheFile), true);
     if (is_array($cached) && $cached) $files = $cached;
 }
-if ($files !== null && $listAge >= $listCacheTtlSoft) {
-    // Nustumti atnaujinima galim tik ten, kur PHP moka uzbaigti atsakyma ir
-    // dirbti toliau. Kitur elgiames kaip anksciau - kitaip lankytojas lauktu
-    // tos pacios pauzes, tik jau po to, kai atsakymas paruostas.
-    if (gallery_can_finish_request()) $listRefreshAfterResponse = true;
-    else $files = null;
-}
 if ($files === null) {
+    // Pazymim faila PRIES ilga skaityma. Jei irasymas nepavyks, kitos uzklausos
+    // TTL trukme naudosis senu sarasu, o ne kartos ta pati 12 s darba kiekviena
+    // karta - butent taip 2026-09-01 KIEKVIENAS podelio prasilenkimas tapo letas.
+    if (is_file($listCacheFile)) @touch($listCacheFile);
     $files = b2_fetch_file_list($apiUrl, $authToken, $prefix);
-    b2_write_list_cache($listCacheDir, $listCacheFile, $files);
+    $listWrite = b2_write_list_cache($listCacheDir, $listCacheFile, $files);
+    if ($listWrite !== 'ok') {
+        gallery_log('b2_filelist irasyti nepavyko: ' . $listWrite . ' -> ' . $listCacheFile);
+    }
 }
 
-// Diagnostikai: is karto matyti, kuriuo keliu nuejo si uzklausa ir ar sis PHP
-// apskritai moka atideti atnaujinima ("inline" ten, kur tiketasi "deferred",
-// reiskia, kad fastcgi_finish_request/litespeed_finish_request nera).
-$listMode = $listRefreshAfterResponse ? 'deferred' : ($listAge < $listCacheTtlSoft ? 'fresh' : 'inline');
-header('X-Foto-List: ' . $listMode . '; age=' . ($listAge === PHP_INT_MAX ? 'none' : (string)$listAge));
+// Diagnostikai: amzius parodo, ar sarasas buvo podelyje, o write - ar pavyko ji
+// atnaujinti. "write=nowrite" arba "norename" reiskia disko/teisiu problema, ir
+// butent to pernai nebuvo matyti, nes klaidos buvo nurytos per @.
+header('X-Foto-List: age=' . ($listAge === PHP_INT_MAX ? 'none' : (string)$listAge) . '; write=' . $listWrite);
 
 $nextCursor = '';
 
@@ -1198,28 +1196,10 @@ if (isset($listCacheKey) && is_string($listCacheKey)) {
 header('X-Foto-Origin-Cache: MISS');
 echo $response;
 
-// Pasenusi B2 sarasa atnaujinam tik dabar - narsykle atsakyma jau gavo, tad si
-// kelio dalis jos nebeveluoja. Uzraktas neblokuojantis: jei kita uzklausa jau
-// atnaujina, si tiesiog praeina pro sali, kad nesusidarytu eile prie B2.
-if (!empty($listRefreshAfterResponse)) {
-    $lock = @fopen($listCacheFile . '.refresh.lock', 'c');
-    if ($lock !== false) {
-        if (flock($lock, LOCK_EX | LOCK_NB)) {
-            gallery_finish_request();
-            ignore_user_abort(true);
-            @set_time_limit(180);
-            try {
-                b2_write_list_cache(
-                    $listCacheDir,
-                    $listCacheFile,
-                    b2_fetch_file_list($apiUrl, $authToken, $prefix)
-                );
-            } catch (Throwable $e) {
-                gallery_log($e);
-            }
-            flock($lock, LOCK_UN);
-        }
-        fclose($lock);
-    }
+// Atsakymu podelis auga be ribu: raktas keiciasi vos kam nors atidarius albuma,
+// o valymo jam niekada nebuvo - ir butent taip katalogas issipute. Retkarciais
+// apkarpom, kaip img.php daro su miniatiuromis.
+if (random_int(1, 50) === 1) {
+    gallery_prune_cache_dir(dirname(__DIR__) . '/cache/b2_list', 50 * 1024 * 1024, 3 * 86400);
 }
 exit;
