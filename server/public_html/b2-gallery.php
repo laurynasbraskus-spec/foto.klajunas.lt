@@ -972,20 +972,42 @@ if ($path === '') {
     // root prefixes such as "albums/" as standalone public albums.
     $folders = [];
     $photos = [];
+
+    // Failai suindeksuojami VIENU perejimu: albumo kelias -> kiek nuotrauku ir
+    // kuri pirma. Anksciau kiekvienam albumui buvo einama per VISUS bucket'o
+    // failus, t.y. 296 albumai x 25 765 failai = apie 7,6 mln. iteraciju su
+    // eiluciu operacijomis kiekvienoje. Butent tai ir buvo tie ~12 s, del kuriu
+    // ilgai kaltinom B2 ir podeli: podelis veike (X-Foto-List rode write=skip),
+    // o laikas dingdavo cia. Albumo viduje sio bloko nera, todel ten uzklausa
+    // visada buvo ~60 ms.
+    $filesByAlbum = [];
+    foreach ($files as $file) {
+        $fileName = (string)($file['fileName'] ?? '');
+        if ($fileName === '' || is_derived_or_legacy_asset_path($fileName) || !is_image($fileName)) continue;
+        // Albumo kelias yra pirmi trys segmentai: albums/<metai>/<vardas>.
+        $p1 = strpos($fileName, '/');
+        if ($p1 === false) continue;
+        $p2 = strpos($fileName, '/', $p1 + 1);
+        if ($p2 === false) continue;
+        $p3 = strpos($fileName, '/', $p2 + 1);
+        if ($p3 === false) continue;
+        $albumKey = substr($fileName, 0, $p3);
+        if (!isset($filesByAlbum[$albumKey])) {
+            $filesByAlbum[$albumKey] = ['count' => 0, 'first' => ''];
+        }
+        $filesByAlbum[$albumKey]['count']++;
+        // Pirmas failas isliekas tas pats, kaip ir anksciau - $files eiles tvarka.
+        if ($filesByAlbum[$albumKey]['first'] === '') $filesByAlbum[$albumKey]['first'] = $fileName;
+    }
+
     foreach (manifest_album_rows() as $album) {
         $key = (string)$album['path'];
         $sourcePath = trim((string)($album['sourcePath'] ?? ''), "/ \t\n\r\0\x0B");
         $realPhotoCount = 0;
         $realCoverFile = '';
-        if ($sourcePath !== '') {
-            $sourcePrefix = $sourcePath . '/';
-            foreach ($files as $file) {
-                $fileName = (string)($file['fileName'] ?? '');
-                if ($fileName === '' || is_derived_or_legacy_asset_path($fileName) || !is_image($fileName)) continue;
-                if (strncmp($fileName, $sourcePrefix, strlen($sourcePrefix)) !== 0) continue;
-                $realPhotoCount++;
-                if ($realCoverFile === '') $realCoverFile = $fileName;
-            }
+        if ($sourcePath !== '' && isset($filesByAlbum[$sourcePath])) {
+            $realPhotoCount = $filesByAlbum[$sourcePath]['count'];
+            $realCoverFile = $filesByAlbum[$sourcePath]['first'];
         }
         if ($realPhotoCount === 0) continue;
         $album['count'] = $realPhotoCount;
