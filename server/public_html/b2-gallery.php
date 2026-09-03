@@ -537,37 +537,87 @@ function manifest_album_rows(): array {
             return [];
         }
     }
+    // Kiekiai, virseliai ir zymos surenkami SUGRUPUOTOMIS uzklausomis.
+    //
+    // Anksciau kiekvienam albumui buvo daromos TRYS atskiros uzklausos - kiekis,
+    // virselis ir zymos - t.y. 297 albumams apie 891 kreipini i DB. Serveryje
+    // tai ir buvo tie ~5 s, kurie liko istaisius kadru cikla: pavieniui jos
+    // pigios, bet ju kiekis auga kartu su albumu skaiciumi.
+    $ids = [];
+    foreach ($albums as $a) { $ids[] = (int)$a['id']; }
+    $counts = [];
+    $coverRows = [];
+    $manualRows = [];
+    $tagsByAlbum = [];
+    if ($ids) {
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $compatSelect = gallery_db_column_exists($db, 'photos', 'compatibility_b2_key') ? 'p.compatibility_b2_key' : 'NULL AS compatibility_b2_key';
+        $originalB2Select = gallery_db_column_exists($db, 'photos', 'original_b2_key') ? 'p.original_b2_key' : 'NULL AS original_b2_key';
+
+        try {
+            $q = $db->prepare("SELECT p.album_id, COUNT(*) n FROM photos p WHERE p.album_id IN ($in) AND p.visibility='published' AND p.is_missing=0 GROUP BY p.album_id");
+            $q->execute($ids);
+            foreach ($q->fetchAll() as $r) { $counts[(int)$r['album_id']] = (int)$r['n']; }
+        } catch (Throwable $e) { gallery_log($e); }
+
+        // ROW_NUMBER pakeicia buvusi "LIMIT 1" - rikiavimo tvarka ta pati, tad ir
+        // virselis pasirenkamas tas pats, tik vienu kreipiniu visiems albumams.
+        try {
+            $q = $db->prepare(
+                "SELECT t.album_id,t.b2_key,t.fileName,t.compatibility_b2_key,t.original_b2_key,t.stored_filename,t.original_filename,t.source_path
+                   FROM (SELECT p.album_id,p.b2_key,p.b2_key AS fileName,$compatSelect,$originalB2Select,p.stored_filename,p.original_filename,a.source_path,
+                                ROW_NUMBER() OVER (PARTITION BY p.album_id ORDER BY CASE WHEN p.is_cover_candidate=1 THEN 0 ELSE 1 END ASC, CASE WHEN p.taken_at IS NULL THEN 1 ELSE 0 END ASC, p.taken_at ASC, p.sort_order ASC, p.id ASC) rn
+                           FROM photos p JOIN albums a ON a.id=p.album_id
+                          WHERE p.album_id IN ($in) AND p.visibility='published' AND p.is_missing=0) t
+                  WHERE t.rn=1"
+            );
+            $q->execute($ids);
+            foreach ($q->fetchAll() as $r) { $coverRows[(int)$r['album_id']] = $r; }
+        } catch (Throwable $e) { gallery_log($e); }
+
+        // Rankiniu budu parinkti virseliai - ju paprastai vienetai.
+        $manualIds = [];
+        foreach ($albums as $a) {
+            if ((string)($a['cover_mode'] ?? 'auto') === 'manual' && (int)($a['cover_photo_id'] ?? 0) > 0) {
+                $manualIds[] = (int)$a['cover_photo_id'];
+            }
+        }
+        if ($manualIds) {
+            try {
+                $inM = implode(',', array_fill(0, count($manualIds), '?'));
+                $q = $db->prepare("SELECT p.id,p.album_id,p.b2_key,p.b2_key AS fileName,$compatSelect,$originalB2Select,p.stored_filename,p.original_filename,a.source_path FROM photos p JOIN albums a ON a.id=p.album_id WHERE p.id IN ($inM) AND p.visibility='published' AND p.is_missing=0");
+                $q->execute($manualIds);
+                foreach ($q->fetchAll() as $r) { $manualRows[(int)$r['id']] = $r; }
+            } catch (Throwable $e) { gallery_log($e); }
+        }
+
+        try {
+            $q = $db->prepare("SELECT at.album_id,t.name FROM tags t JOIN album_tags at ON at.tag_id=t.id WHERE at.album_id IN ($in) ORDER BY at.album_id ASC, t.name ASC");
+            $q->execute($ids);
+            foreach ($q->fetchAll() as $r) {
+                $aid = (int)$r['album_id'];
+                if (!isset($tagsByAlbum[$aid])) $tagsByAlbum[$aid] = [];
+                if (count($tagsByAlbum[$aid]) < 20) { $tagsByAlbum[$aid][] = (string)$r['name']; }
+            }
+        } catch (Throwable $e) { gallery_log($e); }
+    }
+
     $out = [];
     foreach ($albums as $album) {
-        $path = trim((string)($album['slug'] ?: $album['source_path'] ?? ''), "/ \t\n\r\0\x0B");
+        $albumId = (int)$album['id'];
+        $path = trim((string)($album['slug'] ?: $album['source_path'] ?? ''), "/ 	
+ ");
         if ($path === '') continue;
-        $count = 0;
-        $cover = '';
-        try {
-            $q = $db->prepare("SELECT COUNT(*) FROM photos WHERE album_id=? AND visibility='published' AND is_missing=0");
-            $q->execute([(int)$album['id']]);
-            $count = (int)$q->fetchColumn();
-            $coverMode = (string)($album['cover_mode'] ?? 'auto');
-            $coverId = (int)($album['cover_photo_id'] ?? 0);
-            if ($coverMode === 'none') {
-                $cover = '';
-            } elseif ($coverMode === 'manual' && $coverId > 0) {
-                $compatSelect = gallery_db_column_exists($db, 'photos', 'compatibility_b2_key') ? 'p.compatibility_b2_key' : 'NULL AS compatibility_b2_key';
-                $originalB2Select = gallery_db_column_exists($db, 'photos', 'original_b2_key') ? 'p.original_b2_key' : 'NULL AS original_b2_key';
-                $q = $db->prepare("SELECT p.b2_key,p.b2_key AS fileName,$compatSelect,$originalB2Select,p.stored_filename,p.original_filename,a.source_path FROM photos p JOIN albums a ON a.id=p.album_id WHERE p.id=? AND p.album_id=? AND p.visibility='published' AND p.is_missing=0 LIMIT 1");
-                $q->execute([$coverId, (int)$album['id']]);
-                $coverRow = $q->fetch(PDO::FETCH_ASSOC) ?: [];
-                $cover = manifest_db_display_file_name($coverRow);
-            } else {
-                $compatSelect = gallery_db_column_exists($db, 'photos', 'compatibility_b2_key') ? 'p.compatibility_b2_key' : 'NULL AS compatibility_b2_key';
-                $originalB2Select = gallery_db_column_exists($db, 'photos', 'original_b2_key') ? 'p.original_b2_key' : 'NULL AS original_b2_key';
-                $q = $db->prepare("SELECT p.b2_key,p.b2_key AS fileName,$compatSelect,$originalB2Select,p.stored_filename,p.original_filename,a.source_path FROM photos p JOIN albums a ON a.id=p.album_id WHERE p.album_id=? AND p.visibility='published' AND p.is_missing=0 ORDER BY CASE WHEN p.is_cover_candidate=1 THEN 0 ELSE 1 END ASC, CASE WHEN p.taken_at IS NULL THEN 1 ELSE 0 END ASC, p.taken_at ASC, p.sort_order ASC, p.id ASC LIMIT 1");
-                $q->execute([(int)$album['id']]);
-                $coverRow = $q->fetch(PDO::FETCH_ASSOC) ?: [];
-                $cover = manifest_db_display_file_name($coverRow);
-            }
-        } catch (Throwable $e) {
-            gallery_log($e);
+        $count = $counts[$albumId] ?? 0;
+        $coverMode = (string)($album['cover_mode'] ?? 'auto');
+        $coverId = (int)($album['cover_photo_id'] ?? 0);
+        if ($coverMode === 'none') {
+            $cover = '';
+        } elseif ($coverMode === 'manual' && $coverId > 0) {
+            $row = $manualRows[$coverId] ?? null;
+            $cover = ($row && (int)$row['album_id'] === $albumId) ? manifest_db_display_file_name($row) : '';
+        } else {
+            $cover = isset($coverRows[$albumId]) ? manifest_db_display_file_name($coverRows[$albumId]) : '';
         }
         $out[] = [
             'type' => 'folder',
@@ -585,7 +635,7 @@ function manifest_album_rows(): array {
             'eventDate' => (string)($album['event_date'] ?? ''),
             'eventDateEnd' => (string)($album['event_date_end'] ?? ''),
             'eventDateLabel' => manifest_event_date_label($album),
-            'tags' => manifest_album_tags((int)$album['id']),
+            'tags' => $tagsByAlbum[$albumId] ?? [],
             'authorName' => (string)($album['author_name'] ?? ''),
             'copyrightText' => (string)($album['copyright_text'] ?? ''),
             'coverFile' => $cover,
