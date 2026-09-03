@@ -718,6 +718,18 @@ function manifest_album_photo_view_totals(): array {
 function manifest_state_version(string $path): string {
     $db = function_exists('gallery_db') ? gallery_db() : null;
     if (!$db) return '0';
+    // Podelio raktui reikia skaiciaus, kuris pasikeicia vos kam nors pasikeitus
+    // duomenu bazeje. Iki 2026-09-03 jis buvo sudaromas taip: MySQL viduje
+    // sulipdoma viena eilute is VISU nuotrauku (id, sort_order, b2_key, perziuros)
+    // ir imama jos CRC32. Archyvui uzaugus si eilute pasieke 1 138 922 baitus, o
+    // group_concat_max_len yra 1 048 576 - MySQL ja TYLIAI nukirpdavo. Rikiuota
+    // buvo pagal album_id, tad uz borto liko naujausi albumai: ju pakeitimai i
+    // kontroline suma nebepatekdavo ir sarasas atiduodavo sena atsakyma, kol
+    // nepasibaigdavo 30 min. TTL.
+    //
+    // SUM(CRC32(eilute)) neša ta pacia informacija, tik nelipdo tarpines eilutes:
+    // ilgio lubu nebera, ir uzklausa is ~345 ms nukrenta i ~127 ms. Rikiavimas
+    // nereikalingas - sort_order ir id patys ieina i maisa.
     try {
         if ($path === '') {
             $q = $db->query(
@@ -727,9 +739,9 @@ function manifest_state_version(string $path): string {
                     COALESCE(MAX(UNIX_TIMESTAMP(p.updated_at)), 0)
                     ),
                     '-',
-                    COALESCE(CRC32(GROUP_CONCAT(CONCAT(p.id, ':', p.sort_order, ':', p.b2_key, ':', COALESCE(p.photo_views, '')) ORDER BY p.album_id ASC, p.sort_order ASC, p.id ASC SEPARATOR '|')), 0),
+                    COALESCE(SUM(CRC32(CONCAT(p.id, ':', p.sort_order, ':', p.b2_key, ':', COALESCE(p.photo_views, '')))), 0),
                     '-',
-                    (SELECT COALESCE(CRC32(GROUP_CONCAT(CONCAT_WS(':', a2.id, a2.title, COALESCE(a2.subtitle,''), COALESCE(a2.description,''), COALESCE(a2.event_date,''), COALESCE(a2.event_date_end,''), COALESCE(a2.location_name,''), a2.sort_order, COALESCE(a2.cover_photo_id,0), COALESCE(a2.cover_mode,''), COALESCE(a2.author_name,''), COALESCE(a2.copyright_text,''), COALESCE(a2.dbsportas_url,''), COALESCE(a2.klajunas_url,''), COALESCE(a2.other_url,'')) ORDER BY a2.id SEPARATOR '|')), 0) FROM albums a2 WHERE a2.visibility='published')
+                    (SELECT COALESCE(SUM(CRC32(CONCAT_WS(':', a2.id, a2.title, COALESCE(a2.subtitle,''), COALESCE(a2.description,''), COALESCE(a2.event_date,''), COALESCE(a2.event_date_end,''), COALESCE(a2.location_name,''), a2.sort_order, COALESCE(a2.cover_photo_id,0), COALESCE(a2.cover_mode,''), COALESCE(a2.author_name,''), COALESCE(a2.copyright_text,''), COALESCE(a2.dbsportas_url,''), COALESCE(a2.klajunas_url,''), COALESCE(a2.other_url,'')))), 0) FROM albums a2 WHERE a2.visibility='published')
                  ) AS v
                  FROM albums a
                  LEFT JOIN photos p ON p.album_id = a.id
@@ -745,7 +757,7 @@ function manifest_state_version(string $path): string {
                 COALESCE(MAX(UNIX_TIMESTAMP(p.updated_at)), 0)
                 ),
                 '-',
-                COALESCE(CRC32(GROUP_CONCAT(CONCAT(p.id, ':', p.sort_order, ':', p.b2_key, ':', COALESCE(p.photo_views, '')) ORDER BY p.sort_order ASC, p.id ASC SEPARATOR '|')), 0),
+                COALESCE(SUM(CRC32(CONCAT(p.id, ':', p.sort_order, ':', p.b2_key, ':', COALESCE(p.photo_views, '')))), 0),
                 '-',
                 COALESCE(CRC32(MIN(CONCAT_WS(':', a.id, a.title, COALESCE(a.subtitle,''), COALESCE(a.event_date,''), COALESCE(a.event_date_end,''), COALESCE(a.location_name,''), a.sort_order, COALESCE(a.cover_photo_id,0), COALESCE(a.cover_mode,''), COALESCE(a.author_name,''), COALESCE(a.copyright_text,'')))), 0)
              ) AS v
