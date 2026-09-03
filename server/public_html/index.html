@@ -283,7 +283,14 @@
   .lb-album {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
     font-size: 19px; font-weight: 750; color: var(--ink); letter-spacing: -.01em;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    /* Dvi eilutes, ne viena. Ilgi pavadinimai - "Begimas "Pabaiskas - Ukmerge",
+       skirtas Lietuvos Valstybes atkurimo dienai" - i viena eilute netilpdavo ir
+       buvo nukerpami maždaug per puse. Juostos aukscio tai nekeicia: viduje
+       mygtukai 40 px + 2x14 px tarpai = 68 px, o dvi 19 px eilutes uzima ~46 px.
+       Nukirpimas lieka tik tam atvejui, kai ir dvieju eiluciu nepakanka. */
+    line-height: 1.2;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+    overflow: hidden;
     max-width: min(46%, 620px); pointer-events: none; text-align: center;
     /* Shifted with margin-left, applied instantly: the info panel itself pops in
        via display:none/block, so animating the title would only desync them. */
@@ -1195,7 +1202,9 @@
       else { lbIm.onload = lbDone; lbIm.onerror = lbFail; }
     }
     $("lbTitle").textContent = p.name;
+    // title - kad ir nukirptas pavadinimas butu prieinamas visas.
     $("lbTag").textContent = currentAlbum ? currentAlbum.name : "";
+    $("lbTag").title = currentAlbum ? currentAlbum.name : "";
     $("lbCounter").textContent = `${lbIndex + 1} / ${visible.length}`;
     const dl = $("lbDown");
     if (p.downloadAllowed && p.downloadUrl) { dl.style.display = ""; dl.title = "Atsisiųsti originalą"; }
