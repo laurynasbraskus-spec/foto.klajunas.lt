@@ -3,6 +3,13 @@
   Header always set X-Content-Type-Options "nosniff"
   Header always set Referrer-Policy "strict-origin-when-cross-origin"
   Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+  # Apache prie kiekvieno atsakymo prikabina "Vary: Accept-Encoding,User-Agent"
+  # (senas mod_deflate BrowserMatch paveldas). Nei viena sio puslapio dalis nuo
+  # narsykles nepriklauso - nei img.php (formatas nurodomas fmt= parametru), nei
+  # og.php, - todel UA ten tik kenkia: kiekvienas Chrome atnaujinimas keicia UA
+  # eilute, o su ja ir podelio rakta, tad naudotojas kas menesi is naujo
+  # atsisiunčia visas miniatiuras. Grazinam teisinga reiksme.
+  Header set Vary "Accept-Encoding"
   Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.googleusercontent.com; connect-src 'self' https://accounts.google.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 </IfModule>
 
