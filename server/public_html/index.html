@@ -132,15 +132,34 @@
 
   .status { color: var(--ink-faint); font-size: 13px; margin: 2px 0 18px; font-variant-numeric: tabular-nums; }
 
-  .album-head { margin: 2px 0 18px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
-  .album-bar { display: flex; align-items: center; gap: 14px; flex-wrap: nowrap; }
-  .album-bar h2 { font-size: 20px; font-weight: 650; letter-spacing: -0.02em; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .album-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; flex-shrink: 0; }
-  @media (max-width: 620px) {
-    .album-bar { flex-wrap: wrap; }
-    .album-bar h2 { white-space: normal; min-width: 160px; }
+  .album-head {
+    margin: 2px 0 0; padding: 10px 0 12px; border-bottom: 1px solid var(--line);
+    /* Dideliuose albumuose (285 nuotraukos) nusileidus zemyn juosta su "Atgal"
+       nubegdavo kartu su turiniu, ir grizti buvo galima tik parslinkus i pati
+       virsu. Lipdom po virsutine juosta - jos aukstis kinta (siaurame ekrane
+       paieska persilauzia i antra eilute), todel matuojamas ir paduodamas per
+       --topbar-h. */
+    position: sticky; top: var(--topbar-h, 64px); z-index: 15;
+    background: var(--bg);
   }
-  .album-sub { color: var(--ink-soft); font-size: 13.5px; margin-top: 8px; display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+  /* Trys stulpeliai, kraštiniai vienodo ploto - tik taip pavadinimas atsiduria
+     tikrame viduryje. Su flex jis buvo prilipdytas prie "Atgal" mygtuko, o
+     desineje esantys veiksmai kur kas platesni, tad vidurio nesigaudavo.
+     Pavadinimui pailgejus kraštiniai stulpeliai susitraukia iki savo turinio. */
+  .album-bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px; }
+  .album-bar .back-pill { justify-self: start; }
+  /* Be nowrap ir ellipsis: ilgas pavadinimas persikelia i kita eilute, o ne
+     nukerpamas. Ilgiausi archyve - 80 simboliu. */
+  .album-bar h2 { font-size: 20px; font-weight: 650; letter-spacing: -0.02em; min-width: 0; text-align: center; }
+  .album-actions { display: flex; gap: 8px; align-items: center; justify-self: end; flex-shrink: 0; }
+  @media (max-width: 620px) {
+    /* Siaurame ekrane trys stulpeliai netelpa: pavadinimas lieka salia "Atgal",
+       veiksmai persikelia i savo eilute. */
+    .album-bar { grid-template-columns: auto 1fr; row-gap: 10px; }
+    .album-bar h2 { text-align: left; }
+    .album-actions { grid-column: 1 / -1; justify-self: start; flex-wrap: wrap; }
+  }
+  .album-sub { color: var(--ink-soft); font-size: 13.5px; margin: 10px 0 18px; display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
   .album-sub .d { opacity: .4; }
   .tag {
     font-size: 11.5px; color: var(--amber-ink); background: var(--amber-soft);
@@ -282,7 +301,9 @@
   .lb-title { font-size: 14.5px; font-weight: 600; }
   .lb-album {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    font-size: 19px; font-weight: 750; color: var(--ink); letter-spacing: -.01em;
+    /* Siauresniame lange sriftas mazesnis - kitaip net dviem eilutem vietos
+       nepakanka ir ilgas pavadinimas vis tiek butu nukirptas. */
+    font-size: clamp(15px, 1.35vw, 19px); font-weight: 750; color: var(--ink); letter-spacing: -.01em;
     /* Dvi eilutes, ne viena. Ilgi pavadinimai - "Begimas "Pabaiskas - Ukmerge",
        skirtas Lietuvos Valstybes atkurimo dienai" - i viena eilute netilpdavo ir
        buvo nukerpami maždaug per puse. Juostos aukscio tai nekeicia: viduje
@@ -291,6 +312,9 @@
     line-height: 1.2;
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
     overflow: hidden;
+    /* Sita riba naudojama tik tol, kol nesuveike sizeLbAlbum() - ji plotį
+       apskaiciuoja is tikru kaimynu krastu. Fiksuoti 620 px ilgus pavadinimus
+       nukirsdavo, o siaurame lange dezute uzlipdavo ant desines mygtuku. */
     max-width: min(46%, 620px); pointer-events: none; text-align: center;
     /* Shifted with margin-left, applied instantly: the info panel itself pops in
        via display:none/block, so animating the title would only desync them. */
@@ -560,8 +584,8 @@
           </div>
         </div>
       </div>
-      <div class="album-sub" id="albumSub"></div>
     </div>
+    <div class="album-sub" id="albumSub"></div>
     <div class="grid photos" id="photoGrid"></div>
     <div class="empty" id="empty" style="display:none"></div>
   </section>
@@ -1205,6 +1229,7 @@
     // title - kad ir nukirptas pavadinimas butu prieinamas visas.
     $("lbTag").textContent = currentAlbum ? currentAlbum.name : "";
     $("lbTag").title = currentAlbum ? currentAlbum.name : "";
+    sizeLbAlbum();
     $("lbCounter").textContent = `${lbIndex + 1} / ${visible.length}`;
     const dl = $("lbDown");
     if (p.downloadAllowed && p.downloadUrl) { dl.style.display = ""; dl.title = "Atsisiųsti originalą"; }
@@ -1360,7 +1385,38 @@
   };
   function syncInfoOpen() {
     $("lb").classList.toggle("info-open", $("infoPanel").classList.contains("show"));
+    sizeLbAlbum();
   }
+  // Virsutines juostos aukstis keliauja i --topbar-h, kad po ja galetu prilipti
+  // albumo juosta. Matuojam, o ne rasom skaiciaus: siaurame ekrane paieskos
+  // laukas persilauzia i antra eilute ir juosta paauksteja.
+  const topbarEl = document.querySelector(".topbar");
+  function syncTopbarHeight() {
+    if (!topbarEl) return;
+    document.documentElement.style.setProperty("--topbar-h", topbarEl.getBoundingClientRect().height + "px");
+  }
+  // Perziuros antrastes plotis - is tikru kaires ir desines bloku krastu.
+  // Dezute centruota lango atzvilgiu (o atidarius info skydeli pastumta 150 px
+  // i kaire), todel imam mazesniaji is dvieju tarpu ir dvigubinam: taip ji
+  // niekada neuzlipa nei ant failo pavadinimo, nei ant mygtuku.
+  function sizeLbAlbum() {
+    const tag = $("lbTag");
+    if (!tag || !tag.offsetParent) return;   // iki 900 px ji paslepta
+    const bar = document.querySelector(".lb-top");
+    const left = document.querySelector(".lb-left");
+    const acts = document.querySelector(".lb-actions");
+    if (!bar || !left || !acts) return;
+    const GAP = 16;
+    const box = bar.getBoundingClientRect();
+    const shift = parseFloat(getComputedStyle(tag).marginLeft) || 0;
+    const centre = box.left + box.width / 2 + shift;
+    const room = Math.min(centre - left.getBoundingClientRect().right,
+                          acts.getBoundingClientRect().left - centre) - GAP;
+    tag.style.maxWidth = Math.max(160, room * 2) + "px";
+  }
+  syncTopbarHeight();
+  window.addEventListener("resize", () => { syncTopbarHeight(); sizeLbAlbum(); });
+  if (window.ResizeObserver && topbarEl) new ResizeObserver(syncTopbarHeight).observe(topbarEl);
   $("lbInfo").onclick = () => {
     $("infoPanel").classList.toggle("show");
     $("lbInfo").classList.toggle("on");
