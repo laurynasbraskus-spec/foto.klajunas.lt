@@ -432,7 +432,7 @@ $listCacheKey = json_encode([
     // 15: atsakyme atsirado albumo 'id' (pastoviai /a/id<N> nuorodai).
     // Versija keliama kaskart, kai keiciasi atsakymo forma - kitaip seni
     // irasai podelyje dar 5 min. atiduotu atsakyma be naujo lauko.
-    'v' => 15,
+    'v' => 16,
     'path' => $path,
     'storagePath' => $storagePath,
     'limit' => $limit,
@@ -554,8 +554,17 @@ function manifest_album_rows(): array {
         $compatSelect = gallery_db_column_exists($db, 'photos', 'compatibility_b2_key') ? 'p.compatibility_b2_key' : 'NULL AS compatibility_b2_key';
         $originalB2Select = gallery_db_column_exists($db, 'photos', 'original_b2_key') ? 'p.original_b2_key' : 'NULL AS original_b2_key';
 
+        // Kiekis ir virselis privalo sutapti su tuo, ka naudotojas mato albuma
+        // atidares. Albumo viduje rodomos tik is_image() plėtiniu nuotraukos,
+        // todel .mov, .mp4 ir .gif cia neskaiciuojami: kitaip #540 sakniniame
+        // sarase rodytu 105, o viduje butu 52.
+        $imgExt = "SUBSTRING_INDEX(LOWER(p.b2_key),'.',-1) IN ('jpg','jpeg','png','webp','heic','heif')";
+
         try {
-            $q = $db->prepare("SELECT p.album_id, COUNT(*) n FROM photos p WHERE p.album_id IN ($in) AND p.visibility='published' AND p.is_missing=0 GROUP BY p.album_id");
+            // COUNT(DISTINCT b2_key), o ne COUNT(*): b2_sync kartais ideda antra
+            // eilute tam paciam B2 failui (#28 P7301744.JPG), ir tada kiekis butu
+            // didesnis uz failu skaiciu.
+            $q = $db->prepare("SELECT p.album_id, COUNT(DISTINCT p.b2_key) n FROM photos p WHERE p.album_id IN ($in) AND p.visibility='published' AND p.is_missing=0 AND $imgExt GROUP BY p.album_id");
             $q->execute($ids);
             foreach ($q->fetchAll() as $r) { $counts[(int)$r['album_id']] = (int)$r['n']; }
         } catch (Throwable $e) { gallery_log($e); }
@@ -568,7 +577,7 @@ function manifest_album_rows(): array {
                    FROM (SELECT p.album_id,p.b2_key,p.b2_key AS fileName,$compatSelect,$originalB2Select,p.stored_filename,p.original_filename,a.source_path,
                                 ROW_NUMBER() OVER (PARTITION BY p.album_id ORDER BY CASE WHEN p.is_cover_candidate=1 THEN 0 ELSE 1 END ASC, CASE WHEN p.taken_at IS NULL THEN 1 ELSE 0 END ASC, p.taken_at ASC, p.sort_order ASC, p.id ASC) rn
                            FROM photos p JOIN albums a ON a.id=p.album_id
-                          WHERE p.album_id IN ($in) AND p.visibility='published' AND p.is_missing=0) t
+                          WHERE p.album_id IN ($in) AND p.visibility='published' AND p.is_missing=0 AND $imgExt) t
                   WHERE t.rn=1"
             );
             $q->execute($ids);
@@ -941,10 +950,23 @@ function b2_write_list_cache(string $dir, string $file, array $files): string {
 $listCacheTtl = 6 * 3600;
 $listWrite = 'skip';
 
-$listAge = is_file($listCacheFile) ? max(0, time() - (int)@filemtime($listCacheFile)) : PHP_INT_MAX;
-if ($listAge < $listCacheTtl) {
-    $cached = @json_decode((string)@file_get_contents($listCacheFile), true);
-    if (is_array($cached) && $cached) $files = $cached;
+// Sakninis albumu sarasas sudaromas TIK is duomenu bazes. Pavadinimus, datas,
+// zymas, virselius ir kiekius turi ji; B2 sarasas cia buvo naudojamas vien
+// kiekiui ir atsarginiam virseliui - uz viso bucket'o vardijima (~26 tūkst.
+// irasu). Maza to, tie skaiciai buvo neteisingi ten, kur du albumai dalijasi
+// vienu B2 aplanku: #48 rodydavo 96 vietoj 75, nes B2 nezino, kuri failo dalis
+// kuriam albumui priklauso. Albumo viduje B2 lieka butinas - ten DB irasai
+// lyginami su tikrais failais.
+$listAge = PHP_INT_MAX;
+if ($path === '') {
+    $files = [];
+    $listWrite = 'nereikia';
+} else {
+    $listAge = is_file($listCacheFile) ? max(0, time() - (int)@filemtime($listCacheFile)) : PHP_INT_MAX;
+    if ($listAge < $listCacheTtl) {
+        $cached = @json_decode((string)@file_get_contents($listCacheFile), true);
+        if (is_array($cached) && $cached) $files = $cached;
+    }
 }
 if ($files === null) {
     // Pazymim faila PRIES ilga skaityma. Jei irasymas nepavyks, kitos uzklausos
@@ -1023,71 +1045,18 @@ if ($path === '') {
     $folders = [];
     $photos = [];
 
-    // Failai suindeksuojami VIENU perejimu: albumo kelias -> kiek nuotrauku ir
-    // kuri pirma. Anksciau kiekvienam albumui buvo einama per VISUS bucket'o
-    // failus, t.y. 296 albumai x 25 765 failai = apie 7,6 mln. iteraciju su
-    // eiluciu operacijomis kiekvienoje. Butent tai ir buvo tie ~12 s, del kuriu
-    // ilgai kaltinom B2 ir podeli: podelis veike (X-Foto-List rode write=skip),
-    // o laikas dingdavo cia. Albumo viduje sio bloko nera, todel ten uzklausa
-    // visada buvo ~60 ms.
-    $filesByAlbum = [];
-    foreach ($files as $file) {
-        $fileName = (string)($file['fileName'] ?? '');
-        if ($fileName === '' || is_derived_or_legacy_asset_path($fileName) || !is_image($fileName)) continue;
-        // Albumo kelias yra pirmi trys segmentai: albums/<metai>/<vardas>.
-        $p1 = strpos($fileName, '/');
-        if ($p1 === false) continue;
-        $p2 = strpos($fileName, '/', $p1 + 1);
-        if ($p2 === false) continue;
-        $p3 = strpos($fileName, '/', $p2 + 1);
-        if ($p3 === false) continue;
-        $albumKey = substr($fileName, 0, $p3);
-        if (!isset($filesByAlbum[$albumKey])) {
-            $filesByAlbum[$albumKey] = ['count' => 0, 'first' => ''];
-        }
-        $filesByAlbum[$albumKey]['count']++;
-        // Pirmas failas isliekas tas pats, kaip ir anksciau - $files eiles tvarka.
-        if ($filesByAlbum[$albumKey]['first'] === '') $filesByAlbum[$albumKey]['first'] = $fileName;
+    // Albumai imami tiesiai is DB. Anksciau cia buvo einama per visa bucket'o
+    // failu sarasa, kad butu suskaiciuotos nuotraukos ir parinktas atsarginis
+    // virselis; DB turi ir viena, ir kita, tad sakniniam keliui B2 nebereikia.
+    foreach (manifest_album_rows() as $album) {
+        // Tuscias albumas i vieso saraso nepatenka. Salyga ta pati kaip anksciau,
+        // tik kiekis dabar imamas is DB, o ne is B2 failu saraso.
+        if ((int)($album['count'] ?? 0) <= 0) continue;
+        // $folders cia visada tuscias (isvalytas aukstiau), o slug'ai unikalus,
+        // todel jokio suliejimo su B2 aplankais nebereikia.
+        $folders[basename((string)$album['path'])] = $album;
     }
 
-    foreach (manifest_album_rows() as $album) {
-        $key = (string)$album['path'];
-        $sourcePath = trim((string)($album['sourcePath'] ?? ''), "/ \t\n\r\0\x0B");
-        $realPhotoCount = 0;
-        $realCoverFile = '';
-        if ($sourcePath !== '' && isset($filesByAlbum[$sourcePath])) {
-            $realPhotoCount = $filesByAlbum[$sourcePath]['count'];
-            $realCoverFile = $filesByAlbum[$sourcePath]['first'];
-        }
-        if ($realPhotoCount === 0) continue;
-        $album['count'] = $realPhotoCount;
-        $folderName = basename($key);
-        $sourceFolderName = basename((string)($album['sourcePath'] ?? ''));
-        if ($sourceFolderName !== '' && $sourceFolderName !== $folderName && isset($folders[$sourceFolderName])) {
-            unset($folders[$sourceFolderName]);
-        }
-        $coverFile = (string)($album['coverFile'] ?? '');
-        if ($coverFile === '' || strncmp($coverFile, $sourcePath . '/', strlen($sourcePath) + 1) !== 0) {
-            $coverFile = $realCoverFile;
-            $album['coverFile'] = $realCoverFile;
-        }
-        $coverSlash = strrpos($coverFile, '/');
-        $coverFolderName = $coverSlash === false ? '' : substr($coverFile, 0, $coverSlash);
-        if ($coverFolderName !== '' && $coverFolderName !== $folderName && isset($folders[$coverFolderName])) {
-            unset($folders[$coverFolderName]);
-        }
-        if (isset($folders[$folderName])) {
-            $folders[$folderName]['name'] = $album['name'];
-            $folders[$folderName]['path'] = $key;
-            $folders[$folderName]['count'] = max((int)$folders[$folderName]['count'], (int)$album['count']);
-            foreach (['subtitle','description','eventPlace','eventDate','eventDateEnd','eventDateLabel','tags','authorName','copyrightText','sourcePath','sortOrder','dbsportasUrl','klajunasUrl','otherUrl'] as $albumField) {
-                if (array_key_exists($albumField, $album)) $folders[$folderName][$albumField] = $album[$albumField];
-            }
-            if ($withCovers && (string)$album['coverFile'] !== '') $folders[$folderName]['coverFile'] = (string)$album['coverFile'];
-        } else {
-            $folders[$folderName] = $album;
-        }
-    }
     uasort($folders, function($a, $b) {
         $ad = trim((string)($a['eventDate'] ?? ''));
         $bd = trim((string)($b['eventDate'] ?? ''));
@@ -1124,6 +1093,7 @@ if ($path === '') {
     if ($manifestPhotos) {
         $folders = [];
         $photos = [];
+        $seenRendered = [];
         foreach ($manifestPhotos as $photo) {
             $fileName = (string)($photo['fileName'] ?? '');
             $originalFileName = (string)($photo['originalFileName'] ?? manifest_db_legacy_original_file_name($photo));
@@ -1131,6 +1101,11 @@ if ($path === '') {
             if ($displayFileName !== '' && !isset($seenB2Keys[$displayFileName])) $displayFileName = '';
             if ($originalFileName === '' || !is_image($originalFileName)) continue;
             if (!isset($seenB2Keys[$originalFileName])) continue;
+            // b2_sync kartais ideda antra eilute tam paciam B2 failui, ir tada
+            // nuotrauka albume pasirodydavo du kartus (#28 P7301744.JPG). Vienas
+            // failas - viena nuotrauka, kiek beeiluciu butu DB.
+            if (isset($seenRendered[$originalFileName])) continue;
+            $seenRendered[$originalFileName] = true;
             $downloadAllowed = true;
             if (array_key_exists('download_enabled', $photo) || array_key_exists('is_downloadable', $photo) || array_key_exists('album_visibility', $photo) || array_key_exists('photo_visibility', $photo) || array_key_exists('is_missing', $photo)) {
                 $downloadAllowed = (int)($photo['download_enabled'] ?? 0) === 1
