@@ -828,6 +828,22 @@ try {
         respond_text("Thumbnail generator busy", 503);
     }
     if (!flock($lock, LOCK_EX | LOCK_NB)) {
+        // Ta pacia miniatiura siuo metu generuoja kita uzklausa. Iki siol cia
+        // buvo 503, ir narsykleje tai reiske negrizdama zala: <img> onerror
+        // plytele pakeicia uzrasu "Nepavyko uzkrauti perziuros" ir daugiau
+        // nebebando iki puslapio perkrovimo. Butent taip albume atsirasdavo
+        // pavienes tuscios plyteles, nors failas B2 buvo tvarkingas.
+        //
+        // Generavimas trunka apie sekunde, todel tiesiog palaukiam rezultato.
+        // Failas idedamas atominiu rename(), tad pamatytas jis jau pilnas.
+        for ($i = 0; $i < 60; $i++) {
+            usleep(100000);                      // 0,1 s, is viso iki 6 s
+            clearstatcache(true, $thumbPath);
+            if (is_file($thumbPath) && filesize($thumbPath) > 0) {
+                fclose($lock);
+                output_file($thumbPath, output_mime($fmt));
+            }
+        }
         fclose($lock);
         respond_text("Thumbnail generator busy", 503);
     }

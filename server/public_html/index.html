@@ -48,7 +48,15 @@
     --amber-line: rgba(255, 183, 74, .4);
     --amber-ink: #ffc46b;
   }
-  body.dark { background: radial-gradient(1200px 800px at 50% -200px, rgba(255,183,74,.10), transparent 60%), var(--bg); }
+  /* Du svytejimai: vienas virsuje (buvo ir anksciau), antras - puslapio
+     apacioje, kad ilgame albume pabaiga neatrodytu nukirsta. Abu priristi prie
+     body deles, todel slenka kartu su turiniu. */
+  body.dark {
+    background:
+      radial-gradient(1200px 800px at 50% -200px, rgba(255,183,74,.10), transparent 60%),
+      radial-gradient(1000px 600px at 50% calc(100% + 150px), rgba(255,183,74,.09), transparent 60%),
+      var(--bg);
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
@@ -70,7 +78,7 @@
      toks pat, o ne dvigubas. align-items:center laiko valdiklius vienoje
      linijoje su logotipu tiek vienoje, tiek dviejose eilutese. */
   .topbar-inner {
-    max-width: 1200px; margin: 0 auto; padding: 14px 20px;
+    max-width: 1200px; margin: 0 auto; padding: 10px 20px;
     display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap;
   }
   .brand {
@@ -112,7 +120,9 @@
   .pill.primary { background: var(--amber-soft); border-color: var(--amber-line); color: var(--amber-ink); }
 
   /* ---------- Layout ---------- */
-  .wrap { max-width: 1200px; margin: 0 auto; padding: 22px 20px 60px; }
+  /* Virsutinis tarpas buvo 22 px, o po juo dar ejo albumo antrastes savi
+     tarpai - tarp juostos ir pavadinimo likdavo apie 40 px tuscios vietos. */
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 12px 20px 60px; }
 
   .admin-panel {
     border: 1px solid var(--amber-line); background: var(--amber-soft);
@@ -133,7 +143,7 @@
   .status { color: var(--ink-faint); font-size: 13px; margin: 2px 0 18px; font-variant-numeric: tabular-nums; }
 
   .album-head {
-    margin: 2px 0 0; padding: 10px 0 12px; border-bottom: 1px solid var(--line);
+    margin: 0; padding: 8px 0 12px; border-bottom: 1px solid var(--line);
     /* Dideliuose albumuose (285 nuotraukos) nusileidus zemyn juosta su "Atgal"
        nubegdavo kartu su turiniu, ir grizti buvo galima tik parslinkus i pati
        virsu. Lipdom po virsutine juosta - jos aukstis kinta (siaurame ekrane
@@ -1016,7 +1026,18 @@
       const gridIm = card.querySelector("img.ph");
       if (gridIm) {
         markLoaded(gridIm);
+        // img.php grazina 503, kai ta pacia miniatiura tuo metu generuoja kita
+        // uzklausa. Be pakartojimo viena tokia nesekme plytele sugadindavo iki
+        // puslapio perkrovimo. "retry" parametro img.php neskaito, tad serverio
+        // podelio raktas nesikeicia - grazinama ta pati miniatiura.
+        let bandyta = false;
         gridIm.onerror = () => {
+          if (!bandyta) {
+            bandyta = true;
+            const u = gridIm.src;
+            setTimeout(() => { gridIm.src = u + (u.includes("?") ? "&" : "?") + "retry=1"; }, 900);
+            return;
+          }
           gridIm.replaceWith(Object.assign(document.createElement("div"), {
             className: "no-preview",
             innerHTML: '<span class="np-ico">⚠</span>Nepavyko užkrauti peržiūros'
@@ -1218,7 +1239,14 @@
       $("lbImg").innerHTML = `<div class="spinner" aria-label="Kraunama"></div><img src="${esc(p.viewUrl)}" alt="${esc(p.name)}">`;
       const lbIm = $("lbImg").querySelector("img");
       const lbDone = () => { lbIm.classList.add("loaded"); $("lbImg").querySelector(".spinner")?.remove(); };
+      let lbBandyta = false;
       const lbFail = () => {
+        if (!lbBandyta) {
+          lbBandyta = true;
+          const u = lbIm.src;
+          setTimeout(() => { lbIm.src = u + (u.includes("?") ? "&" : "?") + "retry=1"; }, 900);
+          return;
+        }
         $("lbImg").innerHTML = `<div class="lb-notice"><span class="np-ico">⚠</span>Nepavyko užkrauti nuotraukos „${esc(p.name)}“. Pabandykite dar kartą.</div>`;
         toast("Nepavyko užkrauti nuotraukos: " + p.name);
       };
