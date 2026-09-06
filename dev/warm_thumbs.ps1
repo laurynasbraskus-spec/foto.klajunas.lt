@@ -37,7 +37,14 @@ param(
     # img.php riba yra 300 uzklausu per 60 s is vieno IP. Laikomes gerokai zemiau:
     # persistengus uzsiblokuotume patys ir dalis miniatiuru liktu nesugeneruotos.
     [int]$Rps = 2,
-    [int]$TimeoutSec = 30
+    [int]$TimeoutSec = 30,
+    # Dalijimas i lygiagrecius srautus. Sildymo greiti lemia ne pauze, o serverio
+    # darbas: salta miniatiura kainuoja apie 1,4 s (B2 parsiuntimas + perkodavimas),
+    # todel nuosekliai visas archyvas uztruktu apie 5 valandas. Paleidus kelis
+    # procesus su -Of N ir skirtingu -Shard, darbas pasidalijamas.
+    #     .\warm_thumbs.ps1 -All -Shard 1 -Of 3
+    [int]$Shard = 1,
+    [int]$Of = 1
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -114,17 +121,38 @@ else {
     else { $slugs = @($Album) }
 
     foreach ($s in $slugs) {
-        $d = Get-ApiJson ("$Site/b2-gallery.php?path=" + [Uri]::EscapeDataString($s) + "&limit=1000&v=warm")
-        $ph = @($d.items | Where-Object { $_.type -eq 'photo' })
-        foreach ($p in $ph) {
-            if ($p.thumbUrl) { $urls += "$Site/" + $p.thumbUrl }
-            if ($Views -and $p.viewUrl) { $urls += "$Site/" + $p.viewUrl }
-        }
-        if (-not $All) { Write-Output ("Albumas {0}: {1} nuotrauku" -f $s, $ph.Count) }
+        # API limit apkerpa iki 200, todel BUTINA eiti per nextCursor. Be to
+        # didziausias archyvo albumas (604 nuotraukos) butu apsildytas tik
+        # trecdaliu, ir likusios miniatiuros vis tiek lauktu pirmo ziurovo.
+        $n = 0
+        $cur = ''
+        do {
+            $u = "$Site/b2-gallery.php?path=" + [Uri]::EscapeDataString($s) + "&limit=200&v=warm"
+            if ($cur) { $u += '&cursor=' + [Uri]::EscapeDataString($cur) }
+            $d = Get-ApiJson $u
+            $ph = @($d.items | Where-Object { $_.type -eq 'photo' })
+            foreach ($p in $ph) {
+                if ($p.thumbUrl) { $urls += "$Site/" + $p.thumbUrl }
+                if ($Views -and $p.viewUrl) { $urls += "$Site/" + $p.viewUrl }
+            }
+            $n += $ph.Count
+            $cur = [string]$d.nextCursor
+        } while ($cur)
+        if (-not $All) { Write-Output ("Albumas {0}: {1} nuotrauku" -f $s, $n) }
     }
 }
 
 $urls = @($urls | Select-Object -Unique)
+if ($Of -gt 1) {
+    # Kas N-tas adresas, pradedant nuo $Shard. Skaitiklis, o ne IndexOf: pastarasis
+    # kiekvienam elementui perbegtu visa masyva, t.y. 12 tukst. adresu virstu
+    # 154 mln. palyginimu.
+    $visi = $urls.Count
+    $dalis = New-Object Collections.ArrayList
+    for ($k = $Shard - 1; $k -lt $visi; $k += $Of) { [void]$dalis.Add($urls[$k]) }
+    $urls = @($dalis)
+    Write-Output ("Srautas {0} is {1}: {2} adresai is {3}" -f $Shard, $Of, $urls.Count, $visi)
+}
 if (-not $urls.Count) { Write-Output 'Nieko sildyti nereikia.'; exit 0 }
 Write-Output ("Adresu: {0}   (~{1:N1} min. esant {2} uzkl./s)" -f $urls.Count, ($urls.Count / [double]$Rps / 60), $Rps)
 Write-Output ''
