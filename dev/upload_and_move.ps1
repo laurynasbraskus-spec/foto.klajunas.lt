@@ -23,6 +23,11 @@ param(
     # reiskia, kad i viena aplanka sumesti keli skirtingi ivykiai.
     [int]$MaxEventDays  = 45,
     [switch]$NoMove,
+    # Ikelus paprasyti miniatiuru is anksto, kad pirmas albumo atvertimas ju
+    # nebelauktu. Silo warm_thumbs.ps1 per vieso vardo adresa, todel apsildo ir
+    # serverio podeli, ir Cloudflare krasta. Nesekme cia ikelimo rezultato
+    # nekeicia - failai jau B2 ir patikrinti.
+    [switch]$WarmThumbs,
     [string]$LogFile    = ''
 )
 $ErrorActionPreference = 'Stop'
@@ -145,7 +150,7 @@ if ($skippedUnassigned.Count) {
     Write-Output ""
 }
 
-$moved = 0; $left = @(); $sentBytes = 0; $i = 0
+$moved = 0; $left = @(); $sentBytes = 0; $i = 0; $verified = @()
 foreach ($al in $plan) {
     $i++
     $existing = Get-B2Map $al.Prefix
@@ -170,6 +175,9 @@ foreach ($al in $plan) {
         Write-Output ("[{0}/{1}] {2}  ikelta {3}  NEPERKELTA ({4} neatitikimai)" -f $i, $plan.Count, $al.Name, $up, $bad.Count)
         continue
     }
+    # Failai B2 patikrinti - nuo cia albuma galima silodyti. Zymim pries -NoMove
+    # patikra, kad silodymas veiktu ir tada, kai aplanku neperkeliam.
+    $verified += [string]$al.Prefix
     if ($NoMove) {
         Write-Output ("[{0}/{1}] {2}  ikelta {3}  patikrinta (neperkeliam)" -f $i, $plan.Count, $al.Name, $up)
         continue
@@ -200,4 +208,21 @@ Write-Output ''
 Write-Output ("Perkelta albumu : {0}" -f $moved)
 Write-Output ("Liko vietoje    : {0}" -f $left.Count)
 $left | Select-Object -First 20 | ForEach-Object { Write-Output ("   {0} -- {1}" -f $_.Album, $_.Priezastis) }
+
+if ($WarmThumbs -and $verified.Count) {
+    Write-Output ''
+    Write-Output ("Silodom miniatiuras: {0} albumu" -f $verified.Count)
+    $warm = Join-Path $PSScriptRoot 'warm_thumbs.ps1'
+    if (-not (Test-Path $warm)) {
+        Write-Output ('   praleista - nerastas ' + $warm)
+    }
+    else {
+        foreach ($pfx in $verified) {
+            # Silodymas yra malonumas, ne butinybe: jo nesekme neturi paversti
+            # sekmingo ikelimo klaida, todel klaidas tik parodom.
+            try { & $warm -Prefix $pfx }
+            catch { Write-Output ('   nepavyko ' + $pfx + ': ' + $_.Exception.Message) }
+        }
+    }
+}
 Done 0
