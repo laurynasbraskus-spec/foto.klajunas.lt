@@ -587,7 +587,7 @@ function do_login(): void {
 }
 function head(string $title): void {
     echo '<!doctype html><html lang="lt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.e($title).'</title><style>
-    :root{color-scheme:dark;--bg:#0b0e12;--panel:#151a20;--panel2:#10151b;--input:#0d1116;--line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.22);--text:#e8eef6;--muted:#a7b3c2;--accent:#ffb74a;--accent-soft:rgba(255,183,74,.14);--accent-line:rgba(255,183,74,.4);--accent-ink:#ffc46b;--btn:#1c222b;--th:#11161c;--td-line:#252d36;--topbar:rgba(11,14,18,.88);--ok-bg:#132018;--err-bg:#251114;--err-line:#5c2229;--radius:14px}body.light{color-scheme:light;--bg:#fdfdfc;--panel:#ffffff;--panel2:#f7f7f4;--input:#ffffff;--line:#e8e8e2;--line-strong:#cfcfc8;--text:#1a1a1a;--muted:#6b6b6b;--accent:#ffb74a;--accent-soft:rgba(255,183,74,.16);--accent-line:rgba(214,143,32,.45);--accent-ink:#8a5a10;--btn:#ffffff;--th:#f1f1ec;--td-line:#eeeee8;--topbar:rgba(253,253,252,.9);--ok-bg:#eaf6ee;--err-bg:#fdeaea;--err-line:#e3b3b3}*{box-sizing:border-box}body{margin:0;background:radial-gradient(1200px 800px at 50% -200px,var(--accent-soft),transparent 60%),var(--bg);font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);font-size:15px}body.preview-open{overflow:hidden}a{color:inherit;text-decoration:none}.top{min-height:76px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--topbar);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);z-index:2}.top-inner{max-width:1200px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:18px}.brand{font-size:24px;font-weight:850}.nav{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;min-width:0;flex:0 1 auto;scrollbar-width:none}.nav::-webkit-scrollbar{display:none}.nav a,.btn,button{border:1px solid var(--line);background:var(--btn);color:var(--text);border-radius:99px;padding:9px 15px;font-weight:650;cursor:pointer;white-space:nowrap;transition:border-color .15s,background .15s}.nav a:hover,.btn:hover,button:hover{border-color:var(--line-strong)}.nav a{padding:7px 12px;font-size:13.5px;white-space:nowrap}.nav a.active,.primary{border-color:var(--accent-line)!important;background:var(--accent-soft)!important;color:var(--accent-ink)!important}.wrap{max-width:1200px;margin:auto;padding:24px 16px 44px}.spacer{flex:1}.muted{color:var(--muted)}.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}.gateway-card{display:block;transition:border-color .15s ease,transform .15s ease,background .15s ease}.gateway-card:hover{border-color:var(--accent-line);background:var(--panel2);transform:translateY(-1px)}.metric{font-size:34px;font-weight:850}table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line)}th,td{border-bottom:1px solid var(--td-line);padding:10px;text-align:left;vertical-align:top}th{font-size:12px;color:var(--muted);text-transform:uppercase;background:var(--th)}input,select,textarea{width:100%;background:var(--input);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px;font:inherit}input[type=checkbox]{width:18px;height:18px;min-width:18px;padding:0;margin:0;accent-color:var(--accent);cursor:pointer;vertical-align:middle}label{display:block;font-size:12px;color:var(--muted);margin:0 0 6px}.formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:14px 0}.album-fields-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:10px}.album-field-panel{border:2px solid var(--accent-line);border-radius:10px;padding:14px;background:var(--panel2);min-width:0}.album-field-panel h3{margin:0 0 12px}.album-field-panel .formgrid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin:0 0 14px}.album-field-panel textarea{min-height:112px}.album-field-panel .full{grid-column:1/-1}.album-field-panel .field-full{grid-column:1/-1}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}.badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 8px;font-size:12px;color:var(--muted)}.flash{padding:12px 14px;border-radius:8px;margin:0 0 12px;border:1px solid var(--line);background:var(--ok-bg)}.err{background:var(--err-bg);border-color:var(--err-line)}.login{min-height:100vh;display:grid;place-items:center;padding:30px}.login .card{max-width:560px}.logo{width:132px;height:132px;object-fit:cover;margin-bottom:14px}.small{font-size:12px}.photo-board{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}.photo-tile{background:var(--panel2);border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:grab;position:relative}.photo-tile.dragging{opacity:.45;outline:2px solid var(--accent)}.photo-tile:focus{outline:2px solid var(--accent);outline-offset:2px}.photo-tile img,.photo-tile .no-thumb{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:var(--bg)}.photo-tile .no-thumb{display:grid;place-items:center;color:var(--muted)}.photo-tile-body{padding:9px}.photo-title{font-weight:800;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.photo-tools{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.mini{padding:5px 10px;font-size:12px;border-radius:99px}.pill-on{border-color:var(--accent-line)!important;background:var(--accent-soft)!important;color:var(--accent-ink)!important}.order-save{position:sticky;bottom:12px;z-index:3}.cover-flag{position:absolute;top:8px;left:8px;background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent-ink);border-radius:999px;padding:3px 7px;font-size:12px}.photo-preview-overlay{position:fixed;inset:0;z-index:60;display:none;background:rgba(5,8,10,.96)}.photo-preview-overlay.open{display:block}.photo-preview-shell{width:100%;height:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,370px);background:#070b0e;outline:0}.photo-preview-media{display:grid;place-items:center;padding:22px;min-width:0;overflow:hidden}.photo-preview-media img{max-width:100%;max-height:100%;object-fit:contain;background:#05080b;border-radius:8px;box-shadow:0 14px 55px rgba(0,0,0,.45)}.photo-preview-meta{border-left:1px solid var(--line);background:var(--panel);padding:22px 18px;overflow:auto}.preview-topline{font-size:12px;color:var(--muted);line-height:1.4}.photo-preview-title{margin:6px 0 8px;font-size:18px;line-height:1.15;font-weight:850;word-break:break-word}.preview-file{font-size:13px;font-weight:750;margin-bottom:14px;word-break:break-word}.preview-dl{display:grid;grid-template-columns:max-content 1fr;gap:8px 14px;margin:0;font-size:14px}.preview-dl dt{color:var(--muted)}.preview-dl dd{margin:0;word-break:break-word}.preview-admin{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}.preview-section-title{margin:0 0 12px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.preview-dl-admin dd{white-space:pre-wrap}.photo-preview-close,.photo-preview-nav{position:absolute;width:44px;height:44px;border-radius:99px;border:1px solid var(--line);background:var(--btn);color:var(--text);display:grid;place-items:center;font-size:28px;font-weight:700;cursor:pointer;z-index:2}.photo-preview-close{top:16px;right:16px}.photo-preview-nav.prev{left:16px;top:50%;transform:translateY(-50%)}.photo-preview-nav.next{right:calc(370px + 16px);top:50%;transform:translateY(-50%)}#photoListPreviewOverlay .photo-preview-nav.next{right:calc(320px + 16px)}.photo-preview-nav:disabled{opacity:.45;cursor:not-allowed}.photo-preview-close svg,.photo-preview-nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;display:block}.photo-preview-close:hover,.photo-preview-nav:hover:not(:disabled){border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-ink)}@media(min-width:1440px){.top-inner,.wrap{max-width:1400px}}@media(max-width:1280px){.top-inner>span.muted{display:none}}@media(max-width:900px){.photo-preview-shell{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(250px,38vh)}.photo-preview-meta{border-left:0;border-top:1px solid var(--line)}.photo-preview-close{top:10px;right:10px}.photo-preview-nav.prev{left:10px}.photo-preview-nav.next{right:10px}}@media(max-width:1100px){.album-fields-grid{grid-template-columns:1fr}}@media(max-width:760px){.top-inner{align-items:flex-start;flex-direction:column}.wrap{padding:16px}table{font-size:13px}.photo-board{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}}
+    :root{color-scheme:dark;--bg:#0b0e12;--panel:#151a20;--panel2:#10151b;--input:#0d1116;--line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.22);--text:#e8eef6;--muted:#a7b3c2;--accent:#ffb74a;--accent-soft:rgba(255,183,74,.14);--accent-line:rgba(255,183,74,.4);--accent-ink:#ffc46b;--btn:#1c222b;--th:#11161c;--td-line:#252d36;--topbar:rgba(11,14,18,.88);--ok-bg:#132018;--err-bg:#251114;--err-line:#5c2229;--radius:14px}body.light{color-scheme:light;--bg:#fdfdfc;--panel:#ffffff;--panel2:#f7f7f4;--input:#ffffff;--line:#e8e8e2;--line-strong:#cfcfc8;--text:#1a1a1a;--muted:#6b6b6b;--accent:#ffb74a;--accent-soft:rgba(255,183,74,.16);--accent-line:rgba(214,143,32,.45);--accent-ink:#8a5a10;--btn:#ffffff;--th:#f1f1ec;--td-line:#eeeee8;--topbar:rgba(253,253,252,.9);--ok-bg:#eaf6ee;--err-bg:#fdeaea;--err-line:#e3b3b3}*{box-sizing:border-box}body{margin:0;background:radial-gradient(1200px 800px at 50% -200px,var(--accent-soft),transparent 60%),var(--bg);font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);font-size:15px}body.preview-open{overflow:hidden}a{color:inherit;text-decoration:none}.top{min-height:76px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--topbar);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);z-index:2}.top-inner{max-width:1200px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:18px}.brand{font-size:24px;font-weight:850}.nav{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;min-width:0;flex:0 1 auto;scrollbar-width:none}.nav::-webkit-scrollbar{display:none}.nav a,.btn,button{border:1px solid var(--line);background:var(--btn);color:var(--text);border-radius:99px;padding:9px 15px;font-weight:650;cursor:pointer;white-space:nowrap;transition:border-color .15s,background .15s}.nav a:hover,.btn:hover,button:hover{border-color:var(--line-strong)}.nav a{padding:7px 12px;font-size:13.5px;white-space:nowrap}.nav a.active,.primary{border-color:var(--accent-line)!important;background:var(--accent-soft)!important;color:var(--accent-ink)!important}.wrap{max-width:1200px;margin:auto;padding:24px 16px 44px}.spacer{flex:1}.muted{color:var(--muted)}.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}.gateway-card{display:block;transition:border-color .15s ease,transform .15s ease,background .15s ease}.gateway-card:hover{border-color:var(--accent-line);background:var(--panel2);transform:translateY(-1px)}.metric{font-size:34px;font-weight:850}table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line)}th,td{border-bottom:1px solid var(--td-line);padding:10px;text-align:left;vertical-align:top}th{font-size:12px;color:var(--muted);text-transform:uppercase;background:var(--th)}input,select,textarea{width:100%;background:var(--input);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px;font:inherit}input[type=checkbox]{width:18px;height:18px;min-width:18px;padding:0;margin:0;accent-color:var(--accent);cursor:pointer;vertical-align:middle}label{display:block;font-size:12px;color:var(--muted);margin:0 0 6px}.formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:14px 0}.album-fields-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:10px}.album-field-panel{border:2px solid var(--accent-line);border-radius:10px;padding:14px;background:var(--panel2);min-width:0}.album-field-panel h3{margin:0 0 12px}.album-field-panel .formgrid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin:0 0 14px}.album-field-panel textarea{min-height:112px}.album-field-panel .full{grid-column:1/-1}.album-field-panel .field-full{grid-column:1/-1}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}.badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 8px;font-size:12px;color:var(--muted)}.flash{padding:12px 14px;border-radius:8px;margin:0 0 12px;border:1px solid var(--line);background:var(--ok-bg)}.err{background:var(--err-bg);border-color:var(--err-line)}.login{min-height:100vh;display:grid;place-items:center;padding:30px}.login .card{max-width:560px}.logo{width:132px;height:132px;object-fit:cover;margin-bottom:14px}.small{font-size:12px}.photo-board{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}.photo-tile{background:var(--panel2);border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:grab;position:relative}.photo-tile.dragging{opacity:.45;outline:2px solid var(--accent)}.photo-tile:focus{outline:2px solid var(--accent);outline-offset:2px}.photo-tile img,.photo-tile .no-thumb{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:var(--bg)}.photo-tile .no-thumb{display:grid;place-items:center;color:var(--muted)}.photo-tile-body{padding:9px}.photo-title{font-weight:800;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.photo-tools{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.mini{padding:5px 10px;font-size:12px;border-radius:99px}.pill-on{border-color:var(--accent-line)!important;background:var(--accent-soft)!important;color:var(--accent-ink)!important}.order-save{position:sticky;bottom:12px;z-index:3}.cover-flag{position:absolute;top:8px;left:8px;background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent-ink);border-radius:999px;padding:3px 7px;font-size:12px}.photo-preview-overlay{position:fixed;inset:0;z-index:60;display:none;background:rgba(5,8,10,.96)}.photo-preview-overlay.open{display:block}.photo-preview-shell{width:100%;height:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,370px);background:#070b0e;outline:0}.photo-preview-media{display:grid;grid-template-rows:minmax(0,1fr);place-items:center;padding:22px;min-width:0;min-height:0;overflow:hidden}.photo-preview-media img{max-width:100%;max-height:100%;object-fit:contain;background:#05080b;border-radius:8px;box-shadow:0 14px 55px rgba(0,0,0,.45)}.photo-preview-meta{border-left:1px solid var(--line);background:var(--panel);padding:22px 18px;overflow:auto}.preview-topline{font-size:12px;color:var(--muted);line-height:1.4}.photo-preview-title{margin:6px 0 8px;font-size:18px;line-height:1.15;font-weight:850;word-break:break-word}.preview-file{font-size:13px;font-weight:750;margin-bottom:14px;word-break:break-word}.preview-dl{display:grid;grid-template-columns:max-content 1fr;gap:8px 14px;margin:0;font-size:14px}.preview-dl dt{color:var(--muted)}.preview-dl dd{margin:0;word-break:break-word}.preview-admin{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}.preview-section-title{margin:0 0 12px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.preview-dl-admin dd{white-space:pre-wrap}.photo-preview-close,.photo-preview-nav{position:absolute;width:44px;height:44px;border-radius:99px;border:1px solid var(--line);background:var(--btn);color:var(--text);display:grid;place-items:center;font-size:28px;font-weight:700;cursor:pointer;z-index:2}.photo-preview-close{top:16px;right:16px}.photo-preview-nav.prev{left:16px;top:50%;transform:translateY(-50%)}.photo-preview-nav.next{right:calc(370px + 16px);top:50%;transform:translateY(-50%)}#photoListPreviewOverlay .photo-preview-nav.next{right:calc(320px + 16px)}.photo-preview-nav:disabled{opacity:.45;cursor:not-allowed}.photo-preview-close svg,.photo-preview-nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;display:block}.photo-preview-close:hover,.photo-preview-nav:hover:not(:disabled){border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-ink)}@media(min-width:1440px){.top-inner,.wrap{max-width:1400px}}@media(max-width:1280px){.top-inner>span.muted{display:none}}@media(max-width:900px){.photo-preview-shell{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(250px,38vh)}.photo-preview-meta{border-left:0;border-top:1px solid var(--line)}.photo-preview-close{top:10px;right:10px}.photo-preview-nav.prev{left:10px}.photo-preview-nav.next{right:10px}}@media(max-width:1100px){.album-fields-grid{grid-template-columns:1fr}}@media(max-width:760px){.top-inner{align-items:flex-start;flex-direction:column}.wrap{padding:16px}table{font-size:13px}.photo-board{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}}
 /* --- Vertikalus tankis ---
    Antrastes neturejo savo taisykliu ir naudojo narsykles numatytasias
    (h1 ~21px is virsaus IR apacios). Prie kelių kortelių viename puslapyje tai
@@ -956,7 +956,18 @@ document.getElementById("rjCopy").addEventListener("click",function(){var txt=JS
         echo '<a class="btn mini" href="?page=photo_edit&id='.e($p['id']).'&album_id='.e($albumId).'">Edit</a>';
         echo '<button class="mini err delete-photo" type="button">Delete</button>';
         echo '<label class="muted small" style="display:inline-flex;align-items:center;gap:5px;margin:0"><input class="delete-sidecar-toggle" type="checkbox" checked style="width:auto;padding:0"> + JSON</label>';
-        echo '</div></div></article>';
+        echo '</div>';
+        // Failo dydis ir matmenys - paskutine eilute po mygtukais. Renkantis, kuria
+        // nuotrauka palikti is kelių panasiu, tai pirmas dalykas, i kuri ziurima,
+        // o iki siol jo matydavai tik atidares perziura.
+        $fsize = (int)($p['file_size'] ?? 0);
+        $fw = (int)($p['width'] ?? 0); $fh = (int)($p['height'] ?? 0);
+        $dims = ($fw > 0 && $fh > 0) ? ($fw.'×'.$fh) : '';
+        $sizeBits = [];
+        if ($dims !== '') $sizeBits[] = $dims;
+        if ($fsize > 0) $sizeBits[] = human_bytes($fsize);
+        echo '<div class="muted small" style="margin-top:6px">'.($sizeBits ? e(implode(' · ', $sizeBits)) : 'dydis nežinomas').'</div>';
+        echo '</div></article>';
     }
     echo '</div></form>';
     echo '<div class="photo-preview-overlay" id="photoPreviewOverlay" hidden aria-hidden="true"><div class="photo-preview-shell" role="dialog" aria-modal="true" aria-label="Photo preview" tabindex="-1"><button type="button" class="photo-preview-close" id="photoPreviewClose" aria-label="Close preview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button><button type="button" class="photo-preview-nav prev" id="photoPreviewPrev" aria-label="Previous photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg></button><button type="button" class="photo-preview-nav next" id="photoPreviewNext" aria-label="Next photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5 16 12l-6.5 6.5"/></svg></button><div class="photo-preview-media"><img id="photoPreviewImage" alt=""></div><aside class="photo-preview-meta"><div class="preview-topline" id="photoPreviewTopline"></div><h3 class="photo-preview-title" id="photoPreviewTitle"></h3><div class="preview-file" id="photoPreviewFile"></div><dl class="preview-dl" id="photoPreviewExif"></dl><div class="preview-admin" id="photoPreviewAdmin"></div></aside></div></div>';
@@ -1975,27 +1986,26 @@ function album_edit(): void {
     if (!empty($r['cover_photo_id']) && $coverMode === 'auto') $coverMode = 'manual';
     echo '<div><label>Cover photo</label><select name="cover_photo_id"><option value="__auto__"'.($coverMode==='auto'?' selected':'').'>Auto</option><option value="__none__"'.($coverMode==='none'?' selected':'').'>None</option>';
     if ($id) { $ps=db()->prepare("SELECT id,original_filename FROM photos WHERE album_id=? ORDER BY sort_order,id LIMIT 500"); $ps->execute([$id]); foreach($ps as $p) echo '<option value="'.e($p['id']).'"'.((int)$r['cover_photo_id']===(int)$p['id']?' selected':'').'>'.e($p['original_filename']).'</option>'; }
-    echo '</select></div><div class="actions" style="align-items:center;margin-top:22px"><label><input type="checkbox" name="download_enabled" value="1" '.($r['download_enabled']?'checked':'').'> Downloads enabled</label></div></div><p class="muted small">Title/date/slug define the public album identity and ordering. Cover and visibility control public display.</p></section>';
+    echo '</select></div><div class="actions" style="align-items:center;margin-top:22px"><label><input type="checkbox" name="download_enabled" value="1" '.($r['download_enabled']?'checked':'').'> Downloads enabled</label></div></div><p class="muted small">Title/date/slug define the public album identity and ordering. Cover and visibility control public display.</p>';
 
     // Pastovi dalinimosi nuoroda. Remiasi albumo ID, o ne slug'u: pavadinimai ir
-    // keliai laikui begant tikslinami, ID nesikeicia niekada, todel karta
-    // issiusta nuoroda nemirsta. Naujam albumui ID atsiranda tik issaugojus.
-    $shareUrl = $id ? 'https://foto.klajunas.lt/a/id'.$id : '';
-    echo '<section class="album-field-panel"><h3>Pastovi nuoroda</h3>';
-    if ($shareUrl !== '') {
-        echo '<div class="actions" style="gap:8px;align-items:center;flex-wrap:wrap">'
-            .'<input id="albumShareUrl" readonly value="'.e($shareUrl).'" onfocus="this.select()" style="flex:1;min-width:240px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">'
+    // keliai laikui begant tikslinami, ID nesikeicia niekada, todel karta issiusta
+    // nuoroda nemirsta. Naujam albumui ID dar nera - tada cia nerodom nieko:
+    // issaugojus nuoroda atsiranda pati, ir atskirai to aiskinti nereikia.
+    if ($id) {
+        $shareUrl = 'https://foto.klajunas.lt/a/id'.$id;
+        echo '<label style="margin-top:14px;display:block">Pastovi nuoroda</label>'
+            .'<div class="actions" style="gap:8px;align-items:center;flex-wrap:wrap">'
+            .'<input id="albumShareUrl" readonly value="'.e($shareUrl).'" onfocus="this.select()" style="flex:1;min-width:200px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">'
             .'<button type="button" class="btn mini" id="albumShareCopy">Kopijuoti</button>'
             .'<a class="btn mini" href="'.e($shareUrl).'" target="_blank" rel="noopener">Atidaryti</a>'
             .'</div>'
-            .'<p class="muted small">Dalinkis šia, o ne adresu iš naršyklės juostos: ji veikia ir pervadinus albumą ar pakeitus slug\'ą. Nuotraukai pridėk <code>?f=3</code>.</p>'
+            .'<p class="muted small">Dalinkis sia, o ne adresu is narsykles juostos: veikia ir pervadinus albuma. Nuotraukai pridek <code>?f=3</code>.</p>'
             .'<script>document.getElementById("albumShareCopy").addEventListener("click",function(){'
             .'var i=document.getElementById("albumShareUrl"),b=this,t=b.textContent;i.select();'
             .'var ok=function(){b.textContent="Nukopijuota ✓";setTimeout(function(){b.textContent=t},1400)};'
             .'if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(i.value).then(ok,function(){try{document.execCommand("copy");ok()}catch(e){}})}'
             .'else{try{document.execCommand("copy");ok()}catch(e){}}});</script>';
-    } else {
-        echo '<p class="muted small">Pastovi dalinimosi nuoroda <code>/a/id&lt;ID&gt;</code> atsiras iš karto, kai albumą išsaugosi — ji remiasi albumo ID, tad veikia ir vėliau pervadinus.</p>';
     }
     echo '</section>';
 
@@ -2020,8 +2030,56 @@ function album_edit(): void {
     echo '<div class="full"><label>Internal notes</label><textarea name="notes_internal" rows="3">'.e($r['notes_internal']).'</textarea></div></div></section>';
     $albumDescription = (string)($r['description'] ?: ($r['seo_description'] ?? ''));
     echo '<section class="album-field-panel"><h3>SEO fields</h3><div class="formgrid"><div class="full"><label>SEO title</label><input name="seo_title" value="'.e($r['seo_title']).'"></div><div class="full"><label>Album description // SEO</label><textarea name="description" rows="5">'.e($albumDescription).'</textarea></div><div class="full"><label>dbsportas URL</label><input name="dbsportas_url" value="'.e($r['dbsportas_url'] ?? '').'"></div><div class="full"><label>klajunas URL</label><input name="klajunas_url" value="'.e($r['klajunas_url'] ?? '').'"></div><div class="full"><label>Other URL</label><input name="other_url" value="'.e($r['other_url'] ?? '').'"></div></div><p class="muted small">Album description is reused for SEO/search/browser metadata.</p></section>';
-    echo '</div></div><div class="actions"><button class="primary">Save album</button><a class="btn" href="?page=albums">Back</a></div></form><script>(function(){var form=document.getElementById("albumEditForm");var title=document.getElementById("albumTitleInput");var slugInput=document.getElementById("albumSlugInput");if(!title||!slugInput)return;var manual=slugInput.value!=="";function slug(v){return (v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");}slugInput.addEventListener("input",function(){manual=true;});slugInput.addEventListener("blur",function(){slugInput.value=slug(slugInput.value);});title.addEventListener("input",function(){if(!manual)slugInput.value=slug(title.value);});if(form)form.addEventListener("submit",function(){slugInput.value=slug(slugInput.value||title.value);});})();</script>';
-    if ($id) album_photo_board($id, (int)($r['cover_photo_id'] ?? 0));
+    echo '</div></div><div class="actions"><button class="primary">Save album</button><a class="btn" href="?page=albums">Back</a>'
+        .'<span id="albumAutosaveState" class="muted small" aria-live="polite"></span></div></form><script>(function(){var form=document.getElementById("albumEditForm");var title=document.getElementById("albumTitleInput");var slugInput=document.getElementById("albumSlugInput");if(!title||!slugInput)return;var manual=slugInput.value!=="";function slug(v){return (v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");}slugInput.addEventListener("input",function(){manual=true;});slugInput.addEventListener("blur",function(){slugInput.value=slug(slugInput.value);});title.addEventListener("input",function(){if(!manual)slugInput.value=slug(title.value);});if(form)form.addEventListener("submit",function(){slugInput.value=slug(slugInput.value||title.value);});})();</script>';
+
+    // Automatinis irasymas - tik juodrasciams. Paskelbtas albumas matomas
+    // visiems, todel jo keitimas lieka samoningas veiksmas su mygtuku; tas pats
+    // ir su perjungimu i "published" - jis neirasomas tyliai.
+    echo '<script>(function(){'
+        .'var form=document.getElementById("albumEditForm");if(!form)return;'
+        .'var state=document.getElementById("albumAutosaveState");'
+        .'var vis=form.querySelector("[name=visibility]");'
+        .'var idField=form.querySelector("[name=id]");'
+        .'var isNew='.($id ? '0' : '1').';'
+        .'var timer=null,busy=false,pending=false;'
+        .'function say(t,err){if(!state)return;state.textContent=t;state.style.color=err?"var(--accent-ink)":"";}'
+        .'function draft(){return !vis||vis.value!=="published";}'
+        .'function send(){'
+            .'if(busy){pending=true;return;}'
+            .'var t=form.querySelector("[name=title]");'
+            .'if(!t||!t.value.trim()){say("");return;}'
+            .'busy=true;say("Įrašom…");'
+            .'var fd=new FormData(form);fd.append("ajax","1");'
+            .'fetch("?action=save_album",{method:"POST",body:fd,credentials:"same-origin",headers:{"X-Requested-With":"XMLHttpRequest"}})'
+            .'.then(function(r){return r.json().catch(function(){throw new Error("HTTP "+r.status);});})'
+            .'.then(function(d){'
+                .'if(!d||!d.ok)throw new Error((d&&d.error)||"Nepavyko");'
+                .'if(d.created&&d.id){location.replace("?page=album_edit&id="+encodeURIComponent(d.id));return;}'
+                .'if(idField&&d.id)idField.value=d.id;'
+                .'busy=false;say("Įrašyta ✓");'
+                .'if(pending){pending=false;send();}'
+            .'})'
+            .'.catch(function(e){busy=false;say("Neįrašyta: "+e.message,true);});'
+        .'}'
+        .'function schedule(){if(!draft())return;clearTimeout(timer);timer=setTimeout(send,900);}'
+        .'form.addEventListener("input",function(e){if(e.target===vis)return;schedule();});'
+        .'form.addEventListener("change",function(e){if(e.target===vis){say("Matomumas keičiamas tik paspaudus „Save album“.");return;}schedule();});'
+        // Naujas albumas sukuriamas vos atsiradus pavadinimui - kad ikelimo forma
+        // atsirastu nelaukiant, kol naudotojas uzpildys visa kita.
+        .'if(isNew){var t0=form.querySelector("[name=title]");if(t0)t0.addEventListener("blur",function(){if(t0.value.trim())send();});}'
+    .'})();</script>';
+    if ($id) {
+        album_photo_board($id, (int)($r['cover_photo_id'] ?? 0));
+    } else {
+        // Nauju albuma kuriant nuotrauku lentos rodyti dar negalim - jai reikia
+        // albumo ID. Bet dvieju etapu ("issaugok, tada grizk ir kelk") is
+        // naudotojo nebereikalaujam: ivedus pavadinima juodrastis irasomas pats
+        // ir puslapis atsidaro jau su ikelimo forma.
+        echo '<section class="card" style="margin-top:18px"><h2>Album photo management</h2>'
+            .'<p class="muted" id="albumPhotoHint">Įrašyk pavadinimą — albumas bus sukurtas kaip juodraštis, ir nuotraukų įkėlimas atsiras čia pat. Spausti „Save album“ nereikia.</p>'
+            .'</section>';
+    }
     foot('Album');
 }
 
@@ -2514,6 +2572,37 @@ function ini_bytes(string $value): int {
     $unit=strtolower(substr($value,-1)); $n=(float)$value;
     return match($unit){'g'=>(int)($n*1073741824),'m'=>(int)($n*1048576),'k'=>(int)($n*1024),default=>(int)$n};
 }
+/**
+ * Perrasinėja viso albumo sort_order pagal pasirinkta rikiavima.
+ *
+ * Iki siol "Sort preset" ikelimo formoje nieko nerikiavo - jis tik nurodydavo,
+ * kuri reiksme pazymeti sarase po perkrovimo. Nuotraukos gaudavo sort_order
+ * ikelimo eile, todel pasirinkus "Taken: oldest first" albumas likdavo suriktas
+ * pagal failu vardus, o sarasas rodydavo "Custom order".
+ *
+ * Tvarka ta pati kaip narsykleje (photoSortValue): pagrindinis laukas, tada
+ * pavadinimas, tada id - kad vienodos reiksmes visada issideliotu vienodai.
+ */
+function apply_album_sort_preset(int $albumId, string $preset): bool {
+    $orders = [
+        'taken_asc'  => 'CASE WHEN taken_at IS NULL THEN 1 ELSE 0 END ASC, taken_at ASC, original_filename ASC, id ASC',
+        'taken_desc' => 'CASE WHEN taken_at IS NULL THEN 1 ELSE 0 END ASC, taken_at DESC, original_filename ASC, id ASC',
+        'title_asc'  => 'original_filename ASC, id ASC',
+        'title_desc' => 'original_filename DESC, id ASC',
+        'size_asc'   => 'file_size ASC, original_filename ASC, id ASC',
+        'size_desc'  => 'file_size DESC, original_filename ASC, id ASC',
+    ];
+    if (!isset($orders[$preset])) return false;   // 'custom' ir nezinomi - nieko nedarom
+    $st = db()->prepare("SELECT id FROM photos WHERE album_id=? ORDER BY ".$orders[$preset]);
+    $st->execute([$albumId]);
+    $ids = $st->fetchAll(PDO::FETCH_COLUMN);
+    if (!$ids) return false;
+    $up = db()->prepare("UPDATE photos SET sort_order=? WHERE id=? AND album_id=?");
+    $n = 0;
+    foreach ($ids as $pid) { $n += 10; $up->execute([$n, (int)$pid, $albumId]); }
+    return true;
+}
+
 function human_bytes(int $bytes): string {
     if($bytes>=1073741824) return round($bytes/1073741824,2).' GB';
     if($bytes>=1048576) return round($bytes/1048576,1).' MB';
@@ -4011,7 +4100,15 @@ function sync_tags(string $kind, int $id, string $csv, array $tagIds = []): void
     }
 }
 function save_album(): void {
-    csrf(); $id=(int)($_POST['id'] ?? 0); $title=trim((string)($_POST['title'] ?? '')); if ($title==='') { flash('Title is required.', 'err'); go('?page=album_edit&id='.$id); }
+    csrf();
+    // Automatinis juodrascio irasymas kviecia ta pati funkcija, tik laukia JSON.
+    // Taip nera dvieju skirtingu irasymo keliu, kurie laikui begant issiskirtu.
+    $ajax = (string)($_POST['ajax'] ?? '') === '1';
+    $id=(int)($_POST['id'] ?? 0); $title=trim((string)($_POST['title'] ?? ''));
+    if ($title==='') {
+        if ($ajax) json_error('Title is required.', 422);
+        flash('Title is required.', 'err'); go('?page=album_edit&id='.$id);
+    }
     $slug=slug(trim((string)($_POST['slug'] ?? '')) ?: $title);
     $coverPost = (string)($_POST['cover_photo_id'] ?? '__auto__');
     $coverMode = 'auto';
@@ -4032,6 +4129,7 @@ function save_album(): void {
     $albumDescription = $_POST['description'] ?: null;
     $visibility = normalize_visibility($_POST['visibility'] ?? 'draft');
     $data=[$title,$slug,$_POST['subtitle'] ?: null,$albumDescription,$_POST['event_date'] ?: null,$_POST['event_date_end'] ?: null,$_POST['location_name'] ?: null,$_POST['sport_type'] ?: null,$_POST['author_name'] ?: null,$_POST['copyright_text'] ?: null,$coverPhotoId,$coverMode,$visibility,(int)($_POST['sort_order'] ?? 0),isset($_POST['download_enabled'])?1:0,$_POST['seo_title'] ?: null,$albumDescription,$_POST['dbsportas_url'] ?: null,$_POST['klajunas_url'] ?: null,$_POST['other_url'] ?: null,$_POST['notes_internal'] ?: null,$_SESSION['admin']['id'] ?? null];
+    $wasNew = ($id === 0);
     if ($id) {
         require_album_editable_by_id($id);
         db()->prepare("UPDATE albums SET title=?,slug=?,subtitle=?,description=?,event_date=?,event_date_end=?,location_name=?,sport_type=?,author_name=?,copyright_text=?,cover_photo_id=?,cover_mode=?,visibility=?,sort_order=?,download_enabled=?,seo_title=?,seo_description=?,dbsportas_url=?,klajunas_url=?,other_url=?,notes_internal=?,updated_by=?,updated_at=NOW() WHERE id=?")->execute([...$data,$id]);
@@ -4046,6 +4144,12 @@ function save_album(): void {
     }
     persist_album_metadata_json($id);
     sync_tags('album',$id,(string)($_POST['tags'] ?? ''), array_map('intval', $_POST['tag_ids'] ?? []));
+    if ($ajax) {
+        // Naujam albumui grazinam ID: puslapis pagal ji atsidaro jau su nuotrauku
+        // sekcija, ir naudotojui nereikia nei spausti "Save album", nei eiti i
+        // albuma atskirai.
+        json_exit(['ok' => true, 'id' => $id, 'created' => $wasNew, 'title' => $title]);
+    }
     flash('Album saved.'); go(consume_return_path('?page=albums'));
 }
 
@@ -4625,15 +4729,21 @@ function upload_album_photos(): void {
             $key = $realDuplicateKey;
             $targetName = basename($key);
         } else {
-            $count++;
-            $targetName = str_pad((string)$count, 4, '0', STR_PAD_LEFT).'_'.safe_b2_name($file['base']);
+            // Pirmiausia bandom svaru varda be jokio priesdelio. "0001_" buvo
+            // kabinamas visiems failams, nors jo vienintele funkcija - garantuoti
+            // unikalu B2 rakta. Del jo vardai galerijoje atrodydavo kaip
+            // "0001_inbound2439752568...jpg", o rikiuojant pagal pavadinima jis
+            // dar ir nustelbdavo tikraji varda. Dabar priesdelis atsiranda tik
+            // tada, kai svarus vardas jau uzimtas.
+            $cleanName = safe_b2_name($file['base']);
+            $targetName = $cleanName;
             $key = $prefix.'/originals/'.$targetName;
             while (true) {
                 $byKey->execute([$key]);
                 $keyOwner = (int)$byKey->fetchColumn();
                 if ((!$keyOwner || ($existing && $keyOwner === (int)$existing['id'])) && !isset($b2Keys[$key])) break;
                 $count++;
-                $targetName = str_pad((string)$count, 4, '0', STR_PAD_LEFT).'_'.safe_b2_name($file['base']);
+                $targetName = str_pad((string)$count, 4, '0', STR_PAD_LEFT).'_'.$cleanName;
                 $key = $prefix.'/originals/'.$targetName;
             }
         }
@@ -4726,6 +4836,11 @@ function upload_album_photos(): void {
                 $jsonUploaded++;
             }
         }
+    }
+    // Pasirinktas rikiavimas pritaikomas TIK dabar, kai naujos nuotraukos jau
+    // duomenu bazeje - kitaip jos i eile nepatektu.
+    if ($returnSortPreset !== '' && $returnSortPreset !== 'custom') {
+        apply_album_sort_preset($albumId, $returnSortPreset);
     }
     append_album_takeout_internal_notes($albumId, $albumJson, $jsonFiles);
     if ($visibility === 'published' && (string)($album['visibility'] ?? '') !== 'published') {
