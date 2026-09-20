@@ -587,7 +587,7 @@ function do_login(): void {
 }
 function head(string $title): void {
     echo '<!doctype html><html lang="lt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'.e($title).'</title><style>
-    :root{color-scheme:dark;--bg:#0b0e12;--panel:#151a20;--panel2:#10151b;--input:#0d1116;--line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.22);--text:#e8eef6;--muted:#a7b3c2;--accent:#ffb74a;--accent-soft:rgba(255,183,74,.14);--accent-line:rgba(255,183,74,.4);--accent-ink:#ffc46b;--btn:#1c222b;--th:#11161c;--td-line:#252d36;--topbar:rgba(11,14,18,.88);--ok-bg:#132018;--err-bg:#251114;--err-line:#5c2229;--radius:14px}body.light{color-scheme:light;--bg:#fdfdfc;--panel:#ffffff;--panel2:#f7f7f4;--input:#ffffff;--line:#e8e8e2;--line-strong:#cfcfc8;--text:#1a1a1a;--muted:#6b6b6b;--accent:#ffb74a;--accent-soft:rgba(255,183,74,.16);--accent-line:rgba(214,143,32,.45);--accent-ink:#8a5a10;--btn:#ffffff;--th:#f1f1ec;--td-line:#eeeee8;--topbar:rgba(253,253,252,.9);--ok-bg:#eaf6ee;--err-bg:#fdeaea;--err-line:#e3b3b3}*{box-sizing:border-box}body{margin:0;background:radial-gradient(1200px 800px at 50% -200px,var(--accent-soft),transparent 60%),var(--bg);font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);font-size:15px}body.preview-open{overflow:hidden}a{color:inherit;text-decoration:none}.top{min-height:76px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--topbar);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);z-index:2}.top-inner{max-width:1200px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:18px}.brand{font-size:24px;font-weight:850}.nav{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;min-width:0;flex:0 1 auto;scrollbar-width:none}.nav::-webkit-scrollbar{display:none}.nav a,.btn,button{border:1px solid var(--line);background:var(--btn);color:var(--text);border-radius:99px;padding:9px 15px;font-weight:650;cursor:pointer;white-space:nowrap;transition:border-color .15s,background .15s}.nav a:hover,.btn:hover,button:hover{border-color:var(--line-strong)}.nav a{padding:7px 12px;font-size:13.5px;white-space:nowrap}.nav a.active,.primary{border-color:var(--accent-line)!important;background:var(--accent-soft)!important;color:var(--accent-ink)!important}.wrap{max-width:1200px;margin:auto;padding:24px 16px 44px}.spacer{flex:1}.muted{color:var(--muted)}.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}.gateway-card{display:block;transition:border-color .15s ease,transform .15s ease,background .15s ease}.gateway-card:hover{border-color:var(--accent-line);background:var(--panel2);transform:translateY(-1px)}.metric{font-size:34px;font-weight:850}table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line)}th,td{border-bottom:1px solid var(--td-line);padding:10px;text-align:left;vertical-align:top}th{font-size:12px;color:var(--muted);text-transform:uppercase;background:var(--th)}input,select,textarea{width:100%;background:var(--input);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px;font:inherit}input[type=checkbox]{width:18px;height:18px;min-width:18px;padding:0;margin:0;accent-color:var(--accent);cursor:pointer;vertical-align:middle}label{display:block;font-size:12px;color:var(--muted);margin:0 0 6px}.formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:14px 0}.album-fields-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:10px}.album-field-panel{border:2px solid var(--accent-line);border-radius:10px;padding:14px;background:var(--panel2);min-width:0}.album-field-panel h3{margin:0 0 12px}.album-field-panel .formgrid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin:0 0 14px}.album-field-panel textarea{min-height:112px}.album-field-panel .full{grid-column:1/-1}.album-field-panel .field-full{grid-column:1/-1}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}.badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 8px;font-size:12px;color:var(--muted)}.flash{padding:12px 14px;border-radius:8px;margin:0 0 12px;border:1px solid var(--line);background:var(--ok-bg)}.err{background:var(--err-bg);border-color:var(--err-line)}.login{min-height:100vh;display:grid;place-items:center;padding:30px}.login .card{max-width:560px}.logo{width:132px;height:132px;object-fit:cover;margin-bottom:14px}.small{font-size:12px}.photo-board{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}.photo-tile{background:var(--panel2);border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:grab;position:relative}.photo-tile.dragging{opacity:.45;outline:2px solid var(--accent)}.photo-tile:focus{outline:2px solid var(--accent);outline-offset:2px}.photo-tile img,.photo-tile .no-thumb{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:var(--bg)}.photo-tile .no-thumb{display:grid;place-items:center;color:var(--muted)}.photo-tile-body{padding:9px}.photo-title{font-weight:800;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.photo-tools{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.mini{padding:5px 10px;font-size:12px;border-radius:99px}.pill-on{border-color:var(--accent-line)!important;background:var(--accent-soft)!important;color:var(--accent-ink)!important}.order-save{position:sticky;bottom:12px;z-index:3}.cover-flag{position:absolute;top:8px;left:8px;background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent-ink);border-radius:999px;padding:3px 7px;font-size:12px}.photo-preview-overlay{position:fixed;inset:0;z-index:60;display:none;background:rgba(5,8,10,.96)}.photo-preview-overlay.open{display:block}.photo-preview-shell{width:100%;height:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,370px);background:#070b0e;outline:0}.photo-preview-media{display:grid;grid-template-rows:minmax(0,1fr);place-items:center;padding:22px;min-width:0;min-height:0;overflow:hidden}.photo-preview-media img{max-width:100%;max-height:100%;object-fit:contain;background:#05080b;border-radius:8px;box-shadow:0 14px 55px rgba(0,0,0,.45)}.photo-preview-meta{border-left:1px solid var(--line);background:var(--panel);padding:22px 18px;overflow:auto}.preview-topline{font-size:12px;color:var(--muted);line-height:1.4}.photo-preview-title{margin:6px 0 8px;font-size:18px;line-height:1.15;font-weight:850;word-break:break-word}.preview-file{font-size:13px;font-weight:750;margin-bottom:14px;word-break:break-word}.preview-dl{display:grid;grid-template-columns:max-content 1fr;gap:8px 14px;margin:0;font-size:14px}.preview-dl dt{color:var(--muted)}.preview-dl dd{margin:0;word-break:break-word}.preview-admin{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}.preview-section-title{margin:0 0 12px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.preview-dl-admin dd{white-space:pre-wrap}.photo-preview-close,.photo-preview-nav{position:absolute;width:44px;height:44px;border-radius:99px;border:1px solid var(--line);background:var(--btn);color:var(--text);display:grid;place-items:center;font-size:28px;font-weight:700;cursor:pointer;z-index:2}.photo-preview-close{top:16px;right:16px}.photo-preview-nav.prev{left:16px;top:50%;transform:translateY(-50%)}.photo-preview-nav.next{right:calc(370px + 16px);top:50%;transform:translateY(-50%)}#photoListPreviewOverlay .photo-preview-nav.next{right:calc(320px + 16px)}.photo-preview-nav:disabled{opacity:.45;cursor:not-allowed}.photo-preview-close svg,.photo-preview-nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;display:block}.photo-preview-close:hover,.photo-preview-nav:hover:not(:disabled){border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-ink)}@media(min-width:1440px){.top-inner,.wrap{max-width:1400px}}@media(max-width:1280px){.top-inner>span.muted{display:none}}@media(max-width:900px){.photo-preview-shell{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(250px,38vh)}.photo-preview-meta{border-left:0;border-top:1px solid var(--line)}.photo-preview-close{top:10px;right:10px}.photo-preview-nav.prev{left:10px}.photo-preview-nav.next{right:10px}}@media(max-width:1100px){.album-fields-grid{grid-template-columns:1fr}}@media(max-width:760px){.top-inner{align-items:flex-start;flex-direction:column}.wrap{padding:16px}table{font-size:13px}.photo-board{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}}
+    :root{color-scheme:dark;--bg:#0b0e12;--panel:#151a20;--panel2:#10151b;--input:#0d1116;--line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.22);--text:#e8eef6;--muted:#a7b3c2;--accent:#ffb74a;--accent-soft:rgba(255,183,74,.14);--accent-line:rgba(255,183,74,.4);--accent-ink:#ffc46b;--btn:#1c222b;--th:#11161c;--td-line:#252d36;--topbar:rgba(11,14,18,.88);--ok-bg:#132018;--err-bg:#251114;--err-line:#5c2229;--radius:14px}body.light{color-scheme:light;--bg:#fdfdfc;--panel:#ffffff;--panel2:#f7f7f4;--input:#ffffff;--line:#e8e8e2;--line-strong:#cfcfc8;--text:#1a1a1a;--muted:#6b6b6b;--accent:#ffb74a;--accent-soft:rgba(255,183,74,.16);--accent-line:rgba(214,143,32,.45);--accent-ink:#8a5a10;--btn:#ffffff;--th:#f1f1ec;--td-line:#eeeee8;--topbar:rgba(253,253,252,.9);--ok-bg:#eaf6ee;--err-bg:#fdeaea;--err-line:#e3b3b3}*{box-sizing:border-box}body{margin:0;background:radial-gradient(1200px 800px at 50% -200px,var(--accent-soft),transparent 60%),var(--bg);font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);font-size:15px}body.preview-open{overflow:hidden}a{color:inherit;text-decoration:none}.top{min-height:76px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--topbar);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);z-index:2}.top-inner{max-width:1200px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:18px}.brand{font-size:24px;font-weight:850}.nav{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;min-width:0;flex:0 1 auto;scrollbar-width:none}.nav::-webkit-scrollbar{display:none}.nav a,.btn,button{border:1px solid var(--line);background:var(--btn);color:var(--text);border-radius:99px;padding:9px 15px;font-weight:650;cursor:pointer;white-space:nowrap;transition:border-color .15s,background .15s}.nav a:hover,.btn:hover,button:hover{border-color:var(--line-strong)}.nav a{padding:7px 12px;font-size:13.5px;white-space:nowrap}.nav a.active,.primary{border-color:var(--accent-line)!important;background:var(--accent-soft)!important;color:var(--accent-ink)!important}.wrap{max-width:1200px;margin:auto;padding:24px 16px 44px}.spacer{flex:1}.muted{color:var(--muted)}.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}.gateway-card{display:flex;flex-direction:column;transition:border-color .15s ease,transform .15s ease,background .15s ease}.gateway-hint{margin-top:6px;font-size:12px;color:var(--muted);line-height:1.35;min-height:2.7em;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.dash-panel{display:flex;flex-direction:column;gap:8px;padding:14px 16px}.dash-panel h2{margin:0 0 2px;font-size:15px}.dash-row{display:flex;align-items:center;gap:8px;font-size:13.5px}.dash-row .badge{flex-shrink:0;min-width:52px;text-align:center}.dash-note{font-size:12px;color:var(--muted);line-height:1.4;margin:0}.gateway-card:hover{border-color:var(--accent-line);background:var(--panel2);transform:translateY(-1px)}.metric{font-size:30px;font-weight:850;line-height:1.1}table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line)}th,td{border-bottom:1px solid var(--td-line);padding:10px;text-align:left;vertical-align:top}th{font-size:12px;color:var(--muted);text-transform:uppercase;background:var(--th)}input,select,textarea{width:100%;background:var(--input);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px;font:inherit}input[type=checkbox]{width:18px;height:18px;min-width:18px;padding:0;margin:0;accent-color:var(--accent);cursor:pointer;vertical-align:middle}label{display:block;font-size:12px;color:var(--muted);margin:0 0 6px}.formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:14px 0}.album-fields-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:10px}.album-field-panel{border:2px solid var(--accent-line);border-radius:10px;padding:14px;background:var(--panel2);min-width:0}.album-field-panel h3{margin:0 0 12px}.album-field-panel .formgrid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin:0 0 14px}.album-field-panel textarea{min-height:112px}.album-field-panel .full{grid-column:1/-1}.album-field-panel .field-full{grid-column:1/-1}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}.badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 8px;font-size:12px;color:var(--muted)}.flash{padding:12px 14px;border-radius:8px;margin:0 0 12px;border:1px solid var(--line);background:var(--ok-bg)}.err{background:var(--err-bg);border-color:var(--err-line)}.login{min-height:100vh;display:grid;place-items:center;padding:30px}.login .card{max-width:560px}.logo{width:132px;height:132px;object-fit:cover;margin-bottom:14px}.small{font-size:12px}.photo-board{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}.photo-tile{background:var(--panel2);border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:grab;position:relative}.photo-tile.dragging{opacity:.45;outline:2px solid var(--accent)}.photo-tile:focus{outline:2px solid var(--accent);outline-offset:2px}.photo-tile img,.photo-tile .no-thumb{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:var(--bg)}.photo-tile .no-thumb{display:grid;place-items:center;color:var(--muted)}.photo-tile-body{padding:9px}.photo-title{font-weight:800;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.photo-tools{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.mini{padding:5px 10px;font-size:12px;border-radius:99px}.pill-on{border-color:var(--accent-line)!important;background:var(--accent-soft)!important;color:var(--accent-ink)!important}.order-save{position:sticky;bottom:12px;z-index:3}.cover-flag{position:absolute;top:8px;left:8px;background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent-ink);border-radius:999px;padding:3px 7px;font-size:12px}.photo-preview-overlay{position:fixed;inset:0;z-index:60;display:none;background:rgba(5,8,10,.96)}.photo-preview-overlay.open{display:block}.photo-preview-shell{width:100%;height:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,370px);background:#070b0e;outline:0}.photo-preview-media{display:grid;grid-template-rows:minmax(0,1fr);place-items:center;padding:22px;min-width:0;min-height:0;overflow:hidden}.photo-preview-media img{max-width:100%;max-height:100%;object-fit:contain;background:#05080b;border-radius:8px;box-shadow:0 14px 55px rgba(0,0,0,.45)}.photo-preview-meta{border-left:1px solid var(--line);background:var(--panel);padding:22px 18px;overflow:auto}.preview-topline{font-size:12px;color:var(--muted);line-height:1.4}.photo-preview-title{margin:6px 0 8px;font-size:18px;line-height:1.15;font-weight:850;word-break:break-word}.preview-file{font-size:13px;font-weight:750;margin-bottom:14px;word-break:break-word}.preview-dl{display:grid;grid-template-columns:max-content 1fr;gap:8px 14px;margin:0;font-size:14px}.preview-dl dt{color:var(--muted)}.preview-dl dd{margin:0;word-break:break-word}.preview-admin{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}.preview-section-title{margin:0 0 12px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.preview-dl-admin dd{white-space:pre-wrap}.photo-preview-close,.photo-preview-nav{position:absolute;width:44px;height:44px;border-radius:99px;border:1px solid var(--line);background:var(--btn);color:var(--text);display:grid;place-items:center;font-size:28px;font-weight:700;cursor:pointer;z-index:2}.photo-preview-close{top:16px;right:16px}.photo-preview-nav.prev{left:16px;top:50%;transform:translateY(-50%)}.photo-preview-nav.next{right:calc(370px + 16px);top:50%;transform:translateY(-50%)}#photoListPreviewOverlay .photo-preview-nav.next{right:calc(320px + 16px)}.photo-preview-nav:disabled{opacity:.45;cursor:not-allowed}.photo-preview-close svg,.photo-preview-nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;display:block}.photo-preview-close:hover,.photo-preview-nav:hover:not(:disabled){border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-ink)}@media(min-width:1440px){.top-inner,.wrap{max-width:1400px}}@media(max-width:1280px){.top-inner>span.muted{display:none}}@media(max-width:900px){.photo-preview-shell{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(250px,38vh)}.photo-preview-meta{border-left:0;border-top:1px solid var(--line)}.photo-preview-close{top:10px;right:10px}.photo-preview-nav.prev{left:10px}.photo-preview-nav.next{right:10px}}@media(max-width:1100px){.album-fields-grid{grid-template-columns:1fr}}@media(max-width:760px){.top-inner{align-items:flex-start;flex-direction:column}.wrap{padding:16px}table{font-size:13px}.photo-board{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}}
 /* --- Vertikalus tankis ---
    Antrastes neturejo savo taisykliu ir naudojo narsykles numatytasias
    (h1 ~21px is virsaus IR apacios). Prie kelių kortelių viename puslapyje tai
@@ -828,6 +828,30 @@ function album_photo_board(int $albumId, ?int $coverPhotoId): void {
             }
         } catch (Throwable $e) {
             flash('Could not verify B2 files for album: '.$e->getMessage(), 'err');
+        }
+    }
+    // Dingusiu zyme nusiima PATI. Failu sarasas siam albumui jau perskaitytas,
+    // tad papildomo darbo nera: jei eilute pazymeta dingusia, o failas B2 vis
+    // delto yra, zyme klaidinga ir nuimama tylomis.
+    //
+    // Reikalinga todel, kad zyme gali uzdeti nebaigtas B2 sarasas, o naudotojui
+    // tai atrodo kaip be prieżasties dingusios nuotraukos. Reikalauti, kad jis
+    // suprastu, kas yra "is_missing", ir pats ji nuimtu - netinka.
+    if ($realB2Keys) {
+        $healIds = [];
+        foreach ($rows as $rp) {
+            if ((int)($rp['is_missing'] ?? 0) !== 1) continue;
+            $rk = trim((string)($rp['b2_key'] ?? ''), '/');
+            if ($rk !== '' && isset($realB2Keys[$rk])) $healIds[] = (int)$rp['id'];
+        }
+        if ($healIds) {
+            $in = implode(',', array_fill(0, count($healIds), '?'));
+            db()->prepare("UPDATE photos SET is_missing=0, updated_by=? WHERE album_id=? AND id IN ($in)")
+                ->execute([$_SESSION['admin']['id'] ?? null, $albumId, ...$healIds]);
+            foreach ($rows as $i => $rp) {
+                if (in_array((int)$rp['id'], $healIds, true)) $rows[$i]['is_missing'] = 0;
+            }
+            flash(count($healIds).' nuotraukos vėl rastos B2 — žymė „dingusi" nuimta automatiškai.');
         }
     }
     $defaultVisibility = (string)($albumMeta['visibility'] ?? 'draft') === 'published' ? 'published' : 'draft';
@@ -1597,22 +1621,72 @@ function dashboard(): void {
     $albumScope = is_superadmin() ? '' : ' WHERE created_by='.(int)current_admin_id();
     $photoScope = is_superadmin() ? '' : ' WHERE album_id IN (SELECT id FROM albums WHERE created_by='.(int)current_admin_id().')';
     $cards = [
-        ['Albums', db()->query("SELECT COUNT(*) FROM albums".$albumScope)->fetchColumn(), '?page=albums', 'Manage album records, ordering, covers, and B2 storage links.'],
+        ['Albums', db()->query("SELECT COUNT(*) FROM albums".$albumScope)->fetchColumn(), '?page=albums', 'Albumų įrašai, tvarka, viršeliai ir B2 keliai.'],
         ['Photos', db()->query("SELECT COUNT(*) FROM photos".$photoScope)->fetchColumn(), '?page=photos', 'Browse and edit the complete photo manifest.'],
         ['Draft albums', db()->query("SELECT COUNT(*) FROM albums".($albumScope ? $albumScope." AND visibility IN ('draft','ready')" : " WHERE visibility IN ('draft','ready')"))->fetchColumn(), '?page=albums&visibility=draft', 'Review unpublished albums.'],
         ['Duplicate albums', db()->query("SELECT COUNT(DISTINCT a.id) FROM albums a JOIN albums b ON a.id<>b.id WHERE a.source_path IS NOT NULL AND a.source_path<>'' AND b.source_path IS NOT NULL AND b.source_path<>'' AND (b.source_path LIKE CONCAT(a.source_path,'-%') OR a.source_path LIKE CONCAT(b.source_path,'-%') OR a.source_path=b.source_path)".(is_superadmin() ? '' : " AND a.created_by=".(int)current_admin_id()))->fetchColumn(), '?page=b2', 'Albumai galimai dubliuoti B2 folderiuose — sujunk per B2 Sync.'],
         ['Missing files', db()->query("SELECT COUNT(*) FROM photos".($photoScope ? $photoScope." AND is_missing=1" : " WHERE is_missing=1"))->fetchColumn(), '?page=photos&missing=1', 'Check DB photos marked as missing in storage.'],
     ];
     echo '<h1>Dashboard</h1><div class="grid">';
-    foreach ($cards as [$label,$value,$url,$hint]) echo '<a class="card gateway-card" href="'.e($url).'"><div class="metric">'.e($value).'</div><div class="muted">'.e($label).'</div><div class="muted small" style="margin-top:8px">'.e($hint).'</div></a>';
-    echo '</div><div class="grid" style="margin-top:18px"><div class="card"><h2>Warnings</h2>';
+    foreach ($cards as [$label,$value,$url,$hint]) echo '<a class="card gateway-card" href="'.e($url).'"><div class="metric">'.e($value).'</div><div class="muted">'.e($label).'</div><div class="gateway-hint">'.e($hint).'</div></a>';
+    echo '</div><div class="grid" style="margin-top:18px"><div class="card dash-panel"><h2>Warnings</h2>';
+    // Buve trys ispejimai rode normalia bukle, ne klaidas, ir del to i ju skaicius
+    // niekas nebeziurejo:
+    //   "Albums without cover" skaiciavo cover_photo_id IS NULL, t.y. albumus su
+    //   automatiniu virseliu - o tai numatytasis ir teisingas budas. Rode 272,
+    //   nors galerijoje be virselio nera NE VIENO albumo (patikrinta per API).
+    //   "Photos without author" rode visas 12 653 nuotraukas, nes autorius
+    //   saugomas albume, o ne prie kiekvienos nuotraukos.
+    //   "Photos without title" rode 11 760 - pavadinimas nebutinas, galerijoje
+    //   rodomas failo vardas.
+    // Dabar skaiciuojam tai, kas tikrai sugede arba tikrai trūksta viesai.
     $w = [
-        ['Photos without title', db()->query("SELECT COUNT(*) FROM photos WHERE title IS NULL OR title=''")->fetchColumn(), '?page=photos'],
-        ['Photos without author', db()->query("SELECT COUNT(*) FROM photos WHERE author_name IS NULL OR author_name=''")->fetchColumn(), '?page=photos'],
-        ['Albums without cover', db()->query("SELECT COUNT(*) FROM albums WHERE cover_photo_id IS NULL AND COALESCE(cover_mode,'auto') <> 'none'")->fetchColumn(), '?page=albums'],
+        ['HEIC be JPG peržiūros', db()->query("SELECT COUNT(*) FROM photos WHERE LOWER(COALESCE(original_format,file_ext,'')) IN ('heic','heif') AND COALESCE(compatibility_b2_key,'')=''")->fetchColumn(), '?page=photos'],
+        ['Albumai be nuotraukų', db()->query("SELECT COUNT(*) FROM albums a WHERE NOT EXISTS (SELECT 1 FROM photos p WHERE p.album_id=a.id)")->fetchColumn(), '?page=albums'],
+        ['Albumai be datos', db()->query("SELECT COUNT(*) FROM albums WHERE event_date IS NULL OR event_date=''")->fetchColumn(), '?page=albums'],
+        ['Paskelbti albumai be autoriaus', db()->query("SELECT COUNT(*) FROM albums WHERE visibility='published' AND (author_name IS NULL OR author_name='')")->fetchColumn(), '?page=albums'],
+        ['Rankinis viršelis be nuotraukos', db()->query("SELECT COUNT(*) FROM albums a WHERE COALESCE(a.cover_mode,'auto')='manual' AND (a.cover_photo_id IS NULL OR NOT EXISTS (SELECT 1 FROM photos p WHERE p.id=a.cover_photo_id AND p.album_id=a.id AND p.visibility='published' AND p.is_missing=0))")->fetchColumn(), '?page=albums'],
     ];
-    foreach ($w as [$label,$total,$url]) echo '<p><a href="'.e($url).'"><span class="badge">'.e($total).'</span> '.e($label).'</a></p>';
-    echo '</div><a class="card gateway-card" href="?page=b2"><h2>Metadata-first CMS</h2><p class="muted">Day-to-day editing changes DB metadata only. B2 Sync tools can copy and delete B2 objects (canonical moves, structure repair) — only after explicit confirmation.</p></a></div>';
+    foreach ($w as [$label,$total,$url]) echo '<div class="dash-row"><span class="badge">'.e($total).'</span><a href="'.e($url).'">'.e($label).'</a></div>';
+    echo '</div>';
+
+    // B2 bukle. Skaiciai imami is duomenu bazes, o ne vardijant kibira: visas
+    // bucket'as yra apie 26 tukst. objektu, ir jo perskaitymas uztruktu kelias
+    // sekundes - prietaisu skydeliui tai per brangu. DB zino tuos pacius
+    // dydzius, nes i ja jie irasomi kelimo metu.
+    $b2 = db()->query(
+        "SELECT COUNT(*) objects,
+                COALESCE(SUM(file_size),0) bytes,
+                SUM(CASE WHEN COALESCE(compatibility_b2_key,'')<>'' THEN 1 ELSE 0 END) previews,
+                SUM(CASE WHEN LOWER(COALESCE(original_format,file_ext,'')) IN ('heic','heif')
+                          AND COALESCE(compatibility_b2_key,'')='' THEN 1 ELSE 0 END) heic_no_jpg,
+                SUM(CASE WHEN is_missing=1 THEN 1 ELSE 0 END) missing
+           FROM photos"
+    )->fetch(PDO::FETCH_ASSOC) ?: [];
+    $noPath = (int)db()->query("SELECT COUNT(*) FROM albums WHERE source_path IS NULL OR source_path=''")->fetchColumn();
+    // Failu saraso podelis: viena stat() uzklausa, o pasako, ar galerija dar
+    // remiasi siandienos vaizdu, ar jau pasenusiu.
+    $listDir = dirname(dirname(__DIR__)).'/cache/b2_filelist';
+    $listAge = null;
+    foreach (glob($listDir.'/*.json') ?: [] as $f) {
+        $m = @filemtime($f);
+        if ($m !== false && ($listAge === null || $m > $listAge)) $listAge = $m;
+    }
+    $ageText = $listAge === null ? 'nėra' : (function ($sec) {
+        if ($sec < 3600) return max(1, (int)round($sec / 60)).' min.';
+        if ($sec < 86400) return round($sec / 3600, 1).' val.';
+        return round($sec / 86400, 1).' d.';
+    })(time() - $listAge).' senumo';
+
+    echo '<a class="card gateway-card dash-panel" href="?page=b2"><h2>B2 Cloud</h2>'
+        .'<div class="metric">'.e(human_bytes((int)($b2['bytes'] ?? 0))).'</div>'
+        .'<div class="muted small" style="margin-top:-2px">'.e(number_format((int)($b2['objects'] ?? 0))).' originalų + '
+        .e(number_format((int)($b2['previews'] ?? 0))).' JPG peržiūrų</div>'
+        .'<div class="dash-row" style="margin-top:6px"><span class="badge">'.e((int)($b2['heic_no_jpg'] ?? 0)).'</span> HEIC be JPG peržiūros</div>'
+        .'<div class="dash-row"><span class="badge">'.e((int)($b2['missing'] ?? 0)).'</span> DB rodo į nesantį failą</div>'
+        .'<div class="dash-row"><span class="badge">'.e($noPath).'</span> albumai be B2 kelio</div>'
+        .'<p class="dash-note">Failų sąrašo podėlis: '.e($ageText).'. Kasdienis redagavimas keičia tik DB; B2 objektus kopijuoja ir trina tik B2 Sync, ir tik patvirtinus.</p>'
+        .'</a></div>';
     foot('Dashboard');
 }
 
@@ -3989,6 +4063,23 @@ function b2_page(): void {
     head('B2 Sync');
     $defaultBucket=defined('B2_BUCKET') ? (string)B2_BUCKET : '';
     echo '<h1>B2 Sync</h1><div class="card"><form method="post" action="?action=b2_log"><input type="hidden" name="_token" value="'.e(token()).'"><div class="formgrid"><div><label>Bucket</label><input name="bucket" value="'.e($defaultBucket).'"></div><div><label>Prefix</label><input name="prefix" value="'.e(setting('b2_prefix')).'" placeholder="Empty = same allowed albums as frontend"></div><div><label>Mode</label><select name="mode"><option>scan only</option><option>scan + create missing</option><option>scan + update existing</option></select></div></div><div class="actions"><label><input type="checkbox" name="mark_missing" value="1"> Mark missing DB rows when files no longer exist in B2</label></div><p class="muted">Sync reads B2 storage and updates DB overlay rows. Empty prefix uses the same allowed album prefixes as the public frontend. B2 folder names are virtual; deleting every file under a folder makes that folder disappear from B2 listings.</p><button class="primary">Run sync</button></form></div>';
+    // Atstatymas po klaidingo zymejimo. "is_missing" yra tik veliava - failai B2
+    // lieka vietoje, - todel ji nuimti saugu ir grizti atgal galima bet kada.
+    // Reikalingas todel, kad nebaigtas B2 sarasas gali pazymeti tukstancius
+    // tvarkingu eiluciu, o atsukti tai kitaip butu galima tik per SQL.
+    $missingNow = (int)db()->query("SELECT COUNT(*) FROM photos WHERE is_missing=1")->fetchColumn();
+    if ($missingNow > 0) {
+        $confirmMsg = 'Grazinti '.$missingNow.' nuotraukas i galerija?';
+        echo '<div class="card" style="margin-top:14px;border-color:var(--err-line)">'
+            .'<h2>'.e((string)$missingNow).' nuotraukos nerodomos galerijoje</h2>'
+            .'<p class="muted">Jos pažymėtos kaip dingusios iš saugyklos. Jei failai ten vis dėlto yra, '
+            .'tai klaidinga žymė — dažniausiai ją palieka nebaigtas patikrinimas. Mygtukas grąžina nuotraukas '
+            .'atgal į galeriją; patys failai neliečiami, o klaidos atveju žymė uždedama iš naujo per patikrinimą.</p>'
+            .'<form method="post" action="?action=clear_missing_flags" onsubmit="return confirm(&quot;' . e($confirmMsg) . '&quot;)">'
+            .'<input type="hidden" name="_token" value="'.e(token()).'">'
+            .'<button class="btn" style="border-color:var(--err-line)">Grąžinti nuotraukas į galeriją</button>'
+            .'</form></div>';
+    }
     render_b2_storage_panel();
     foot('B2 Sync');
 }
@@ -6231,7 +6322,25 @@ function b2_upload_data(string $data,string $key,string $mime,array &$upload): a
     if($code>=400||!is_array($j)) throw new RuntimeException('B2 upload failed for '.$key.': '.$code.' '.$body);
     return $j;
 }
-function b2_list_prefix(string $prefix,int $pages=8): array {
+/**
+ * $truncated grazinamas TRUE, jei puslapiu limitas issisemė anksciau nei failai.
+ * Be sio zenklo funkcija tyliai grazindavo nepilna sarasa, ir iskvietes koda
+ * negalejo atskirti "tiek failu ir yra" nuo "tiek suspejau perskaityti".
+ * 2026-09-20 del to B2 Sync 9005 tvarkingu eiluciu pazymejo kaip dingusias:
+ * bucket'e ~26 tukst. failu, o sinchronizacija matė tik 8 000 (numatyti 8
+ * puslapiai po 1000), ir visa, ko nemate, palaike istrintu.
+ */
+function clear_missing_flags(): void {
+    require_superadmin(); csrf();
+    $n = (int)db()->query("SELECT COUNT(*) FROM photos WHERE is_missing=1")->fetchColumn();
+    db()->prepare("UPDATE photos SET is_missing=0, updated_by=? WHERE is_missing=1")->execute([$_SESSION['admin']['id'] ?? null]);
+    audit('photo', 0, 'clear_missing', 'Nuimta dingusiu zyme', ['rows' => $n]);
+    flash($n.' nuotraukos grąžintos į galeriją.');
+    go('?page=b2');
+}
+
+function b2_list_prefix(string $prefix,int $pages=8, ?bool &$truncated=null): array {
+    $truncated=false;
     $auth=b2_auth(); $out=[]; $cursor=''; $prefix=trim($prefix,'/'); $prefix=$prefix===''?'':$prefix.'/';
     for($i=0;$i<$pages;$i++){
         $post=['bucketId'=>(string)B2_BUCKET_ID,'prefix'=>$prefix,'maxFileCount'=>1000]; if($cursor!=='') $post['startFileName']=$cursor;
@@ -6242,6 +6351,7 @@ function b2_list_prefix(string $prefix,int $pages=8): array {
         foreach(($j['files']??[]) as $f) $out[]=$f;
         $cursor=(string)($j['nextFileName']??''); if($cursor==='') break;
     }
+    if($cursor!=='') $truncated=true;
     return $out;
 }
 // Jungtis laikoma atidaryta visam uzklausu srautui. Anksciau kiekvienam failui
@@ -6578,10 +6688,14 @@ function b2_detect_album_storage_prefix(int $albumId, string $targetPrefix): arr
 }
 function b2_album_title(string $path): string { return basename($path) ?: $path; }
 function b2_sync(string $bucket,string $prefix,string $mode,array $opts): array {
-    b2_load_config(); $bucket=$bucket ?: (defined('B2_BUCKET')?(string)B2_BUCKET:''); $dry=!empty($opts['dry_run']); $seen=[]; $scanRoots=[]; $touchedAlbums=[]; $albums=0; $photos=0; $createdA=0; $createdP=0; $updatedP=0; $missingMarked=0; $consolidatedRows=0;
+    b2_load_config(); $bucket=$bucket ?: (defined('B2_BUCKET')?(string)B2_BUCKET:''); $dry=!empty($opts['dry_run']); $seen=[]; $scanRoots=[]; $listTruncated=false; $touchedAlbums=[]; $albums=0; $photos=0; $createdA=0; $createdP=0; $updatedP=0; $missingMarked=0; $consolidatedRows=0;
     foreach(b2_allowed_prefixes($prefix) as $root){
         $scanRoots[] = trim((string)$root, '/');
-        $files=b2_list_prefix($root);
+        // 60 puslapiu po 1000 - su atsarga visam bucket'ui (~26 tukst. failu).
+        // Numatyti 8 reiske 8 000, ir likusieji atrodydavo kaip dingę.
+        $rootTruncated=false;
+        $files=b2_list_prefix($root, 60, $rootTruncated);
+        if($rootTruncated) $listTruncated=true;
         foreach($files as $f){
             $key=(string)($f['fileName']??''); if($key===''||str_contains($key, '/archive-originals/')||str_contains($key, '/jpg-originals/')||!takeout_media_file($key)) continue;
             if(function_exists('gallery_is_allowed_prefix')&&!gallery_is_allowed_prefix($key)) continue;
@@ -6602,7 +6716,13 @@ function b2_sync(string $bucket,string $prefix,string $mode,array $opts): array 
             }
         }
     }
-    if(!$dry&&!empty($opts['mark_missing'])){
+    // "scan only" neturi nieko rasyti - anksciau sis blokas veikdavo ir tuo
+    // rezimu. O nebaigtas sarasas zymejimui netinka is principo: ko nemateme,
+    // dar nereiskia, kad to nera.
+    $missingSkipped='';
+    if(!empty($opts['mark_missing'])&&$mode==='scan only') $missingSkipped='rezimas "scan only" nieko nekeicia';
+    elseif(!empty($opts['mark_missing'])&&$listTruncated) $missingSkipped='B2 sarasas nebaigtas - zymėti dingusiu negalima';
+    if(!$dry&&!empty($opts['mark_missing'])&&$missingSkipped===''){
         $where = "b2_key IS NOT NULL AND b2_key <> ''";
         $params = [];
         $roots = array_values(array_unique(array_filter($scanRoots, fn($v) => $v !== '')));
@@ -6624,7 +6744,7 @@ function b2_sync(string $bucket,string $prefix,string $mode,array $opts): array 
             $consolidatedRows += (int)($res['deleted'] ?? 0);
         }
     }
-    return ['albums'=>$albums,'photos'=>$photos,'created_albums'=>$createdA,'created_photos'=>$createdP,'updated_photos'=>$updatedP,'missing_marked'=>$missingMarked,'consolidated_duplicates'=>$consolidatedRows,'dry_run'=>$dry];
+    return ['albums'=>$albums,'photos'=>$photos,'created_albums'=>$createdA,'created_photos'=>$createdP,'updated_photos'=>$updatedP,'missing_marked'=>$missingMarked,'missing_skipped'=>$missingSkipped,'list_truncated'=>$listTruncated,'consolidated_duplicates'=>$consolidatedRows,'dry_run'=>$dry];
 }
 function b2_log(): void {
     csrf();
@@ -6636,6 +6756,7 @@ function b2_log(): void {
         $result=b2_sync($bucket,$prefix,$mode,$opts);
         db()->prepare("UPDATE b2_sync_runs SET status='finished', result=?, finished_at=NOW() WHERE id=?")->execute([json_encode($result,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),$runId]);
         audit('b2_sync',$runId,'run','B2 sync finished',$result);
+        if(!empty($result['missing_skipped'])) flash('Dingusiu zymejimas praleistas: '.$result['missing_skipped'].'.', 'err');
         flash('B2 sync finished: '.$result['albums'].' albums, '.$result['photos'].' photos synced, '.$result['missing_marked'].' missing DB rows marked, '.$result['consolidated_duplicates'].' duplicate rows consolidated.');
     }catch(Throwable $e){
         db()->prepare("UPDATE b2_sync_runs SET status='failed', result=?, finished_at=NOW() WHERE id=?")->execute([json_encode(['error'=>$e->getMessage()]),$runId]);
@@ -6675,6 +6796,7 @@ try {
         if(!empty($_GET['zip'])) export_overlay_zip($albumId);
         export_overlay_json($albumId);
     }
+    if ($action==='clear_missing_flags') { need_login(); clear_missing_flags(); }
     if ($action==='save_album') { need_login(); save_album(); }
     if ($action==='move_album_sort') { need_login(); move_album_sort(); }
     if ($action==='move_photo_sort') { need_login(); move_photo_sort(); }
