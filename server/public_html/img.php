@@ -176,7 +176,16 @@ function safe_file(string $file): string {
     $file = ltrim($file, '/');
     $file = str_replace("\0", '', $file);
 
-    if ($file === '' || str_contains($file, '..')) {
+    // Kelio atgal ieskom SEGMENTAIS, ne kaip eilutes gabalu: du taskai pacio failo
+    // varde yra visiskai teiseti. Del str_contains($file, '..') dvi archyvo
+    // nuotraukos, kuriu vardai baigiasi daugtaskiu ("201 Kupriniu miestelis....jpg"),
+    // galerijoje atiduodavo 400 - tai isaiskejo silodant miniatiuras is anksto.
+    // Segmentas, lygus "." arba "..", ir toliau atmetamas.
+    $traversal = false;
+    foreach (explode('/', $file) as $seg) {
+        if ($seg === '.' || $seg === '..') { $traversal = true; break; }
+    }
+    if ($file === '' || $traversal) {
         respond_text('Invalid file path', 400);
     }
     gallery_assert_allowed_file($file);
