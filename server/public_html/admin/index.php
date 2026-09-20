@@ -4121,7 +4121,7 @@ function b2_page(): void {
     b2_load_config();
     head('B2 Sync');
     $defaultBucket=defined('B2_BUCKET') ? (string)B2_BUCKET : '';
-    echo '<h1>B2 Sync</h1><div class="card"><form method="post" action="?action=b2_log"><input type="hidden" name="_token" value="'.e(token()).'"><div class="formgrid"><div><label>Bucket</label><input name="bucket" value="'.e($defaultBucket).'"></div><div><label>Prefix</label><input name="prefix" value="'.e(setting('b2_prefix')).'" placeholder="Empty = same allowed albums as frontend"></div><div><label>Mode</label><select name="mode"><option>scan only</option><option>scan + create missing</option><option>scan + update existing</option></select></div></div><div class="actions"><label><input type="checkbox" name="mark_missing" value="1"> Mark missing DB rows when files no longer exist in B2</label></div><p class="muted">Sync reads B2 storage and updates DB overlay rows. Empty prefix uses the same allowed album prefixes as the public frontend. B2 folder names are virtual; deleting every file under a folder makes that folder disappear from B2 listings.</p><button class="primary">Run sync</button></form></div>';
+    echo '<h1>B2 Sync</h1><div class="card"><form method="post" action="?action=b2_log"><input type="hidden" name="_token" value="'.e(token()).'"><div class="formgrid"><div><label>Bucket</label><input name="bucket" value="'.e($defaultBucket).'"></div><div><label>Prefix</label><input name="prefix" value="'.e(setting('b2_prefix')).'" placeholder="Empty = same allowed albums as frontend"></div><div><label>Mode</label><select name="mode"><option value="scan + update existing" selected>scan + update existing</option><option value="scan + create missing">scan + create missing</option><option value="scan only">scan only</option></select></div></div><div class="actions"><label><input type="checkbox" name="mark_missing" value="1"> Mark missing DB rows when files no longer exist in B2</label></div><p class="muted">Sync reads B2 storage and updates DB overlay rows. Empty prefix uses the same allowed album prefixes as the public frontend. B2 folder names are virtual; deleting every file under a folder makes that folder disappear from B2 listings.</p><button class="primary">Run sync</button></form></div>';
     // Atstatymas po klaidingo zymejimo. "is_missing" yra tik veliava - failai B2
     // lieka vietoje, - todel ji nuimti saugu ir grizti atgal galima bet kada.
     // Reikalingas todel, kad nebaigtas B2 sarasas gali pazymeti tukstancius
@@ -6747,7 +6747,7 @@ function b2_detect_album_storage_prefix(int $albumId, string $targetPrefix): arr
 }
 function b2_album_title(string $path): string { return basename($path) ?: $path; }
 function b2_sync(string $bucket,string $prefix,string $mode,array $opts): array {
-    b2_load_config(); $bucket=$bucket ?: (defined('B2_BUCKET')?(string)B2_BUCKET:''); $dry=!empty($opts['dry_run']); $seen=[]; $scanRoots=[]; $listTruncated=false; $touchedAlbums=[]; $albums=0; $photos=0; $createdA=0; $createdP=0; $updatedP=0; $missingMarked=0; $consolidatedRows=0;
+    b2_load_config(); $bucket=$bucket ?: (defined('B2_BUCKET')?(string)B2_BUCKET:''); $dry=!empty($opts['dry_run']); $seen=[]; $scanRoots=[]; $listTruncated=false; $skippedP=0; $metaWritten=[]; $touchedAlbums=[]; $albums=0; $photos=0; $createdA=0; $createdP=0; $updatedP=0; $missingMarked=0; $consolidatedRows=0;
     foreach(b2_allowed_prefixes($prefix) as $root){
         $scanRoots[] = trim((string)$root, '/');
         // 60 puslapiu po 1000 - su atsarga visam bucket'ui (~26 tukst. failu).
@@ -6767,12 +6767,19 @@ function b2_sync(string $bucket,string $prefix,string $mode,array $opts): array 
             $a=db()->prepare("SELECT id FROM albums WHERE source_path=? OR slug=? LIMIT 1"); $a->execute([$albumPath,slug($albumPath)]); $albumId=(int)$a->fetchColumn();
             if(!$albumId){ $albums++; if(!$dry&&$mode!=='scan only'){ db()->prepare("INSERT INTO albums(uuid,source_type,source_path,slug,title,visibility,created_by,updated_by) VALUES(?,?,?,?,?,'published',?,?)")->execute([uid(),'b2_sync',$albumPath,slug($albumPath),b2_album_title($albumPath),$_SESSION['admin']['id']??null,$_SESSION['admin']['id']??null]); $albumId=(int)db()->lastInsertId(); place_album_by_date($albumId); $createdA++; persist_album_metadata_json($albumId); } }
             else $albums++;
-            if($albumId && !$dry && $mode!=='scan only') persist_album_metadata_json($albumId);
+            // Albumo metaduomenys perrasomi KARTA albumui, ne kiekvienam failui.
+            // Anksciau 245 nuotrauku albumas ta pati JSON'a perrasydavo 245 kartus.
+            if($albumId && !$dry && $mode!=='scan only' && !isset($metaWritten[$albumId])) {
+                $metaWritten[$albumId]=true;
+                persist_album_metadata_json($albumId);
+            }
             $albumDownloadEnabled=1;
             if($albumId){ $ad=db()->prepare("SELECT download_enabled FROM albums WHERE id=? LIMIT 1"); $ad->execute([$albumId]); $albumDownloadEnabled=(int)$ad->fetchColumn() ?: 0; }
             if($albumId&&!$dry&&$mode!=='scan only'){
                 $touchedAlbums[$albumId] = $albumPath;
-                $q=db()->prepare("SELECT id FROM photos WHERE album_id=? AND b2_key=?"); $q->execute([$albumId,$key]); $pid=(int)$q->fetchColumn();
+                // Pasiimam ir tuos laukus, pagal kuriuos matyti, ar isvis yra ka keisti.
+                $q=db()->prepare("SELECT id,file_size,compatibility_b2_key,is_missing FROM photos WHERE album_id=? AND b2_key=?"); $q->execute([$albumId,$key]);
+                $exRow=$q->fetch(PDO::FETCH_ASSOC) ?: null; $pid=(int)($exRow['id'] ?? 0);
                 $payload=[$bucket,$key,basename($key),pathinfo($key,PATHINFO_EXTENSION),(int)($f['contentLength']??0),$pid?null:uid(),$albumId];
                 if($pid){
                     // HEIC perziura. Iki siol sinchronizacija jos NEsusiedavo, todel
@@ -6783,6 +6790,16 @@ function b2_sync(string $bucket,string $prefix,string $mode,array $opts): array 
                         $cand=preg_replace('~/originals/([^/]+)\.[^.]+$~','/jpg-originals/$1.jpg',$key);
                         if(is_string($cand)&&$cand!==$key&&isset($haveKeys[$cand])) $compatKey=$cand;
                     }
+                    // Nepakitusios eilutes nelieciam. Iki siol kiekviena buvo
+                    // perrasoma, o kartu su ja persist_photo_metadata_json()
+                    // darydavo dar dvi uzklausas - 12 400 nuotrauku tai apie
+                    // 50 000 uzklausu ir daugiau nei 100 s, t.y. Cloudflare 524.
+                    // Perskaicius viska is naujo beveik niekas nebuna pasikeites.
+                    $same = $exRow !== null
+                        && (int)($exRow['file_size'] ?? -1) === (int)($f['contentLength']??0)
+                        && (string)($exRow['compatibility_b2_key'] ?? '') === (string)($compatKey ?? '')
+                        && (int)($exRow['is_missing'] ?? 1) === 0;
+                    if($same){ $skippedP++; continue; }
                     if($compatKey!==null){
                         db()->prepare("UPDATE photos SET b2_bucket=?,b2_key=?,compatibility_b2_key=?,converted_from_heic=1,preview_status='ready',preview_error=NULL,original_filename=?,file_ext=?,file_size=?,is_missing=0,synced_at=NOW() WHERE id=?")
                             ->execute([$bucket,$key,$compatKey,basename($key),pathinfo($key,PATHINFO_EXTENSION),(int)($f['contentLength']??0),$pid]);
@@ -6825,7 +6842,7 @@ function b2_sync(string $bucket,string $prefix,string $mode,array $opts): array 
             $consolidatedRows += (int)($res['deleted'] ?? 0);
         }
     }
-    return ['albums'=>$albums,'photos'=>$photos,'created_albums'=>$createdA,'created_photos'=>$createdP,'updated_photos'=>$updatedP,'missing_marked'=>$missingMarked,'missing_skipped'=>$missingSkipped,'list_truncated'=>$listTruncated,'consolidated_duplicates'=>$consolidatedRows,'dry_run'=>$dry];
+    return ['albums'=>$albums,'photos'=>$photos,'created_albums'=>$createdA,'created_photos'=>$createdP,'updated_photos'=>$updatedP,'unchanged_photos'=>$skippedP,'missing_marked'=>$missingMarked,'missing_skipped'=>$missingSkipped,'list_truncated'=>$listTruncated,'consolidated_duplicates'=>$consolidatedRows,'dry_run'=>$dry];
 }
 function b2_log(): void {
     csrf();
