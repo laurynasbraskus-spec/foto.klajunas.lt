@@ -3319,7 +3319,10 @@ function b2_storage_root_prefix_from_key(string $key): string {
 }
 function b2_storage_root_rows(): array {
     $rows = [];
-    foreach (b2_list_prefix('', 20) as $file) {
+    // 60 puslapiu po 1000. Su 20 lentele rode "albums 20000 files, 2.99 GB",
+    // nors bucket'e yra 25 787 failai - nupjauta dalis tiesiog nepatekdavo i
+    // suma, ir skaicius atrode kaip tikrovė.
+    foreach (b2_list_prefix('', 60) as $file) {
         $name = (string)($file['fileName'] ?? '');
         $root = b2_storage_root_prefix_from_key($name);
         if ($root === '') continue;
@@ -3343,7 +3346,7 @@ function b2_compatibility_key_for_original(string $originalKey, array $files): ?
 }
 function b2_storage_folder_rows(): array {
     $rows = [];
-    foreach (b2_list_prefix('', 20) as $file) {
+    foreach (b2_list_prefix('', 60) as $file) {
         $name = (string)($file['fileName'] ?? '');
         $folder = b2_storage_album_prefix_from_key($name);
         if ($folder === '') continue;
@@ -6658,7 +6661,7 @@ function b2_detect_album_storage_prefix(int $albumId, string $targetPrefix): arr
     }
     if (!$names) return ['prefix'=>'','matches'=>0,'targetMatches'=>0];
 
-    $files = b2_list_prefix('', 20);
+    $files = b2_list_prefix('', 60);
     $counts = [];
     foreach ($files as $file) {
         $fileName = trim((string)($file['fileName'] ?? ''), '/');
