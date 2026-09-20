@@ -97,6 +97,17 @@
   }
   .search:focus-within { border-color: var(--amber-line); box-shadow: 0 0 0 3px var(--amber-soft); }
   .search svg { width: 15px; height: 15px; stroke: var(--ink-faint); flex-shrink: 0; }
+  /* Sava "x", o ne narsykles: ta rodoma ne visose narsyklese, nepaklusta temai
+     ir Safari jos apskritai nera. */
+  .search input::-webkit-search-cancel-button { display: none; }
+  .q-clear {
+    display: grid; place-items: center; flex-shrink: 0;
+    width: 20px; height: 20px; padding: 0; margin: 0 -4px 0 0;
+    border: 0; border-radius: 99px; background: transparent;
+    color: var(--ink-faint); cursor: pointer; transition: color .15s, background .15s;
+  }
+  .q-clear:hover { color: var(--ink); background: var(--amber-soft); }
+  .q-clear svg { width: 13px; height: 13px; stroke: currentColor; }
   .search input { border: 0; outline: none; background: transparent; width: 100%; font: inherit; font-size: 13.5px; color: var(--ink); }
   .select-wrap { position: relative; }
   .select-wrap::after {
@@ -537,6 +548,9 @@
       <label class="search">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input id="q" type="search" placeholder="Search albums / photos…" autocomplete="off">
+        <button type="button" id="qClear" class="q-clear" aria-label="Išvalyti paiešką" title="Išvalyti" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
       </label>
       <div class="select-wrap" id="tagWrap">
         <select id="tagFilter" aria-label="Filter albums by tag"><option value="">All tags</option></select>
@@ -797,7 +811,14 @@
     window.innerWidth <= 640;
 
   function searchFold(s) {
-    return String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    // Skyryba isimama visai, ne paverciama tarpu. Albumas "O'ringen (2006)" su
+    // paieska "o-ring" nesutapdavo: apostrofas ir bruksnys - skirtingi zenklai,
+    // o naudotojas ju neatspes. Isemus juos abi puses virsta "oringen2006" ir
+    // "oring", ir sutapimas randamas. Tarpai isimami taip pat, todel veikia ir
+    // "klajuno taure", ir "klajunotaure".
+    return String(s).toLowerCase().normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "");
   }
 
   function filteredAlbums() {
@@ -890,7 +911,7 @@
     $("viewAlbum").hidden = false;
     $("tagWrap").style.display = "none";
     $("sortWrap").style.display = "none";
-    $("q").value = "";
+    $("q").value = ""; syncQClear();
     window.scrollTo(0, 0);
     $("albumTitle").textContent = al.name;
     renderAlbumSub(al);
@@ -1334,7 +1355,7 @@
   // Logo returns to the archive, unwinding however deep we are, so the Back
   // button afterwards still leads out of the site rather than back into an album.
   $("btnBrand").onclick = () => {
-    $("q").value = ""; $("tagFilter").value = ""; $("sort").value = "event_desc";
+    $("q").value = ""; $("tagFilter").value = ""; $("sort").value = "event_desc"; syncQClear();
     const depth = (history.state && history.state.d) || 0;
     if (depth > 0) history.go(-depth); else renderArchive();
   };
@@ -1365,7 +1386,18 @@
     $("vSmall").classList.toggle("active", !large);
     $("vLarge").classList.toggle("active", large);
   }
-  $("q").oninput = () => currentAlbum === null ? renderArchive() : applyPhotoFilter(true);
+  // Valymo mygtukas. Rodomas tik kai yra ka valyti, o paspaudus fokusas grazinamas
+  // i lauka - kitaip po valymo tektu spusteleti dar karta, kad butu galima rasyti.
+  function syncQClear() {
+    const b = $("qClear");
+    if (b) b.hidden = $("q").value === "";
+  }
+  function runSearch() {
+    if (currentAlbum === null) renderArchive(); else applyPhotoFilter(true);
+  }
+  $("q").oninput = () => { syncQClear(); runSearch(); };
+  if ($("qClear")) $("qClear").onclick = () => { $("q").value = ""; syncQClear(); runSearch(); $("q").focus(); };
+  syncQClear();
   $("tagFilter").onchange = renderArchive;
   $("sort").onchange = renderArchive;
 
