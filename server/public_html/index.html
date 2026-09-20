@@ -505,6 +505,21 @@
   }
   .lb-img { position: relative; min-height: 160px; }
   .lb-img .spinner { position: absolute; top: 50%; left: 50%; margin: -18px 0 0 -18px; }
+  /* Didinimas. Vaizdas keiciamas tik transform'u, todel islieka tas pats <img>
+     ir tas pats podelio irasas - nieko papildomai nesiunciam. overflow:hidden
+     laiko padidinta vaizda remeliuose, kad jis neuzlystu ant mygtuku. */
+  .lb-img { overflow: hidden; }
+  .lb-img img { transform-origin: center center; will-change: transform; }
+  .lb-img.zoomable img { cursor: zoom-in; }
+  .lb-img.zoomed img { cursor: grab; transition: none; }
+  .lb-img.zoomed.dragging img { cursor: grabbing; }
+  .lb-zoom-badge {
+    position: absolute; left: 12px; bottom: 12px; z-index: 3;
+    background: var(--topbar); border: 1px solid var(--line); color: var(--ink-soft);
+    border-radius: 99px; padding: 3px 10px; font-size: 12px; font-variant-numeric: tabular-nums;
+    pointer-events: none; opacity: 0; transition: opacity .15s;
+  }
+  .lb-img.zoomed .lb-zoom-badge { opacity: 1; }
   .lb-img img { opacity: 0; transition: opacity .3s ease; }
   .lb-img img.loaded { opacity: 1; }
   .pcard img.ph, .thumb img {
@@ -1247,6 +1262,94 @@
       x0 = null;
     }, { passive: true });
   })();
+  // Didinimas dideliems ekranams. Elgsena kaip Google Photos: ratukas didina ties
+  // pele, tempimas slankioja, dvigubas spustelejimas perjungia, Esc grazina.
+  // Siauruose ekranuose neijungiam - ten vaizdui valdyti naudojami tie patys
+  // pirstu judesiai kaip nuotrauku perjungimui, ir jie vienas kitam trukdytu.
+  const ZOOM_MIN = 1, ZOOM_MAX = 4, ZOOM_STEP = 2.5;
+  let zScale = 1, zX = 0, zY = 0, zDrag = null;
+
+  function zoomEnabled() { return window.matchMedia("(min-width: 901px)").matches; }
+  function zoomImg() { return $("lbImg").querySelector("img"); }
+
+  function zoomApply() {
+    const box = $("lbImg"), im = zoomImg();
+    if (!im) return;
+    // Slankiojimas ribojamas tiek, kiek vaizdas isauga: uz remeliu jis neiseina.
+    const ox = Math.max(0, (zScale - 1) * im.offsetWidth / 2);
+    const oy = Math.max(0, (zScale - 1) * im.offsetHeight / 2);
+    zX = Math.min(ox, Math.max(-ox, zX));
+    zY = Math.min(oy, Math.max(-oy, zY));
+    im.style.transform = "translate(" + zX + "px," + zY + "px) scale(" + zScale + ")";
+    box.classList.toggle("zoomed", zScale > 1.01);
+    zoomBadge(box).textContent = zScale.toFixed(1) + "×";
+  }
+
+  function zoomReset() {
+    zScale = 1; zX = 0; zY = 0;
+    const box = $("lbImg"), im = zoomImg();
+    if (im) im.style.transform = "";
+    box.classList.remove("zoomed", "dragging");
+    box.classList.toggle("zoomable", zoomEnabled());
+    zoomBadge(box);
+  }
+
+  // Zenklas kuriamas cia, o ne zoomReset() pabaigoje: updateLb() pirma perraso
+  // viso lango turini per innerHTML, ir anksciau sukurtas zenklas dingtu kartu.
+  // Taip jis atsiranda tada, kai reikia, ir eiliskumas nebesvarbus.
+  function zoomBadge(box) {
+    let b = box.querySelector(".lb-zoom-badge");
+    if (!b) { b = document.createElement("div"); b.className = "lb-zoom-badge"; box.appendChild(b); }
+    return b;
+  }
+
+  // Taskas po pele turi likti vietoje: perskaiciuojam poslinki pagal nauja masteli.
+  function zoomAt(k2, cx, cy) {
+    const im = zoomImg();
+    if (!im) return;
+    k2 = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, k2));
+    const r = im.getBoundingClientRect();
+    const ccx = r.left + r.width / 2 - zX, ccy = r.top + r.height / 2 - zY;
+    zX = cx - ccx - ((cx - ccx - zX) / zScale) * k2;
+    zY = cy - ccy - ((cy - ccy - zY) / zScale) * k2;
+    zScale = k2;
+    if (zScale <= 1.01) { zScale = 1; zX = 0; zY = 0; }
+    zoomApply();
+  }
+
+  (function enableZoom() {
+    const box = $("lbImg");
+    if (!box) return;
+    box.addEventListener("wheel", e => {
+      if (!zoomEnabled() || !zoomImg()) return;
+      e.preventDefault();
+      zoomAt(zScale * (e.deltaY < 0 ? 1.18 : 1 / 1.18), e.clientX, e.clientY);
+    }, { passive: false });
+    box.addEventListener("dblclick", e => {
+      if (!zoomEnabled() || !zoomImg()) return;
+      e.preventDefault();
+      zoomAt(zScale > 1.01 ? 1 : ZOOM_STEP, e.clientX, e.clientY);
+    });
+    box.addEventListener("mousedown", e => {
+      if (zScale <= 1.01 || e.button !== 0) return;
+      e.preventDefault();
+      zDrag = { x: e.clientX - zX, y: e.clientY - zY };
+      box.classList.add("dragging");
+    });
+    window.addEventListener("mousemove", e => {
+      if (!zDrag) return;
+      zX = e.clientX - zDrag.x; zY = e.clientY - zDrag.y;
+      zoomApply();
+    });
+    window.addEventListener("mouseup", () => {
+      zDrag = null;
+      $("lbImg").classList.remove("dragging");
+    });
+    // Nuotrauka i <img> idedama ne is karto, o uzsikrovus - tada matmenys jau
+    // zinomi ir ribos skaiciuojamos teisingai.
+    window.addEventListener("resize", () => { if (zScale > 1.01) zoomApply(); });
+  })();
+
   function updateLb() {
     const p = visible[lbIndex];
     if (!p) return closeLb();
@@ -1274,6 +1377,7 @@
       if (lbIm.complete && lbIm.naturalWidth) lbDone();
       else { lbIm.onload = lbDone; lbIm.onerror = lbFail; }
     }
+    zoomReset();
     $("lbTitle").textContent = p.name;
     // title - kad ir nukirptas pavadinimas butu prieinamas visas.
     $("lbTag").textContent = currentAlbum ? currentAlbum.name : "";
@@ -1492,6 +1596,9 @@
   document.addEventListener("keydown", e => {
     const lbOpen = $("lb").classList.contains("open");
     if (e.key === "Escape") {
+      // Padidinus Esc pirma grazina masteli, ir tik tada uzdaro - kaip Google
+      // Photos. Kitaip is padidinto vaizdo isskristum tiesiai i albuma.
+      if (lbOpen && zScale > 1.01) { zoomReset(); return; }
       if (lbOpen || currentAlbum !== null) history.back();
       return;
     }
