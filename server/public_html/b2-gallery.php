@@ -1116,6 +1116,14 @@ if ($path === '') {
             $originalFileName = (string)($photo['originalFileName'] ?? manifest_db_legacy_original_file_name($photo));
             $displayFileName = (string)($photo['displayFileName'] ?? '');
             if ($displayFileName !== '' && !isset($seenB2Keys[$displayFileName])) $displayFileName = '';
+            // HEIC serveris atvaizduoti nemoka - Imagick cia be HEIC palaikymo,
+            // ir img.php vietoj nuotraukos grazina paveiksleli su uzrasu "Server
+            // cannot decode this image format". Kai JPG perziuros nera,
+            // manifest_db_display_file_name() atsarginiu variantu grazina pati
+            // HEIC, ir galerija palaikydavo ji tinkamu: previewMissing buvo
+            // false, o naudotojas matydavo juoda plytele vietoj sazinigo
+            // pranesimo. HEIC kaip rodomas failas netinka niekada.
+            if ($displayFileName !== '' && preg_match('~\.(heic|heif)$~i', $displayFileName)) $displayFileName = '';
             if ($originalFileName === '' || !is_image($originalFileName)) continue;
             if (!isset($seenB2Keys[$originalFileName])) continue;
             // b2_sync kartais ideda antra eilute tam paciam B2 failui, ir tada
