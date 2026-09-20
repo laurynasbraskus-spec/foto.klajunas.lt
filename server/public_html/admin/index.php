@@ -1570,6 +1570,57 @@ function db_backup_sql_dump(): string {
     return $out."SET FOREIGN_KEY_CHECKS=1;\n";
 }
 
+/** Tiek naujausiu DB kopiju saugoma visada, nesvarbu, kokio jos amziaus. */
+const DB_BACKUP_KEEP = 5;
+/** Uz sita senesnes kopijos trinamos - bet tik tos, kurios netelpa i KEEP. */
+const DB_BACKUP_MAX_AGE_DAYS = 90;
+
+/**
+ * Trina DB kopija tik tada, kai tenkinamos ABI salygos: ji senesne nei
+ * DB_BACKUP_MAX_AGE_DAYS IR nepatenka i DB_BACKUP_KEEP naujausiu.
+ *
+ * Taip abi taisykles dengia viena kitos spragas. Vien amzius reikstu, kad po
+ * ilgesnes pertraukos galima likti be nieko - visos kopijos vienu metu taptu
+ * per senos. Vien kiekis reikstu, kad retai kelant kopijas laikytume metu
+ * senumo failus be reikalo. Kartu: sviezios niekada netrinamos, o penkiu
+ * naujausiu riba yra grindys, zemiau kuriu nenusileidziam niekada.
+ *
+ * Tai dera ir su paties kibiro taisykle (daysFromHidingToDeleting = 90):
+ * istrinta kopija dar 90 dienu lieka atgaunama, tad klaida nera negrizdama.
+ *
+ * Vardas yra foto_<Y-m-d_His>.sql.gz, todel rikiavimas pagal varda sutampa su
+ * rikiavimu pagal laika, o is to paties vardo imamas ir amzius.
+ *
+ * Trinam TIK tai, kas atitinka toki varda backups/db/ aplanke. Jokio kito failo
+ * si funkcija paliesti negali, net jei aplanke kas nors atsirastu.
+ */
+function db_backup_prune(int $keep = DB_BACKUP_KEEP, int $maxAgeDays = DB_BACKUP_MAX_AGE_DAYS): array {
+    $keep = max(1, $keep);
+    $found = [];
+    foreach (b2_list_prefix('backups/db', 5) as $file) {
+        $name = trim((string)($file['fileName'] ?? ''), '/');
+        if (!preg_match('~^backups/db/foto_(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})(\d{2})\.sql\.gz$~', $name, $m)) continue;
+        $found[$name] = [
+            'id' => (string)($file['fileId'] ?? ''),
+            'time' => mktime((int)$m[4], (int)$m[5], (int)$m[6], (int)$m[2], (int)$m[3], (int)$m[1]),
+        ];
+    }
+    $total = count($found);
+    if ($total <= $keep) return ['total' => $total, 'kept' => $total, 'deleted' => 0, 'too_old' => 0];
+    krsort($found);                       // naujausios pirmos
+    $cutoff = time() - $maxAgeDays * 86400;
+    $candidates = array_slice($found, $keep, null, true);   // uz KEEP ribos
+    $deleted = 0; $tooOld = 0;
+    foreach ($candidates as $name => $info) {
+        if ($info['time'] === false || $info['time'] >= $cutoff) continue;   // dar nesena
+        $tooOld++;
+        if ($info['id'] === '') continue;
+        try { b2_delete_file_version($info['id'], $name); $deleted++; }
+        catch (Throwable $e) { /* viena nepavykusi kopija neturi laužyti kitu */ }
+    }
+    return ['total' => $total, 'kept' => $total - $deleted, 'deleted' => $deleted, 'too_old' => $tooOld];
+}
+
 function db_backup_run(): array {
     @set_time_limit(180);
     b2_load_config();
@@ -1580,7 +1631,11 @@ function db_backup_run(): array {
     $upload = b2_upload_url();
     b2_upload_data($gz, $key, 'application/gzip', $upload);
     set_setting('last_db_backup', date('Y-m-d H:i:s'));
-    return ['key' => $key, 'sql_bytes' => strlen($sql), 'gz_bytes' => strlen($gz)];
+    // Valom TIK po sekmingo ikelimo - kitaip nepavykusi kopija galetu istrinti
+    // sena ir palikti visai be nieko.
+    $prune = db_backup_prune();
+    return ['key' => $key, 'sql_bytes' => strlen($sql), 'gz_bytes' => strlen($gz),
+            'kept' => $prune['kept'], 'deleted' => $prune['deleted']];
 }
 
 /**
@@ -1595,7 +1650,8 @@ function db_backup_now(): void {
     try {
         $info = db_backup_run();
         audit('system', null, 'db_backup', 'DB kopija rankiniu būdu', $info);
-        flash('DB kopija įkelta į B2: '.$info['key'].' ('.human_bytes((int)$info['gz_bytes']).', SQL '.human_bytes((int)$info['sql_bytes']).').');
+        $note = (int)($info['deleted'] ?? 0) > 0 ? ' Senesnių nei '.DB_BACKUP_MAX_AGE_DAYS.' d. ištrinta: '.(int)$info['deleted'].'.' : '';
+        flash('DB kopija įkelta į B2: '.$info['key'].' ('.human_bytes((int)$info['gz_bytes']).', SQL '.human_bytes((int)$info['sql_bytes']).'). Saugoma: '.(int)($info['kept'] ?? 0).' kopijos.'.$note);
     } catch (Throwable $e) {
         flash('DB kopija nepavyko: '.$e->getMessage(), 'err');
     }
@@ -6699,6 +6755,10 @@ function b2_sync(string $bucket,string $prefix,string $mode,array $opts): array 
         $rootTruncated=false;
         $files=b2_list_prefix($root, 60, $rootTruncated);
         if($rootTruncated) $listTruncated=true;
+        // Raktu aibe perziuros paieskai. Be jos kiekvienai nuotraukai tektu
+        // perbegti visa sarasa: 26 tukst. failu x 12 tukst. nuotrauku.
+        $haveKeys=[];
+        foreach($files as $hf){ $hk=trim((string)($hf['fileName']??''),'/'); if($hk!=='') $haveKeys[$hk]=true; }
         foreach($files as $f){
             $key=(string)($f['fileName']??''); if($key===''||str_contains($key, '/archive-originals/')||str_contains($key, '/jpg-originals/')||!takeout_media_file($key)) continue;
             if(function_exists('gallery_is_allowed_prefix')&&!gallery_is_allowed_prefix($key)) continue;
@@ -6714,7 +6774,25 @@ function b2_sync(string $bucket,string $prefix,string $mode,array $opts): array 
                 $touchedAlbums[$albumId] = $albumPath;
                 $q=db()->prepare("SELECT id FROM photos WHERE album_id=? AND b2_key=?"); $q->execute([$albumId,$key]); $pid=(int)$q->fetchColumn();
                 $payload=[$bucket,$key,basename($key),pathinfo($key,PATHINFO_EXTENSION),(int)($f['contentLength']??0),$pid?null:uid(),$albumId];
-                if($pid){ db()->prepare("UPDATE photos SET b2_bucket=?,b2_key=?,original_filename=?,file_ext=?,file_size=?,is_missing=0,synced_at=NOW() WHERE id=?")->execute([$bucket,$key,basename($key),pathinfo($key,PATHINFO_EXTENSION),(int)($f['contentLength']??0),$pid]); persist_photo_metadata_json($pid); $updatedP++; }
+                if($pid){
+                    // HEIC perziura. Iki siol sinchronizacija jos NEsusiedavo, todel
+                    // albumai, kuriu JPG jau gulejo B2, amzinai rode "JPG perziura
+                    // nesukurta" - o susieti galejo tik atskiras albumo veiksmas.
+                    $compatKey=null;
+                    if(preg_match('~\.(heic|heif)$~i',$key)){
+                        $cand=preg_replace('~/originals/([^/]+)\.[^.]+$~','/jpg-originals/$1.jpg',$key);
+                        if(is_string($cand)&&$cand!==$key&&isset($haveKeys[$cand])) $compatKey=$cand;
+                    }
+                    if($compatKey!==null){
+                        db()->prepare("UPDATE photos SET b2_bucket=?,b2_key=?,compatibility_b2_key=?,converted_from_heic=1,preview_status='ready',preview_error=NULL,original_filename=?,file_ext=?,file_size=?,is_missing=0,synced_at=NOW() WHERE id=?")
+                            ->execute([$bucket,$key,$compatKey,basename($key),pathinfo($key,PATHINFO_EXTENSION),(int)($f['contentLength']??0),$pid]);
+                    } else {
+                        db()->prepare("UPDATE photos SET b2_bucket=?,b2_key=?,original_filename=?,file_ext=?,file_size=?,is_missing=0,synced_at=NOW() WHERE id=?")
+                            ->execute([$bucket,$key,basename($key),pathinfo($key,PATHINFO_EXTENSION),(int)($f['contentLength']??0),$pid]);
+                    }
+                    persist_photo_metadata_json($pid);
+                    $updatedP++;
+                }
                 else { db()->prepare("INSERT INTO photos(b2_bucket,b2_key,original_filename,file_ext,file_size,is_downloadable,uuid,album_id,source_type,visibility,synced_at) VALUES(?,?,?,?,?,?,?,?, 'b2_sync','published',NOW())")->execute([$bucket,$key,basename($key),pathinfo($key,PATHINFO_EXTENSION),(int)($f['contentLength']??0),$albumDownloadEnabled,uid(),$albumId]); $pid=(int)db()->lastInsertId(); persist_photo_metadata_json($pid); $createdP++; }
             }
         }
