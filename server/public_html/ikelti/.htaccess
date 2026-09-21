@@ -1,0 +1,6 @@
+Options -Indexes
+
+# Laikina talpykla nera turinys paieskos sistemoms.
+<IfModule mod_headers.c>
+  Header always set X-Robots-Tag "noindex, nofollow"
+</IfModule>

@@ -752,7 +752,7 @@ body.light .spill.s-published{color:#1f7a45;background:rgba(31,122,69,.1);border
     unset($_SESSION['flash']);
     if ($title !== 'Login') {
         $items = is_superadmin()
-            ? ['dashboard'=>'Dashboard','albums'=>'Albums','photos'=>'Photos','tags'=>'Tags','b2'=>'B2 Sync','takeout'=>'Takeout','import'=>'CSV','zip'=>'ZIP','settings'=>'Settings','access'=>'Access','audit'=>'Audit','admins'=>'Admins']
+            ? ['dashboard'=>'Dashboard','albums'=>'Albums','photos'=>'Photos','tags'=>'Tags','b2'=>'B2 Sync','inbox'=>'Inbox','takeout'=>'Takeout','import'=>'CSV','zip'=>'ZIP','settings'=>'Settings','access'=>'Access','audit'=>'Audit','admins'=>'Admins']
             : ['dashboard'=>'Dashboard','albums'=>'Albums','photos'=>'Photos'];
         $currentPage = (string)($_GET['page'] ?? 'dashboard');
         $currentAction = (string)($_GET['action'] ?? '');
@@ -1683,6 +1683,7 @@ function dashboard(): void {
         ['Duplicate albums', db()->query("SELECT COUNT(DISTINCT a.id) FROM albums a JOIN albums b ON a.id<>b.id WHERE a.source_path IS NOT NULL AND a.source_path<>'' AND b.source_path IS NOT NULL AND b.source_path<>'' AND (b.source_path LIKE CONCAT(a.source_path,'-%') OR a.source_path LIKE CONCAT(b.source_path,'-%') OR a.source_path=b.source_path)".(is_superadmin() ? '' : " AND a.created_by=".(int)current_admin_id()))->fetchColumn(), '?page=b2', 'Albumai galimai dubliuoti B2 folderiuose — sujunk per B2 Sync.'],
         ['Missing files', db()->query("SELECT COUNT(*) FROM photos".($photoScope ? $photoScope." AND is_missing=1" : " WHERE is_missing=1"))->fetchColumn(), '?page=photos&missing=1', 'Check DB photos marked as missing in storage.'],
     ];
+    if (is_superadmin()) $cards[] = ['Inbox', inbox_pending_count(), '?page=inbox', 'Narių įkeltos siuntos, laukiančios perkėlimo į albumą.'];
     echo '<h1>Dashboard</h1><div class="grid">';
     foreach ($cards as [$label,$value,$url,$hint]) echo '<a class="card gateway-card" href="'.e($url).'"><div class="metric">'.e($value).'</div><div class="muted">'.e($label).'</div><div class="gateway-hint">'.e($hint).'</div></a>';
     echo '</div><div class="grid" style="margin-top:18px"><div class="card dash-panel"><h2>Warnings</h2>';
@@ -2020,9 +2021,17 @@ function albums(): void {
             : 'Ištrinti albumą „'.addslashes((string)$r['title']).'“ ir jo '.(string)$r['photos_count'].' nuotraukų įrašus iš DB?\n\nB2 failai saugykloje NELIEČIAMI — dings tik DB manifestas.';
         // Užrakintam albumui Delete mygtuko nerodom — backend jį blokuotų, todėl
         // vietoj klaidos rodom 🔒 ženkliuką (žr. Needs fixing stulpelį).
-        $deleteBtn = ($canEdit && (string)$r['visibility'] === 'draft' && !$lock['locked'])
-            ? '<button class="mini" formmethod="post" formaction="?action=delete_album&id='.e($r['id']).'" style="border-color:var(--err-line);color:#e05b6a" onclick="return confirm(\''.e($deleteConfirm).'\')">Delete</button>'
-            : '';
+        // Mygtukas rodomas tik juodrasciams ir tik neuzrakintiems albumams. Iki
+        // siol kitais atvejais jo tiesiog nebudavo, ir atrodydavo, kad tokio
+        // funkcionalumo admin isvis nera - o tikroji priezastis buvo matomumas.
+        // Dabar vietoj tuscios vietos pasakom, ko truksta.
+        if (!$canEdit || $lock['locked']) {
+            $deleteBtn = '';   // uzrakintiems salia rodomas spynos zenklas
+        } elseif ((string)$r['visibility'] !== 'draft') {
+            $deleteBtn = '<span class="badge" title="Trinti galima tik juodrasti. Atidaryk albuma, nustatyk Visibility = draft, issaugok - tada cia atsiras Delete." style="cursor:help">trinti: tik draft</span>';
+        } else {
+            $deleteBtn = '<button class="mini" formmethod="post" formaction="?action=delete_album&id='.e($r['id']).'" style="border-color:var(--err-line);color:#e05b6a" onclick="return confirm(\''.e($deleteConfirm).'\')">Delete</button>';
+        }
         $lockBadge = $lock['locked']
             ? '<span class="badge" title="Turinys B2 senesnis nei '.ALBUM_DELETE_LOCK_DAYS.' d. — iš admin nebetrinamas, tik rankiniu būdu B2 serveryje" style="border-color:var(--accent-line);color:var(--accent-ink)">🔒 užrakinta</span>'
             : '';
@@ -3324,6 +3333,13 @@ function settings_page(): void {
     echo '<div><label>B2 Application Key <span class="muted">· '.e($b2Src('b2_api_app_key')).'</span></label><input type="password" name="b2_api_app_key" value="" placeholder="'.((trim(setting('b2_api_app_key')) !== '' || $b2Eff('B2_APP_KEY') !== '') ? 'saugoma — įrašykite tik keisdami' : '').'" autocomplete="new-password"></div>';
     echo '<div><label>B2 Bucket name <span class="muted">· '.e($b2Src('b2_api_bucket')).'</span></label><input name="b2_api_bucket" value="'.e(setting('b2_api_bucket')).'" placeholder="'.e($b2Eff('B2_BUCKET')).'" autocomplete="off"></div>';
     echo '<div><label>B2 Bucket ID <span class="muted">· '.e($b2Src('b2_api_bucket_id')).'</span></label><input name="b2_api_bucket_id" value="'.e(setting('b2_api_bucket_id')).'" placeholder="'.e($b2Eff('B2_BUCKET_ID')).'" autocomplete="off"></div>';
+    // Inbox vartai. Kodas laikomas atviru tekstu samoningai: adminas ji turi
+    // matyti, kad galetu perduoti klubo grupei, o jis saugo ne duomenis, o tik
+    // ikelimo forma nuo praeiviu.
+    $inboxOn = setting('inbox_enabled', '1') !== '0';
+    echo '<div style="grid-column:1/-1;margin-top:6px"><h2 style="margin:0">Inbox — narių įkėlimai</h2><p class="muted small" style="margin:6px 0 0">Narių puslapis: <code>https://foto.klajunas.lt/ikelti/</code>. Be kodo jis neprima nieko. Gautos siuntos laukia <a href="?page=inbox" style="text-decoration:underline">Inbox</a> lange.</p></div>';
+    echo '<div><label>Inbox kodas nariams</label><input name="inbox_access_code" value="'.e(setting('inbox_access_code')).'" autocomplete="off" placeholder="tuščia = įkėlimas išjungtas"></div>';
+    echo '<div><label>Inbox įjungtas</label><select name="inbox_enabled"><option value="1"'.($inboxOn?' selected':'').'>taip</option><option value="0"'.(!$inboxOn?' selected':'').'>ne</option></select></div>';
     echo '<div><label>Takeout staging profile</label><select name="takeout_stage_profile">';
     foreach (takeout_stage_profile_presets() as $v => $preset) {
         echo '<option value="'.e($v).'"'.($takeoutTuning['profile']===$v?' selected':'').'>'.e($preset['label']).'</option>';
@@ -4141,6 +4157,288 @@ function b2_page(): void {
     }
     render_b2_storage_panel();
     foot('B2 Sync');
+}
+/**
+ * Inbox - laikina nariu ikelimu talpykla.
+ *
+ * Nariai kelia per vieša /ikelti/ puslapi (public_html/ikelti/index.php): jis
+ * praso bendro klubo kodo, laikino pavadinimo ir keliancio vardo, o failus
+ * deda i B2 prefiksa "inbox/<data>-<pavadinimas>-<zetonas>/originals/".
+ *
+ * Kodel ne tiesiai i albuma: nario siunta beveik niekada nesutampa su albumu -
+ * ji buna be datos, su atsitiktine tvarka ir dazniausiai tik dalis renginio.
+ * Todel ji laukia cia, kol kas nors nusprendzia, i kuri albuma ji keliauja.
+ *
+ * Perkelimas nieko nesiuncia per PHP: B2 kopijuoja failus savo viduje
+ * (b2_copy_prefix_chunk), o nuotrauku eilutes sukuria tas pats kelias, kaip ir
+ * "create DB album from B2 folder" - b2_create_photo_rows_from_prefix().
+ * Originalai inbox'e lieka tol, kol ju rankomis neistrinsi - taip po nevykusio
+ * perkelimo yra i ka grizti.
+ *
+ * Lenteles tokios pacios kaip public_html/ikelti/index.php
+ * inbox_ensure_schema() - keiciant viena vieta, keisti abi.
+ */
+function ensure_inbox_schema(): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    db()->exec("CREATE TABLE IF NOT EXISTS inbox_batches (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, token CHAR(16) NOT NULL UNIQUE, title VARCHAR(191) NOT NULL, uploader_name VARCHAR(191) NOT NULL, note VARCHAR(500) NULL, event_date DATE NULL, b2_prefix VARCHAR(500) NOT NULL, files_count INT UNSIGNED NOT NULL DEFAULT 0, bytes_total BIGINT UNSIGNED NOT NULL DEFAULT 0, status VARCHAR(32) NOT NULL DEFAULT 'open', album_id BIGINT UNSIGNED NULL, imported_at TIMESTAMP NULL, ip_address VARCHAR(45) NULL, user_agent VARCHAR(255) NULL, created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, INDEX inbox_batches_status_idx(status,created_at)) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    db()->exec("CREATE TABLE IF NOT EXISTS inbox_files (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, batch_id BIGINT UNSIGNED NOT NULL, b2_key VARCHAR(500) NOT NULL, thumb_b2_key VARCHAR(500) NULL, original_filename VARCHAR(255) NOT NULL, mime_type VARCHAR(191) NULL, file_size BIGINT UNSIGNED NOT NULL DEFAULT 0, checksum_sha1 CHAR(40) NULL, width INT UNSIGNED NULL, height INT UNSIGNED NULL, taken_at TIMESTAMP NULL, status VARCHAR(32) NOT NULL DEFAULT 'stored', photo_id BIGINT UNSIGNED NULL, created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP, INDEX inbox_files_batch_idx(batch_id), INDEX inbox_files_name_idx(batch_id,original_filename)) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+}
+function inbox_batch_row(int $id): ?array {
+    if ($id <= 0) return null;
+    $st = db()->prepare("SELECT * FROM inbox_batches WHERE id=? LIMIT 1");
+    $st->execute([$id]);
+    return $st->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+function inbox_pending_count(): int {
+    try { ensure_inbox_schema(); } catch (Throwable $e) { return 0; }
+    return (int)db()->query("SELECT COUNT(*) FROM inbox_batches WHERE status<>'imported'")->fetchColumn();
+}
+/**
+ * Miniatiura (arba originalas su full=1) is B2. Per img.php sito nepadarysi:
+ * jis atiduoda tik "albums/" prefiksa, o inbox failai specialiai guli uz jo.
+ */
+function inbox_thumb(): void {
+    require_superadmin();
+    $st = db()->prepare("SELECT b2_key,thumb_b2_key,mime_type,original_filename FROM inbox_files WHERE id=? LIMIT 1");
+    $st->execute([(int)($_GET['id'] ?? 0)]);
+    $f = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$f) { http_response_code(404); exit('not found'); }
+    $full = !empty($_GET['full']);
+    $key = trim((string)($full ? $f['b2_key'] : ($f['thumb_b2_key'] ?? '')), '/');
+    if ($key === '') { http_response_code(404); exit('no preview'); }
+    b2_load_config();
+    try {
+        $auth = b2_auth();
+        $bytes = b2_download_key($auth, defined('B2_BUCKET') ? (string)B2_BUCKET : '', $key);
+    } catch (Throwable $e) { http_response_code(502); exit('b2 error'); }
+    header('Content-Type: '.($full ? (string)($f['mime_type'] ?: 'application/octet-stream') : 'image/jpeg'));
+    header('Content-Length: '.strlen($bytes));
+    header('Content-Disposition: inline; filename="'.safe_b2_name((string)$f['original_filename']).'"');
+    header('Cache-Control: private, max-age=3600');
+    header('X-Content-Type-Options: nosniff');
+    echo $bytes;
+    exit;
+}
+function inbox_page(): void {
+    require_superadmin();
+    ensure_inbox_schema();
+    $batchId = (int)($_GET['batch'] ?? 0);
+    if ($batchId > 0) { inbox_batch_page($batchId); return; }
+
+    head('Inbox');
+    $rows = db()->query("SELECT b.*, a.title album_title FROM inbox_batches b LEFT JOIN albums a ON a.id=b.album_id ORDER BY (b.status='imported'), b.created_at DESC LIMIT 200")->fetchAll();
+    $code = trim(setting('inbox_access_code'));
+    $on = setting('inbox_enabled', '1') !== '0';
+    echo '<h1>Inbox · nariu įkėlimai</h1>';
+    echo '<div class="card"><h2>Nuoroda nariams</h2>'
+        .'<p><code>https://foto.klajunas.lt/ikelti/</code> · kodas: <strong>'.($code !== '' ? e($code) : '<span class="muted">nenustatytas</span>').'</strong>'
+        .' · būsena: <span class="badge">'.($on && $code !== '' ? 'įjungta' : 'išjungta').'</span></p>'
+        .'<p class="muted small">Kodą ir įjungimą keisk <a href="?page=settings" style="text-decoration:underline">Settings</a> lange. Nariai mato tik įkėlimo formą — nei galerijos, nei kitų siuntų jie nepasiekia.</p></div>';
+
+    if (!$rows) { echo '<p class="muted">Kol kas nieko neįkelta.</p>'; foot('Inbox'); return; }
+    echo '<table><tr><th>Gauta</th><th>Laikinas pavadinimas</th><th>Kas įkėlė</th><th>Failai</th><th>Dydis</th><th>Būsena</th><th></th></tr>';
+    foreach ($rows as $r) {
+        $imported = (string)$r['status'] === 'imported';
+        $badge = $imported
+            ? '<span class="badge" style="border-color:var(--accent-line);color:var(--accent-ink)">perkelta</span>'
+            : '<span class="badge">laukia</span>';
+        echo '<tr>'
+            .'<td class="small">'.e(substr((string)$r['created_at'], 0, 16)).'</td>'
+            .'<td><a href="?page=inbox&batch='.(int)$r['id'].'" style="font-weight:750;text-decoration:underline;text-underline-offset:3px">'.e($r['title']).'</a>'
+            .((string)($r['note'] ?? '') !== '' ? '<br><span class="muted small">'.e($r['note']).'</span>' : '')
+            .((string)($r['event_date'] ?? '') !== '' ? '<br><span class="badge">'.e($r['event_date']).'</span>' : '').'</td>'
+            .'<td>'.e($r['uploader_name']).'</td>'
+            .'<td>'.e((int)$r['files_count']).'</td>'
+            .'<td class="small">'.e(human_bytes((int)$r['bytes_total'])).'</td>'
+            .'<td class="small">'.$badge.($imported && $r['album_title'] ? '<br><a class="small" href="?page=album_edit&id='.(int)$r['album_id'].'" style="text-decoration:underline">'.e($r['album_title']).'</a>' : '').'</td>'
+            .'<td><a class="btn mini" href="?page=inbox&batch='.(int)$r['id'].'">Peržiūrėti</a></td>'
+            .'</tr>';
+    }
+    echo '</table>';
+    foot('Inbox');
+}
+function inbox_batch_page(int $batchId): void {
+    $batch = inbox_batch_row($batchId);
+    if (!$batch) { flash('Siunta nerasta.', 'err'); go('?page=inbox'); }
+    head('Inbox · '.(string)$batch['title']);
+    $imported = (string)$batch['status'] === 'imported';
+    $albumId = (int)($batch['album_id'] ?? 0);
+    $files = db()->prepare("SELECT * FROM inbox_files WHERE batch_id=? ORDER BY COALESCE(taken_at,created_at), id");
+    $files->execute([$batchId]);
+    $files = $files->fetchAll(PDO::FETCH_ASSOC);
+
+    echo '<p><a class="btn mini" href="?page=inbox">← Visos siuntos</a></p>';
+    echo '<h1>'.e($batch['title']).'</h1>';
+    echo '<div class="card"><div class="formgrid" style="margin:0">'
+        .'<div><label>Kas įkėlė</label><div>'.e($batch['uploader_name']).'</div></div>'
+        .'<div><label>Gauta</label><div>'.e(substr((string)$batch['created_at'], 0, 16)).'</div></div>'
+        .'<div><label>Renginio data</label><div>'.((string)($batch['event_date'] ?? '') !== '' ? e($batch['event_date']) : '<span class="muted">nenurodyta</span>').'</div></div>'
+        .'<div><label>Failai</label><div>'.e(count($files)).' · '.e(human_bytes((int)$batch['bytes_total'])).'</div></div>'
+        .'</div>'
+        .((string)($batch['note'] ?? '') !== '' ? '<p style="margin:12px 0 0"><label>Pastaba</label>'.e($batch['note']).'</p>' : '')
+        .'<p class="muted small" style="margin:12px 0 0">B2: <code>'.e($batch['b2_prefix']).'</code></p></div>';
+
+    if ($imported) {
+        echo '<div class="card"><h2>Perkelta</h2><p>Failai nukopijuoti į albumą'
+            .($albumId ? ' <a href="?page=album_edit&id='.$albumId.'" style="text-decoration:underline">#'.$albumId.'</a>' : '')
+            .' '.e(substr((string)($batch['imported_at'] ?? ''), 0, 16)).'.</p>'
+            .'<p class="muted small">Originalai inbox\'e tebeguli — tai antra kopija. Kai albumas peržiūrėtas, siuntą galima ištrinti.</p></div>';
+    } else {
+        $albums = db()->query("SELECT id,title,event_date,source_path FROM albums ORDER BY event_date DESC, id DESC LIMIT 500")->fetchAll();
+        echo '<div class="card"><h2>Perkelti į galeriją</h2>';
+        if ($albumId > 0) {
+            echo '<p class="muted">Perkėlimas pradėtas į albumą #'.$albumId.', bet dar nebaigtas (B2 kopijavimas dalinamas į dalis, kad netilptų į PHP laiko ribą).</p>'
+                .'<form method="post" action="?action=inbox_import" class="actions" style="margin:0"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="batch_id" value="'.$batchId.'"><button class="primary">Tęsti perkėlimą</button></form>';
+        } else {
+            echo '<form method="post" action="?action=inbox_import"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="batch_id" value="'.$batchId.'"><input type="hidden" name="mode" value="new">'
+                .'<h3>Naujas albumas</h3><div class="formgrid" style="margin-top:0">'
+                .'<div><label>Pavadinimas</label><input name="title" value="'.e($batch['title']).'"></div>'
+                .'<div><label>Renginio data</label><input name="event_date" type="date" value="'.e((string)($batch['event_date'] ?? '')).'"></div>'
+                .'</div><p class="muted small">Albumas sukuriamas kaip <strong>draft</strong> — viešoje galerijoje jis nepasirodys, kol pats jo nepaskelbsi. B2 kelias sudaromas kanoniškai (albums/metai/pavadinimas), kaip ir visur kitur.</p>'
+                .'<button class="primary">Sukurti albumą ir perkelti</button></form>';
+            echo '<h3>Arba į esamą albumą</h3>'
+                .'<form method="post" action="?action=inbox_import"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="batch_id" value="'.$batchId.'"><input type="hidden" name="mode" value="existing">'
+                .'<div class="formgrid" style="margin-top:0"><div><label>Albumas</label><select name="album_id">';
+            foreach ($albums as $a) {
+                echo '<option value="'.(int)$a['id'].'">'.e($a['title']).((string)($a['event_date'] ?? '') !== '' ? ' ('.e($a['event_date']).')' : '').((string)($a['source_path'] ?? '') === '' ? ' — be B2 kelio' : '').'</option>';
+            }
+            echo '</select></div></div><p class="muted small">Nuotraukos keliauja į to albumo B2 folderį; albumas privalo turėti B2 kelią.</p><button class="btn">Perkelti į pasirinktą albumą</button></form>';
+        }
+        echo '</div>';
+    }
+
+    echo '<div class="card"><h2>Failai</h2>';
+    if (!$files) {
+        echo '<p class="muted">Siunta tuščia — narys atidarė formą, bet nieko neįkėlė.</p>';
+    } else {
+        echo '<div class="photo-board">';
+        foreach ($files as $f) {
+            $fid = (int)$f['id'];
+            echo '<div class="photo-tile" style="cursor:default">';
+            if ((string)($f['thumb_b2_key'] ?? '') !== '') {
+                echo '<a href="?action=inbox_thumb&id='.$fid.'&full=1" target="_blank" rel="noopener"><img loading="lazy" src="?action=inbox_thumb&id='.$fid.'" alt=""></a>';
+            } else {
+                echo '<div class="no-thumb">'.e(strtoupper((string)pathinfo((string)$f['original_filename'], PATHINFO_EXTENSION))).'</div>';
+            }
+            echo '<div class="photo-tile-body"><div class="photo-title" title="'.e($f['original_filename']).'">'.e($f['original_filename']).'</div>'
+                .'<div class="muted small">'.e(human_bytes((int)$f['file_size']))
+                .((string)($f['taken_at'] ?? '') !== '' ? ' · '.e(substr((string)$f['taken_at'], 0, 16)) : '').'</div>';
+            if (!$imported) {
+                echo '<form method="post" action="?action=inbox_delete_file" class="photo-tools" onsubmit="return confirm(\'Ištrinti šį failą iš inbox?\')">'
+                    .'<input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="file_id" value="'.$fid.'">'
+                    .'<button class="btn mini" style="border-color:var(--err-line)">Ištrinti</button></form>';
+            }
+            echo '</div></div>';
+        }
+        echo '</div>';
+    }
+    echo '</div>';
+
+    echo '<div class="card"><h2>Ištrinti siuntą</h2><p class="muted small">Pašalina '.e(count($files)).' failus iš B2 inbox\'o ir siuntos įrašą. '
+        .($imported ? 'Albume esančios kopijos lieka nepaliestos.' : '<strong>Į galeriją dar neperkelta — kopijų niekur kitur nėra.</strong>')
+        .'</p><form method="post" action="?action=inbox_delete" onsubmit="return confirm(\'Tikrai ištrinti visą siuntą iš B2?\')" class="actions" style="margin:0">'
+        .'<input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="batch_id" value="'.$batchId.'">'
+        .'<button class="btn" style="border-color:var(--err-line);color:#e05b6a">Ištrinti siuntą</button></form></div>';
+    foot('Inbox');
+}
+function inbox_import(): void {
+    require_superadmin(); csrf(); b2_load_config(); ensure_inbox_schema();
+    $batchId = (int)($_POST['batch_id'] ?? 0);
+    $batch = inbox_batch_row($batchId);
+    if (!$batch) { flash('Siunta nerasta.', 'err'); go('?page=inbox'); }
+    if ((string)$batch['status'] === 'imported') { flash('Ši siunta jau perkelta.', 'err'); go('?page=inbox&batch='.$batchId); }
+    $back = '?page=inbox&batch='.$batchId;
+
+    $albumId = (int)($batch['album_id'] ?? 0);
+    if ($albumId > 0) {
+        // Antras (ir tolesni) paspaudimai: albumas jau parinktas pirmo karto metu.
+        $st = db()->prepare("SELECT * FROM albums WHERE id=? LIMIT 1");
+        $st->execute([$albumId]);
+        $album = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$album) { flash('Albumas, į kurį buvo pradėta kelti, nebeegzistuoja.', 'err'); go($back); }
+        $prefix = trim((string)($album['source_path'] ?? ''), '/');
+    } elseif ((string)($_POST['mode'] ?? 'new') === 'existing') {
+        $albumId = (int)($_POST['album_id'] ?? 0);
+        $album = require_album_editable_by_id($albumId);
+        $prefix = trim((string)($album['source_path'] ?? ''), '/');
+    } else {
+        $title = trim((string)($_POST['title'] ?? '')) !== '' ? trim((string)$_POST['title']) : (string)$batch['title'];
+        $date = trim((string)($_POST['event_date'] ?? ''));
+        if ($date === '') $date = (string)($batch['event_date'] ?? '');
+        if ($date !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) { flash('Data turi būti YYYY-MM-DD.', 'err'); go($back); }
+        $prefix = canonical_album_prefix($title, $date !== '' ? $date : null);
+        $exists = db()->prepare("SELECT id FROM albums WHERE source_path=? LIMIT 1");
+        $exists->execute([$prefix]);
+        $albumId = (int)$exists->fetchColumn();
+        if (!$albumId) {
+            $slug = slug($title);
+            $base = $slug; $i = 2;
+            $slugExists = db()->prepare("SELECT id FROM albums WHERE slug=? LIMIT 1");
+            while (true) {
+                $slugExists->execute([$slug]);
+                if (!$slugExists->fetchColumn()) break;
+                $slug = $base.'-'.$i++;
+            }
+            $notes = 'Iš nario įkėlimo: '.(string)$batch['uploader_name'].((string)($batch['note'] ?? '') !== '' ? ' · '.(string)$batch['note'] : '');
+            db()->prepare("INSERT INTO albums(uuid,source_type,source_path,slug,title,event_date,visibility,download_enabled,notes_internal,created_by,updated_by) VALUES(?,'inbox',?,?,?,?,'draft',1,?,?,?)")
+                ->execute([uid(), $prefix, $slug, $title, $date !== '' ? $date : null, $notes, $_SESSION['admin']['id'] ?? null, $_SESSION['admin']['id'] ?? null]);
+            $albumId = (int)db()->lastInsertId();
+            place_album_by_date($albumId);
+            persist_album_metadata_json($albumId);
+        }
+    }
+    if ($albumId <= 0 || $prefix === '') { flash('Albumas neturi B2 kelio — pirma nustatyk jį albumo lange.', 'err'); go($back); }
+    db()->prepare("UPDATE inbox_batches SET album_id=? WHERE id=?")->execute([$albumId, $batchId]);
+
+    // B2 kopijuoja savo viduje; per PHP nekeliauja nei vienas baitas. Dalimis -
+    // 300 failu kopijavimas nesutilptu i max_execution_time.
+    $source = trim((string)$batch['b2_prefix'], '/');
+    $copy = b2_copy_prefix_chunk($source.'/originals', $prefix.'/originals');
+    if ((int)$copy['remaining'] > 0) {
+        flash('Nukopijuota '.(int)$copy['copied'].', liko '.(int)$copy['remaining'].' failų — spausk „Tęsti perkėlimą“.', 'ok');
+        go($back);
+    }
+    b2_copy_prefix_chunk($source.'/metadata', $prefix.'/metadata');
+    $created = b2_create_photo_rows_from_prefix($albumId, $prefix);
+    db()->prepare("UPDATE inbox_batches SET status='imported', imported_at=NOW() WHERE id=?")->execute([$batchId]);
+    db()->prepare("UPDATE inbox_files SET status='imported' WHERE batch_id=?")->execute([$batchId]);
+    audit('album', $albumId, 'inbox_import', 'Nario įkėlimas perkeltas į albumą', ['batch'=>$batchId, 'prefix'=>$prefix, 'copied'=>(int)$copy['copied'], 'created_photos'=>$created]);
+    flash('Perkelta: '.(int)$copy['copied'].' failai į B2, '.$created.' naujos nuotraukos albume.', 'ok', '?page=album_edit&id='.$albumId, 'Atidaryti albumą');
+    go($back);
+}
+function inbox_delete_file(): void {
+    require_superadmin(); csrf(); b2_load_config(); ensure_inbox_schema();
+    $st = db()->prepare("SELECT * FROM inbox_files WHERE id=? LIMIT 1");
+    $st->execute([(int)($_POST['file_id'] ?? 0)]);
+    $f = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$f) { flash('Failas nerastas.', 'err'); go('?page=inbox'); }
+    b2_delete_exact_key((string)$f['b2_key']);
+    if ((string)($f['thumb_b2_key'] ?? '') !== '') b2_delete_exact_key((string)$f['thumb_b2_key']);
+    db()->prepare("DELETE FROM inbox_files WHERE id=?")->execute([(int)$f['id']]);
+    db()->prepare("UPDATE inbox_batches SET files_count=GREATEST(files_count-1,0), bytes_total=GREATEST(CAST(bytes_total AS SIGNED)-?,0) WHERE id=?")
+        ->execute([(int)$f['file_size'], (int)$f['batch_id']]);
+    audit('inbox', (int)$f['batch_id'], 'delete_file', 'Failas ištrintas iš inbox', ['key'=>(string)$f['b2_key']]);
+    flash('Failas ištrintas.');
+    go('?page=inbox&batch='.(int)$f['batch_id']);
+}
+function inbox_delete(): void {
+    require_superadmin(); csrf(); b2_load_config(); ensure_inbox_schema();
+    $batchId = (int)($_POST['batch_id'] ?? 0);
+    $batch = inbox_batch_row($batchId);
+    if (!$batch) { flash('Siunta nerasta.', 'err'); go('?page=inbox'); }
+    $prefix = trim((string)$batch['b2_prefix'], '/');
+    $res = $prefix !== '' ? b2_delete_prefix_chunk($prefix) : ['deleted'=>0, 'remaining'=>0];
+    if ((int)$res['remaining'] > 0) {
+        flash('Ištrinta '.(int)$res['deleted'].' failų, liko '.(int)$res['remaining'].' — spausk dar kartą.', 'ok');
+        go('?page=inbox&batch='.$batchId);
+    }
+    db()->prepare("DELETE FROM inbox_files WHERE batch_id=?")->execute([$batchId]);
+    db()->prepare("DELETE FROM inbox_batches WHERE id=?")->execute([$batchId]);
+    audit('inbox', $batchId, 'delete', 'Nario įkėlimo siunta ištrinta', ['prefix'=>$prefix, 'deleted'=>(int)$res['deleted']]);
+    flash('Siunta ištrinta ('.(int)$res['deleted'].' failai B2).');
+    go('?page=inbox');
 }
 function zip_page(): void {
     require_superadmin();
@@ -6936,6 +7234,10 @@ try {
     if ($action==='create_db_album_from_b2_prefix') { need_login(); create_db_album_from_b2_prefix(); }
     if ($action==='link_b2_prefix_to_album') { need_login(); link_b2_prefix_to_album(); }
     if ($action==='merge_b2_prefix_into_album') { need_login(); merge_b2_prefix_into_album(); }
+    if ($action==='inbox_import') { need_login(); inbox_import(); }
+    if ($action==='inbox_delete') { need_login(); inbox_delete(); }
+    if ($action==='inbox_delete_file') { need_login(); inbox_delete_file(); }
+    if ($action==='inbox_thumb') { need_login(); inbox_thumb(); }
     if ($action==='zip_request') { need_login(); zip_request(); }
     if ($action==='save_tag') { need_login(); csrf(); $name=trim((string)($_POST['name'] ?? '')); if ($name!=='') { db()->prepare("INSERT IGNORE INTO tags(name,slug,type) VALUES(?,?,?)")->execute([$name,slug($name),$_POST['type'] ?? 'keyword']); audit('tag',null,'create','Tag created: '.$name); } go('?page=tags'); }
 
@@ -6955,6 +7257,7 @@ try {
         'access' => access_page(),
         'settings' => settings_page(),
         'b2' => b2_page(),
+        'inbox' => inbox_page(),
         'takeout' => takeout_page(),
         'takeout_preview_pending' => takeout_preview_pending(),
         'import' => import_page(),

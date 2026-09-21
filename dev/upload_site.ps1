@@ -72,6 +72,12 @@ function Ftp-Names([string]$dirUri) {
         return @($txt -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     }
 }
+function Ftp-MakeDir([string]$dirUri) {
+    return Invoke-Ftp {
+        $resp = (New-Req $dirUri.TrimEnd('/') ([System.Net.WebRequestMethods+Ftp]::MakeDirectory)).GetResponse()
+        try { return $true } finally { $resp.Close() }
+    }
+}
 function Ftp-Size([string]$uri) {
     return Invoke-Ftp {
         $resp = (New-Req $uri ([System.Net.WebRequestMethods+Ftp]::GetFileSize)).GetResponse()
@@ -147,7 +153,26 @@ foreach ($p in $plan) {
     if (-not $p.Exists) { Write-Host ("  NERA vietinio failo: " + $p.Local); $anyMissing = $true; continue }
     if (-not $dirCache.ContainsKey($p.DirUri)) {
         try { $dirCache[$p.DirUri] = Ftp-Names $p.DirUri }
-        catch { Write-Host ("  Nepavyko nuskaityti katalogo " + $p.DirUri + ": " + $_.Exception.Message); Done 1 }
+        catch {
+            # Katalogo gali tiesiog dar nebuti - naujas poaplankis (pvz. ikelti/).
+            # Bandomajame rezime nieko nekuriam, tik pasakom. Su -Execute sukuriam
+            # ir skaitom is naujo; jei katalogas TIKRAI yra, o listingas luzo del
+            # rysio, MKD grazins klaida ir mes sustosim - t.y. neperrasysim failo
+            # be atsargines kopijos.
+            if (-not $Execute) {
+                Write-Host ("  Katalogo " + $p.DirUri + " serveryje nera - su -Execute jis bus sukurtas.")
+                $dirCache[$p.DirUri] = @()
+            } else {
+                try {
+                    Ftp-MakeDir $p.DirUri | Out-Null
+                    Write-Host ("  Sukurtas katalogas " + $p.DirUri)
+                    Start-Sleep -Milliseconds 250
+                    $dirCache[$p.DirUri] = Ftp-Names $p.DirUri
+                } catch {
+                    Write-Host ("  Nepavyko sukurti katalogo " + $p.DirUri + ": " + $_.Exception.Message); Done 1
+                }
+            }
+        }
         Start-Sleep -Milliseconds 250
     }
     $conv = To-Lf $p.Local
