@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 /**
- * Laikina nuotrauku talpykla klubo nariams: https://foto.klajunas.lt/uploads/
+ * Laikina nuotrauku talpykla klubo nariams: https://upload.klajunas.lt/
  *
  * Kam to reikia: po renginio nuotraukos guli nariu telefonuose ir kompiuteriu
  * aplankuose. I admin panele jie priejimo neturi ir neturetu tureti, o el.
@@ -63,8 +63,10 @@ const INBOX_GATE_LOCK_SEC   = 300;
 const INBOX_ALLOWED_EXT = ['jpg','jpeg','png','webp','gif','heic','heif','mp4','mov','m4v','webm','avi'];
 
 // Konfigai guli UZ webroot ribu (~/domains/), kaip ir visame likusiame
-// projekte. Du keliai todel, kad vietinis medis (server/) ir serveris
-// (~/domains/foto.klajunas.lt/public_html) skiriasi vienu lygiu.
+// projekte. Du keliai todel, kad skiriasi medziu gylis: sis puslapis gyvena
+// ~/domains/klajunas.lt/public_html/upload (subdomenas upload.klajunas.lt), o
+// admin - ~/domains/foto.klajunas.lt/public_html/admin. Abiem atvejais i
+// ~/domains/ atveda "../../../".
 foreach ([__DIR__.'/../../foto-db-config.php', __DIR__.'/../../../foto-db-config.php'] as $cfg) {
     if (is_file($cfg)) { require_once $cfg; break; }
 }
@@ -490,7 +492,7 @@ header('Cache-Control: no-store');
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
 <title>Įkelti nuotraukas · foto.klajunas.lt</title>
-<link rel="icon" href="/favicon.ico">
+<link rel="icon" href="https://foto.klajunas.lt/favicon.ico">
 <style>
 :root{color-scheme:dark;--bg:#0b0e12;--panel:#151a20;--panel2:#10151b;--input:#0d1116;--line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.22);--text:#e8eef6;--muted:#a7b3c2;--accent:#ffb74a;--accent-soft:rgba(255,183,74,.14);--accent-line:rgba(255,183,74,.4);--accent-ink:#ffc46b;--ok:#4cc38a;--err:#e05b6a;--radius:14px}
 *{box-sizing:border-box}
@@ -509,8 +511,15 @@ input:focus,textarea:focus{outline:none;border-color:var(--accent-line)}
 .btn:hover,button:hover{border-color:var(--line-strong)}
 .primary{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent-ink)}
 button[disabled]{opacity:.5;cursor:not-allowed}
-.pickers{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
-#drop{margin-top:14px;border:2px dashed var(--line-strong);border-radius:var(--radius);padding:26px 16px;text-align:center;color:var(--muted);cursor:pointer}
+.bigtitle{font-size:26px;font-weight:750;background:transparent;border:0;border-bottom:1px solid var(--line-strong);border-radius:0;padding:10px 2px;letter-spacing:-.02em}
+.bigtitle::placeholder{color:var(--muted);font-weight:400}
+.bigtitle:focus{border-bottom-color:var(--accent)}
+.meta{margin-top:16px}
+.empty{padding:34px 16px;text-align:center}
+.empty-title{margin:0 0 16px;color:var(--muted)}
+.big{padding:14px 28px;font-size:15.5px}
+.linkbtn{background:none;border:0;padding:0;color:var(--accent-ink);font:inherit;font-weight:650;text-decoration:underline;text-underline-offset:3px;cursor:pointer;width:auto}
+#drop{margin-top:16px;border:2px dashed var(--line-strong);border-radius:var(--radius);padding:8px;color:var(--muted)}
 #drop.over{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
 #drop b{color:var(--text)}
 .hide{display:none!important}
@@ -530,13 +539,14 @@ button[disabled]{opacity:.5;cursor:not-allowed}
 .muted{color:var(--muted)}
 .small{font-size:12.5px}
 .done h2{margin:0 0 8px;font-size:19px}
-@media(max-width:560px){.wrap{padding:16px 12px 52px}header.top img{height:42px}h1{font-size:19px}.btn,button{width:100%}.pickers{flex-direction:column}}
+@media(max-width:560px){.wrap{padding:16px 12px 52px}header.top img{height:42px}h1{font-size:19px}.bigtitle{font-size:22px}.btn,.primary{width:100%}}
 </style>
 </head>
 <body>
 <div class="wrap">
 <header class="top">
-  <img src="/foto-klajunas-logo.png" alt="foto.klajunas.lt">
+  <!-- Logotipas ir favicon guli foto.klajunas.lt - cia, subdomeno saknyje, ju nera. -->
+  <img src="https://foto.klajunas.lt/foto-klajunas-logo.png" alt="foto.klajunas.lt">
   <div><h1>Įkelti nuotraukas</h1><div class="sub">Laikina talpykla klubo nariams</div></div>
 </header>
 
@@ -555,25 +565,26 @@ button[disabled]{opacity:.5;cursor:not-allowed}
   </form>
 <?php else: ?>
   <div class="card" id="formCard">
-    <div class="grid">
-      <div><label for="title">Laikinas pavadinimas *</label><input id="title" maxlength="150" placeholder="Pvz. Rudens taurė, Molėtai" required></div>
+    <input id="title" class="bigtitle" maxlength="150" placeholder="Pridėkite pavadinimą" required>
+    <div class="grid meta">
       <div><label for="uploader">Kas įkelia *</label><input id="uploader" maxlength="80" placeholder="Vardas Pavardė" required></div>
-      <div><label for="edate">Renginio data</label><input id="edate" type="date"></div>
+      <div><label for="edate">Renginio data</label><input id="edate" placeholder="YYYY-MM-DD" inputmode="numeric" pattern="\d{4}-\d{2}-\d{2}" maxlength="10" title="Metai-mėnuo-diena, pvz. 2026-09-21"></div>
       <div><label for="note">Pastaba adminui</label><input id="note" maxlength="400" placeholder="Nebūtina"></div>
     </div>
 
-    <div class="pickers">
-      <button type="button" class="btn" id="btnFiles">Pasirinkti nuotraukas</button>
-      <button type="button" class="btn" id="btnFolder">Pasirinkti aplanką</button>
-      <button type="button" class="btn" id="btnCamera">Nufotografuoti</button>
-    </div>
     <input id="inFiles" class="hide" type="file" multiple accept="image/*,video/*">
     <input id="inFolder" class="hide" type="file" multiple webkitdirectory directory>
     <input id="inCamera" class="hide" type="file" accept="image/*" capture="environment">
 
-    <div id="drop"><b>Nutempkite nuotraukas arba aplanką čia</b><br><span class="small">arba pasirinkite mygtukais viršuje</span></div>
-
-    <ul class="filelist hide" id="list"></ul>
+    <div id="drop">
+      <div class="empty" id="empty">
+        <p class="empty-title">Nuotraukų dar nepasirinkta</p>
+        <button type="button" class="primary big" id="btnFiles">Pridėti nuotraukas</button>
+        <p class="small" style="margin:16px 0 0">arba <button type="button" class="linkbtn" id="btnFolder">pasirinkti aplanką</button> ·
+          <button type="button" class="linkbtn" id="btnCamera">nufotografuoti</button><br>failus galima ir nutempti čia</p>
+      </div>
+      <ul class="filelist hide" id="list"></ul>
+    </div>
     <div class="status" id="picked"></div>
 
     <div class="bar hide" id="bar"><i></i></div>
@@ -581,7 +592,8 @@ button[disabled]{opacity:.5;cursor:not-allowed}
 
     <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
       <button class="primary" id="send" disabled>Įkelti</button>
-      <button class="btn" id="clear" type="button">Išvalyti sąrašą</button>
+      <button class="btn hide" id="more" type="button">Pridėti dar</button>
+      <button class="btn hide" id="clear" type="button">Išvalyti sąrašą</button>
     </div>
     <p class="muted small" style="margin:12px 0 0">Keliami originalūs failai, po vieną; vienas failas – iki <?= e(inbox_human_bytes(INBOX_MAX_FILE_BYTES)) ?>. Didelė siunta gali užtrukti – palikite puslapį atvirą. Į galeriją nuotraukos patenka tik tada, kai jas peržiūri administratorius.</p>
   </div>
@@ -651,7 +663,13 @@ button[disabled]{opacity:.5;cursor:not-allowed}
       }
       list.appendChild(li);
     });
-    list.classList.toggle('hide', S.files.length === 0);
+    // Tuscia busena ir sarasas keiciasi vietomis: kol nieko nepasirinkta,
+    // matomas tik vienas mygtukas, o ne tuscias remelis su antrastemis.
+    var has = S.files.length > 0;
+    list.classList.toggle('hide', !has);
+    $('empty').classList.toggle('hide', has);
+    $('more').classList.toggle('hide', !has);
+    $('clear').classList.toggle('hide', !has);
     var total = S.files.reduce(function(s, x){ return s + x.file.size; }, 0);
     var bits = [];
     if (skip && skip.type) bits.push(skip.type + ' netinkamo tipo');
@@ -664,7 +682,18 @@ button[disabled]{opacity:.5;cursor:not-allowed}
   }
 
   // --- failu pasirinkimas -------------------------------------------------
+  // Bruksnelius dedam patys: telefono skaiciu klaviatura ju neturi, o formatas
+  // turi likti YYYY-MM-DD - toks pat, kokio lauks serveris ir koks guli DB.
+  $('edate').addEventListener('input', function(){
+    var d = this.value.replace(/[^0-9]/g, '').slice(0, 8);
+    var out = d.slice(0, 4);
+    if (d.length > 4) out += '-' + d.slice(4, 6);
+    if (d.length > 6) out += '-' + d.slice(6, 8);
+    this.value = out;
+  });
+
   $('btnFiles').onclick  = function(){ $('inFiles').click(); };
+  $('more').onclick      = function(){ $('inFiles').click(); };
   $('btnFolder').onclick = function(){ $('inFolder').click(); };
   $('btnCamera').onclick = function(){ $('inCamera').click(); };
   ['inFiles','inFolder','inCamera'].forEach(function(id){
@@ -678,7 +707,6 @@ button[disabled]{opacity:.5;cursor:not-allowed}
   ['dragleave','drop'].forEach(function(t){
     drop.addEventListener(t, function(ev){ ev.preventDefault(); drop.classList.remove('over'); });
   });
-  drop.addEventListener('click', function(){ $('inFiles').click(); });
   drop.addEventListener('drop', function(ev){
     var dt = ev.dataTransfer;
     if (!dt) return;
@@ -762,6 +790,7 @@ button[disabled]{opacity:.5;cursor:not-allowed}
     var m = meta();
     if (m.title.length < 3) { $('title').focus(); alert('Įrašykite laikiną pavadinimą.'); return; }
     if (m.uploader.length < 2) { $('uploader').focus(); alert('Įrašykite, kas įkelia.'); return; }
+    if (m.event_date !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(m.event_date)) { $('edate').focus(); alert('Data rašoma YYYY-MM-DD, pvz. 2026-09-21. Galima ir palikti tuščią.'); return; }
     try { localStorage.setItem('inbox_uploader', m.uploader); } catch (e) {}
     run(m);
   };
@@ -874,7 +903,7 @@ button[disabled]{opacity:.5;cursor:not-allowed}
 </script>
 <?php endif; ?>
 
-<p class="muted small" style="text-align:center;margin-top:26px"><a href="/" style="color:inherit">← foto.klajunas.lt galerija</a></p>
+<p class="muted small" style="text-align:center;margin-top:26px"><a href="https://foto.klajunas.lt/" style="color:inherit">← foto.klajunas.lt galerija</a></p>
 </div>
 </body>
 </html>

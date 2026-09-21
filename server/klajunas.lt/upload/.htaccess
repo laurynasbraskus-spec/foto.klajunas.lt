@@ -1,0 +1,33 @@
+Options -Indexes
+
+# Sis katalogas yra upload.klajunas.lt saknis, bet fiziskai guli klajunas.lt
+# (WordPress) medyje: /domains/klajunas.lt/public_html/upload. Vadinasi, virsuje
+# lieka WordPress .htaccess su savo rewrite ir LiteSpeed taisyklemis, ir jos
+# pasiekia ir mus. Todel cia viskas nusakoma is naujo, o ne paliekama paveldui.
+
+# LiteSpeed podelis puslapiui yra pavojingas, ne naudingas: forma nesa vienkartini
+# CSRF zetona, ir nukesuotas atsakymas ji atiduotu kitam zmogui - tas pamatytu
+# "Sesija pasibaige" ir nesuprastu, kodel. Pats PHP siuncia Cache-Control:
+# no-store, bet LSCache taisykles is WordPress gali ji aplenkti.
+<IfModule LiteSpeed>
+  CacheDisable public /
+  RewriteEngine On
+  RewriteRule .* - [E=Cache-Control:no-cache]
+</IfModule>
+
+# Savi rewrite nustatymai nutraukia WordPress taisykliu paveldejima siam
+# katalogui - kitaip WP bandytu uzklausas versti i savo index.php.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header always set X-Robots-Tag "noindex, nofollow"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "geolocation=(), microphone=(), payment=(), usb=()"
+  # unset pries set: jei WordPress virsuje turi savo CSP, du antrasciai veiktu
+  # sankirta, ir puslapis nutiltu be jokios klaidos.
+  Header always unset Content-Security-Policy
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://foto.klajunas.lt; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+</IfModule>

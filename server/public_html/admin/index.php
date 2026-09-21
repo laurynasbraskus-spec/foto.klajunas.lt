@@ -3337,10 +3337,8 @@ function settings_page(): void {
     // matyti, kad galetu perduoti klubo grupei, o jis saugo ne duomenis, o tik
     // ikelimo forma nuo praeiviu.
     $inboxOn = setting('inbox_enabled', '1') !== '0';
-    echo '<div style="grid-column:1/-1;margin-top:6px"><h2 style="margin:0">Uploads - nuotraukų įkėlimas</h2><p class="muted small" style="margin:6px 0 0">Narių puslapis: <code>https://foto.klajunas.lt/uploads/</code>. Be kodo jis neprima nieko. Gautos siuntos laukia <a href="?page=inbox" style="text-decoration:underline">Uploads</a> lange.</p></div>';
-    echo '<div><label>Kodas nariams</label><input name="inbox_access_code" value="'.e(setting('inbox_access_code')).'" autocomplete="off" placeholder="tuščia = įkėlimas išjungtas"></div>';
-    echo '<div><label>Įkėlimas įjungtas</label><select name="inbox_enabled"><option value="1"'.($inboxOn?' selected':'').'>taip</option><option value="0"'.(!$inboxOn?' selected':'').'>ne</option></select></div>';
-    echo '<div><label>Takeout staging profile</label><select id="takeoutProfile" name="takeout_stage_profile">';
+    echo '<div style="grid-column:1/-1;margin-top:6px"><h2 style="margin:0">Uploads - nuotraukų įkėlimas</h2><p class="muted small" style="margin:6px 0 0">Narių puslapis: <code>https://upload.klajunas.lt/</code>. Be kodo jis neprima nieko. Gautos siuntos laukia <a href="?page=inbox" style="text-decoration:underline">Uploads</a> lange.</p></div>';
+    echo '<div><label>Upload chunk size</label><select id="takeoutProfile" name="takeout_stage_profile">';
     foreach (takeout_stage_profile_presets() as $v => $preset) {
         echo '<option value="'.e($v).'"'.($takeoutTuning['profile']===$v?' selected':'').'>'.e($preset['label']).'</option>';
     }
@@ -3351,8 +3349,10 @@ function settings_page(): void {
     // rodomi tik tada, kai tikrai veikia.
     $takeoutCustom = $takeoutTuning['profile'] === 'custom';
     echo '</select></div>';
-    echo '<div class="takeout-custom"'.($takeoutCustom ? '' : ' hidden').'><label>Takeout chunk bytes</label><input name="takeout_stage_chunk_bytes" value="'.e(setting('takeout_stage_chunk_bytes')).'" placeholder="262144"></div>';
-    echo '<div class="takeout-custom"'.($takeoutCustom ? '' : ' hidden').'><label>Takeout JSON POST budget bytes</label><input name="takeout_stage_post_budget" value="'.e(setting('takeout_stage_post_budget')).'" placeholder="auto"></div>';
+    echo '<div><label>Upload On/Off</label><select name="inbox_enabled"><option value="1"'.($inboxOn?' selected':'').'>taip</option><option value="0"'.(!$inboxOn?' selected':'').'>ne</option></select></div>';
+    echo '<div><label>Verification code</label><input name="inbox_access_code" value="'.e(setting('inbox_access_code')).'" autocomplete="off" placeholder="tuščia = įkėlimas išjungtas"></div>';
+    echo '<div class="takeout-custom"'.($takeoutCustom ? '' : ' hidden').'><label>Custom chunk bytes</label><input name="takeout_stage_chunk_bytes" value="'.e(setting('takeout_stage_chunk_bytes')).'" placeholder="262144"></div>';
+    echo '<div class="takeout-custom"'.($takeoutCustom ? '' : ' hidden').'><label>Custom JSON POST budget bytes</label><input name="takeout_stage_post_budget" value="'.e(setting('takeout_stage_post_budget')).'" placeholder="auto"></div>';
     echo '</div><p class="muted">Takeout staging sends base64 JSON chunks. Album photo upload reuses this profile for multipart batch size (256 KB+ profiles). WAF (~128 KB) allows <strong>Safe</strong> and <strong>Safe+</strong> Takeout modes. Max raw Takeout chunk: <strong>'.e(human_bytes(takeout_stage_max_chunk_bytes((int)upload_limits()['post_max_size']))).'</strong>. Album batch now: <strong>'.e(human_bytes((int)album_upload_batch_tuning()['batch_bytes'])).'</strong>.</p><p class="muted">B2 raktai saugomi settings DB lentelėje kaip override virš b2-config.php failo; Application Key niekada nerodomas.</p><button class="primary">Save settings</button></form>';
     echo '<script>(function(){var sel=document.getElementById("takeoutProfile");if(!sel)return;var boxes=document.querySelectorAll(".takeout-custom");function sync(){boxes.forEach(function(b){b.hidden=sel.value!=="custom";});}sel.addEventListener("change",sync);sync();})();</script>';
     echo '<div class="card" style="margin-top:16px"><h2>B2 ryšio testas</h2><p class="muted small">Patikrina autorizaciją ir bucket pasiekiamumą su šiuo metu galiojančiais raktais (DB override arba b2-config.php). Cache prieš testą išvalomas.</p><form method="post" action="?action=b2_test" class="actions" style="margin:0"><input type="hidden" name="_token" value="'.e(token()).'"><button class="btn">Test B2 connection</button></form></div>';
@@ -4169,7 +4169,7 @@ function b2_page(): void {
 /**
  * Inbox - laikina nariu ikelimu talpykla.
  *
- * Nariai kelia per vieša /uploads/ puslapi (public_html/uploads/index.php): jis
+ * Nariai kelia per vieša upload.klajunas.lt puslapi (server/klajunas.lt/upload/index.php): jis
  * praso bendro klubo kodo, laikino pavadinimo ir keliancio vardo, o failus
  * deda i B2 prefiksa "inbox/<data>-<pavadinimas>-<zetonas>/originals/".
  *
@@ -4183,7 +4183,7 @@ function b2_page(): void {
  * Originalai inbox'e lieka tol, kol ju rankomis neistrinsi - taip po nevykusio
  * perkelimo yra i ka grizti.
  *
- * Lenteles tokios pacios kaip public_html/uploads/index.php
+ * Lenteles tokios pacios kaip server/klajunas.lt/upload/index.php
  * inbox_ensure_schema() - keiciant viena vieta, keisti abi.
  */
 function ensure_inbox_schema(): void {
@@ -4270,7 +4270,7 @@ function inbox_page(): void {
     // kaip ir Settings lange - tas pats nustatymas, tik po ranka.
     $live = $on && $code !== '';
     echo '<div class="card"><h2>Nuoroda nariams</h2>'
-        .'<p><code>https://foto.klajunas.lt/uploads/</code> · būsena: '
+        .'<p><code>https://upload.klajunas.lt/</code> · būsena: '
         .($live ? '<span class="badge" style="border-color:var(--accent-line);color:var(--accent-ink)">įjungta</span>'
                 : '<span class="badge">'.($on ? 'neveikia — nėra kodo' : 'išjungta').'</span>').'</p>'
         .'<form method="post" action="?action=inbox_settings" class="actions" style="margin:10px 0 0">'
@@ -4342,7 +4342,7 @@ function inbox_batch_page(int $batchId): void {
             echo '<form method="post" action="?action=inbox_import"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="batch_id" value="'.$batchId.'"><input type="hidden" name="mode" value="new">'
                 .'<h3>Naujas albumas</h3><div class="formgrid" style="margin-top:0">'
                 .'<div><label>Pavadinimas</label><input name="title" value="'.e($batch['title']).'"></div>'
-                .'<div><label>Renginio data</label><input name="event_date" type="date" value="'.e((string)($batch['event_date'] ?? '')).'"></div>'
+                .'<div><label>Renginio data</label><input name="event_date" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}" maxlength="10" value="'.e((string)($batch['event_date'] ?? '')).'"></div>'
                 .'</div><p class="muted small">Albumas sukuriamas kaip <strong>draft</strong> — viešoje galerijoje jis nepasirodys, kol pats jo nepaskelbsi. B2 kelias sudaromas kanoniškai (albums/metai/pavadinimas), kaip ir visur kitur.</p>'
                 .'<button class="primary">Sukurti albumą ir perkelti</button></form>';
             echo '<h3>Arba į esamą albumą</h3>'
