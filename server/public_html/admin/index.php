@@ -752,7 +752,7 @@ body.light .spill.s-published{color:#1f7a45;background:rgba(31,122,69,.1);border
     unset($_SESSION['flash']);
     if ($title !== 'Login') {
         $items = is_superadmin()
-            ? ['dashboard'=>'Dashboard','albums'=>'Albums','photos'=>'Photos','inbox'=>'Narių įkėlimai','tags'=>'Tags','b2'=>'B2 Sync','takeout'=>'Takeout','import'=>'CSV','zip'=>'ZIP','settings'=>'Settings','access'=>'Access','audit'=>'Audit','admins'=>'Admins']
+            ? ['dashboard'=>'Dashboard','albums'=>'Albums','photos'=>'Photos','inbox'=>'Uploads','tags'=>'Tags','b2'=>'B2 Sync','takeout'=>'Takeout','import'=>'CSV','zip'=>'ZIP','settings'=>'Settings','access'=>'Access','audit'=>'Audit','admins'=>'Admins']
             : ['dashboard'=>'Dashboard','albums'=>'Albums','photos'=>'Photos'];
         $currentPage = (string)($_GET['page'] ?? 'dashboard');
         $currentAction = (string)($_GET['action'] ?? '');
@@ -1683,7 +1683,7 @@ function dashboard(): void {
         ['Duplicate albums', db()->query("SELECT COUNT(DISTINCT a.id) FROM albums a JOIN albums b ON a.id<>b.id WHERE a.source_path IS NOT NULL AND a.source_path<>'' AND b.source_path IS NOT NULL AND b.source_path<>'' AND (b.source_path LIKE CONCAT(a.source_path,'-%') OR a.source_path LIKE CONCAT(b.source_path,'-%') OR a.source_path=b.source_path)".(is_superadmin() ? '' : " AND a.created_by=".(int)current_admin_id()))->fetchColumn(), '?page=b2', 'Albumai galimai dubliuoti B2 folderiuose — sujunk per B2 Sync.'],
         ['Missing files', db()->query("SELECT COUNT(*) FROM photos".($photoScope ? $photoScope." AND is_missing=1" : " WHERE is_missing=1"))->fetchColumn(), '?page=photos&missing=1', 'Check DB photos marked as missing in storage.'],
     ];
-    if (is_superadmin()) $cards[] = ['Narių įkėlimai', inbox_pending_count(), '?page=inbox', 'Narių įkeltos siuntos, laukiančios perkėlimo į albumą.'];
+    if (is_superadmin()) $cards[] = ['Uploads', inbox_pending_count(), '?page=inbox', 'Narių įkeltos siuntos, laukiančios perkėlimo į albumą.'];
     echo '<h1>Dashboard</h1><div class="grid">';
     foreach ($cards as [$label,$value,$url,$hint]) echo '<a class="card gateway-card" href="'.e($url).'"><div class="metric">'.e($value).'</div><div class="muted">'.e($label).'</div><div class="gateway-hint">'.e($hint).'</div></a>';
     echo '</div><div class="grid" style="margin-top:18px"><div class="card dash-panel"><h2>Warnings</h2>';
@@ -3337,7 +3337,7 @@ function settings_page(): void {
     // matyti, kad galetu perduoti klubo grupei, o jis saugo ne duomenis, o tik
     // ikelimo forma nuo praeiviu.
     $inboxOn = setting('inbox_enabled', '1') !== '0';
-    echo '<div style="grid-column:1/-1;margin-top:6px"><h2 style="margin:0">Narių įkėlimai</h2><p class="muted small" style="margin:6px 0 0">Narių puslapis: <code>https://foto.klajunas.lt/ikelti/</code>. Be kodo jis neprima nieko. Gautos siuntos laukia <a href="?page=inbox" style="text-decoration:underline">Narių įkėlimų</a> lange.</p></div>';
+    echo '<div style="grid-column:1/-1;margin-top:6px"><h2 style="margin:0">Uploads - nuotraukų įkėlimas</h2><p class="muted small" style="margin:6px 0 0">Narių puslapis: <code>https://foto.klajunas.lt/uploads/</code>. Be kodo jis neprima nieko. Gautos siuntos laukia <a href="?page=inbox" style="text-decoration:underline">Uploads</a> lange.</p></div>';
     echo '<div><label>Kodas nariams</label><input name="inbox_access_code" value="'.e(setting('inbox_access_code')).'" autocomplete="off" placeholder="tuščia = įkėlimas išjungtas"></div>';
     echo '<div><label>Įkėlimas įjungtas</label><select name="inbox_enabled"><option value="1"'.($inboxOn?' selected':'').'>taip</option><option value="0"'.(!$inboxOn?' selected':'').'>ne</option></select></div>';
     echo '<div><label>Takeout staging profile</label><select id="takeoutProfile" name="takeout_stage_profile">';
@@ -4169,7 +4169,7 @@ function b2_page(): void {
 /**
  * Inbox - laikina nariu ikelimu talpykla.
  *
- * Nariai kelia per vieša /ikelti/ puslapi (public_html/ikelti/index.php): jis
+ * Nariai kelia per vieša /uploads/ puslapi (public_html/uploads/index.php): jis
  * praso bendro klubo kodo, laikino pavadinimo ir keliancio vardo, o failus
  * deda i B2 prefiksa "inbox/<data>-<pavadinimas>-<zetonas>/originals/".
  *
@@ -4183,7 +4183,7 @@ function b2_page(): void {
  * Originalai inbox'e lieka tol, kol ju rankomis neistrinsi - taip po nevykusio
  * perkelimo yra i ka grizti.
  *
- * Lenteles tokios pacios kaip public_html/ikelti/index.php
+ * Lenteles tokios pacios kaip public_html/uploads/index.php
  * inbox_ensure_schema() - keiciant viena vieta, keisti abi.
  */
 function ensure_inbox_schema(): void {
@@ -4230,7 +4230,7 @@ function inbox_thumb(): void {
     exit;
 }
 /**
- * Kodas ir jungiklis tiesiai Narių įkėlimų lange. Tie patys du nustatymai yra ir
+ * Kodas ir jungiklis tiesiai Uploads lange. Tie patys du nustatymai yra ir
  * Settings lange, bet busena matai butent cia, o jungimas per kita puslapi buvo
  * zingsnis be reikalo.
  */
@@ -4260,17 +4260,17 @@ function inbox_page(): void {
     $batchId = (int)($_GET['batch'] ?? 0);
     if ($batchId > 0) { inbox_batch_page($batchId); return; }
 
-    head('Narių įkėlimai');
+    head('Uploads');
     $rows = db()->query("SELECT b.*, a.title album_title FROM inbox_batches b LEFT JOIN albums a ON a.id=b.album_id ORDER BY (b.status='imported'), b.created_at DESC LIMIT 200")->fetchAll();
     $code = trim(setting('inbox_access_code'));
     $on = setting('inbox_enabled', '1') !== '0';
-    echo '<h1>Narių įkėlimai</h1>';
+    echo '<h1>Uploads - nuotraukų įkėlimas</h1>';
     // Busena be jungiklio buvo pusė atsakymo: matai, kad išjungta, o jungti eini
     // i kita puslapi. Kodas ir jungiklis sedi tuose paciuose settings raktuose
     // kaip ir Settings lange - tas pats nustatymas, tik po ranka.
     $live = $on && $code !== '';
     echo '<div class="card"><h2>Nuoroda nariams</h2>'
-        .'<p><code>https://foto.klajunas.lt/ikelti/</code> · būsena: '
+        .'<p><code>https://foto.klajunas.lt/uploads/</code> · būsena: '
         .($live ? '<span class="badge" style="border-color:var(--accent-line);color:var(--accent-ink)">įjungta</span>'
                 : '<span class="badge">'.($on ? 'neveikia — nėra kodo' : 'išjungta').'</span>').'</p>'
         .'<form method="post" action="?action=inbox_settings" class="actions" style="margin:10px 0 0">'
@@ -4284,7 +4284,7 @@ function inbox_page(): void {
         .'<button class="'.($on ? 'btn' : 'primary').'">'.($on ? 'Išjungti įkėlimą' : 'Įjungti įkėlimą').'</button></form>'
         .'<p class="muted small" style="margin:12px 0 0">Kodą dalinkis klubo grupėje. Nariai mato tik įkėlimo formą — nei galerijos, nei kitų siuntų jie nepasiekia. Tie patys laukai yra ir <a href="?page=settings" style="text-decoration:underline">Settings</a> lange.</p></div>';
 
-    if (!$rows) { echo '<p class="muted">Kol kas nieko neįkelta.</p>'; foot('Narių įkėlimai'); return; }
+    if (!$rows) { echo '<p class="muted">Kol kas nieko neįkelta.</p>'; foot('Uploads'); return; }
     echo '<table><tr><th>Gauta</th><th>Laikinas pavadinimas</th><th>Kas įkėlė</th><th>Failai</th><th>Dydis</th><th>Būsena</th><th></th></tr>';
     foreach ($rows as $r) {
         $imported = (string)$r['status'] === 'imported';
@@ -4304,12 +4304,12 @@ function inbox_page(): void {
             .'</tr>';
     }
     echo '</table>';
-    foot('Narių įkėlimai');
+    foot('Uploads');
 }
 function inbox_batch_page(int $batchId): void {
     $batch = inbox_batch_row($batchId);
     if (!$batch) { flash('Siunta nerasta.', 'err'); go('?page=inbox'); }
-    head('Narių įkėlimai · '.(string)$batch['title']);
+    head('Uploads · '.(string)$batch['title']);
     $imported = (string)$batch['status'] === 'imported';
     $albumId = (int)($batch['album_id'] ?? 0);
     $files = db()->prepare("SELECT * FROM inbox_files WHERE batch_id=? ORDER BY COALESCE(taken_at,created_at), id");
@@ -4388,7 +4388,7 @@ function inbox_batch_page(int $batchId): void {
         .'</p><form method="post" action="?action=inbox_delete" onsubmit="return confirm(\'Tikrai ištrinti visą siuntą iš B2?\')" class="actions" style="margin:0">'
         .'<input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="batch_id" value="'.$batchId.'">'
         .'<button class="btn" style="border-color:var(--err-line);color:#e05b6a">Ištrinti siuntą</button></form></div>';
-    foot('Narių įkėlimai');
+    foot('Uploads');
 }
 function inbox_import(): void {
     require_superadmin(); csrf(); b2_load_config(); ensure_inbox_schema();

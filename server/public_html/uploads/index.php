@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 /**
- * Laikina nuotrauku talpykla klubo nariams: https://foto.klajunas.lt/ikelti/
+ * Laikina nuotrauku talpykla klubo nariams: https://foto.klajunas.lt/uploads/
  *
  * Kam to reikia: po renginio nuotraukos guli nariu telefonuose ir kompiuteriu
  * aplankuose. I admin panele jie priejimo neturi ir neturetu tureti, o el.
@@ -15,9 +15,9 @@ declare(strict_types=1);
  * Kur guli failai: B2, prefikse "inbox/" - UZ "albums/" ribu. Tai ne detale:
  * gallery-security.php baltasis sarasas leidzia viesai atiduoti tik "albums/",
  * todel img.php ir b2-gallery.php siu failu nerodys niekam, net zinanciam
- * tiksli rakta. Perkelimas i galerija daromas admin > Inbox.
+ * tiksli rakta. Perkelimas i galerija daromas admin > Uploads.
  *
- * Vartai: bendras klubo kodas (admin > Settings > Inbox). Tai ne tapatybes
+ * Vartai: bendras klubo kodas (admin > Uploads arba Settings). Tai ne tapatybes
  * patikra, o filtras nuo praeiviu ir botu - puslapis guli viesame domene.
  * Kol kodas nenustatytas, puslapis nieko neprima (fail closed).
  *
@@ -50,11 +50,13 @@ header('Referrer-Policy: strict-origin-when-cross-origin');
 header('X-Robots-Tag: noindex, nofollow');
 
 const INBOX_ROOT_PREFIX     = 'inbox';
-// 150 MB vienam failui. Riba ne is dangaus: B2 ikelimo galas reikalauja POST su
-// Content-Length, tad failas keliauja per atminti (pats duomenu blokas + cURL
-// kopija), o memory_limit yra 512 MB. Nuotraukos sveria 3-8 MB, trumpi telefono
-// video - iki ~100 MB, tad riba pasiekiama tik ilgu video atveju.
-const INBOX_MAX_FILE_BYTES  = 157286400;
+// 95 MB vienam failui. Riba ne is dangaus: domenas eina per Cloudflare, o jo
+// free planas nupjauna didesni nei ~100 MB uzklausos kuna - narys tokiu atveju
+// matytu ne mano zinute, o svetima 413 puslapi. Antra riba is tos pacios puses:
+// B2 ikelimo galas reikalauja POST su Content-Length, tad failas keliauja per
+// atminti (duomenu blokas + cURL kopija) prie 512 MB memory_limit. Nuotraukos
+// sveria 3-8 MB, trumpi telefono video - iki keliasdesimties.
+const INBOX_MAX_FILE_BYTES  = 99614720;
 const INBOX_MAX_BATCH_FILES = 600;
 const INBOX_GATE_MAX_TRIES  = 10;
 const INBOX_GATE_LOCK_SEC   = 300;
@@ -581,7 +583,7 @@ button[disabled]{opacity:.5;cursor:not-allowed}
       <button class="primary" id="send" disabled>Įkelti</button>
       <button class="btn" id="clear" type="button">Išvalyti sąrašą</button>
     </div>
-    <p class="muted small" style="margin:12px 0 0">Keliami originalūs failai, po vieną. Didelė siunta gali užtrukti – palikite puslapį atvirą. Į galeriją nuotraukos patenka tik tada, kai jas peržiūri administratorius.</p>
+    <p class="muted small" style="margin:12px 0 0">Keliami originalūs failai, po vieną; vienas failas – iki <?= e(inbox_human_bytes(INBOX_MAX_FILE_BYTES)) ?>. Didelė siunta gali užtrukti – palikite puslapį atvirą. Į galeriją nuotraukos patenka tik tada, kai jas peržiūri administratorius.</p>
   </div>
 
   <div class="card done hide" id="doneCard">
@@ -606,22 +608,33 @@ button[disabled]{opacity:.5;cursor:not-allowed}
     return (i ? v.toFixed(v < 10 ? 1 : 0) : v) + ' ' + u[i];
   }
   function extOf(n){ var m = /\.([a-z0-9]+)$/i.exec(n || ''); return m ? m[1].toLowerCase() : ''; }
-  function accepted(f){ return OK_EXT.indexOf(extOf(f.name)) >= 0 && f.size > 0 && f.size <= MAX_BYTES; }
+  // "1 failų" atrodo kaip neuzbaigta programa, o ne kaip tekstas zmogui.
+  function plural(n, one, few, many){
+    var n100 = n % 100, n10 = n % 10;
+    if (n10 === 1 && n100 !== 11) return one;
+    if (n10 === 0 || (n100 >= 11 && n100 <= 19)) return many;
+    return few;
+  }
+  function files(n){ return n + ' ' + plural(n, 'failas', 'failai', 'failų'); }
+  function rightType(f){ return OK_EXT.indexOf(extOf(f.name)) >= 0 && f.size > 0; }
 
   function addFiles(fileList){
-    var skipped = 0;
+    // Praleidimo priezastys skaiciuojamos atskirai: "praleista: 3" nieko
+    // nepasako, o del ribos atmestas video atrodo tiesiog dinges.
+    var skip = { type: 0, big: 0, dup: 0 };
     for (var i = 0; i < fileList.length; i++) {
       var f = fileList[i];
-      if (!accepted(f)) { skipped++; continue; }
+      if (!rightType(f)) { skip.type++; continue; }
+      if (f.size > MAX_BYTES) { skip.big++; continue; }
       // Tas pats vardas ir dydis jau eileje - tikrai tas pats failas.
       var dup = S.files.some(function(x){ return x.file.name === f.name && x.file.size === f.size; });
-      if (dup) { skipped++; continue; }
+      if (dup) { skip.dup++; continue; }
       S.files.push({ id: ++S.seq, file: f, state: 'pending', error: '' });
     }
-    render(skipped);
+    render(skip);
   }
 
-  function render(skipped){
+  function render(skip){
     list.innerHTML = '';
     S.files.forEach(function(item){
       var li = document.createElement('li');
@@ -640,9 +653,13 @@ button[disabled]{opacity:.5;cursor:not-allowed}
     });
     list.classList.toggle('hide', S.files.length === 0);
     var total = S.files.reduce(function(s, x){ return s + x.file.size; }, 0);
+    var bits = [];
+    if (skip && skip.type) bits.push(skip.type + ' netinkamo tipo');
+    if (skip && skip.big) bits.push(skip.big + ' per dideli (riba ' + human(MAX_BYTES) + ')');
+    if (skip && skip.dup) bits.push(skip.dup + ' jau sąraše');
     picked.textContent = S.files.length
-      ? S.files.length + ' failų, ' + human(total) + (skipped ? ' · praleista: ' + skipped : '')
-      : (skipped ? 'Praleista ' + skipped + ' netinkamų failų.' : '');
+      ? files(S.files.length) + ', ' + human(total) + (bits.length ? ' · praleista: ' + bits.join(', ') : '')
+      : (bits.length ? 'Praleista: ' + bits.join(', ') + '.' : '');
     $('send').disabled = S.running || S.files.length === 0;
   }
 
@@ -702,7 +719,7 @@ button[disabled]{opacity:.5;cursor:not-allowed}
   $('clear').onclick = function(){
     if (S.running) return;
     S.files = [];
-    render(0);
+    render();
   };
 
   // --- siuntimas ----------------------------------------------------------
@@ -777,7 +794,7 @@ button[disabled]{opacity:.5;cursor:not-allowed}
     start.then(function(){
       function sendOne(item){
         item.state = 'running';
-        render(0);
+        render();
         var attempt = 0;
         function attemptOnce(){
           attempt++;
@@ -801,7 +818,7 @@ button[disabled]{opacity:.5;cursor:not-allowed}
             failCount++;
           });
         }
-        return attemptOnce().then(function(){ render(0); tick(); });
+        return attemptOnce().then(function(){ render(); tick(); });
       }
       function worker(){
         if (idx >= queue.length) return Promise.resolve();
@@ -816,7 +833,7 @@ button[disabled]{opacity:.5;cursor:not-allowed}
       if (failCount === 0) {
         $('formCard').classList.add('hide');
         $('doneCard').classList.remove('hide');
-        $('doneText').textContent = 'Siunta „' + j.title + '“: ' + j.files + ' failų, ' + j.bytes
+        $('doneText').textContent = 'Siunta „' + j.title + '“: ' + files(j.files) + ', ' + j.bytes
           + '. Administratorius juos peržiūrės ir perkels į galeriją.';
       } else {
         ptext.textContent = 'Baigta: ' + doneCount + ' įkelta, ' + failCount
@@ -839,7 +856,7 @@ button[disabled]{opacity:.5;cursor:not-allowed}
     ptext.classList.add('hide');
     barFill.style.width = '0';
     $('title').value = '';
-    render(0);
+    render();
   };
 
   window.addEventListener('beforeunload', function(ev){
@@ -852,7 +869,7 @@ button[disabled]{opacity:.5;cursor:not-allowed}
     var saved = localStorage.getItem('inbox_uploader');
     if (saved) $('uploader').value = saved;
   } catch (e) {}
-  render(0);
+  render();
 })();
 </script>
 <?php endif; ?>

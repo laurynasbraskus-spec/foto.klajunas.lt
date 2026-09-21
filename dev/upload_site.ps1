@@ -154,7 +154,7 @@ foreach ($p in $plan) {
     if (-not $dirCache.ContainsKey($p.DirUri)) {
         try { $dirCache[$p.DirUri] = Ftp-Names $p.DirUri }
         catch {
-            # Katalogo gali tiesiog dar nebuti - naujas poaplankis (pvz. ikelti/).
+            # Katalogo gali tiesiog dar nebuti - naujas poaplankis (pvz. uploads/).
             # Bandomajame rezime nieko nekuriam, tik pasakom. Su -Execute sukuriam
             # ir skaitom is naujo; jei katalogas TIKRAI yra, o listingas luzo del
             # rysio, MKD grazins klaida ir mes sustosim - t.y. neperrasysim failo
