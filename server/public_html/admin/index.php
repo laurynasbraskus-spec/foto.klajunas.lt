@@ -4296,7 +4296,7 @@ function inbox_page(): void {
             .'<td><a href="?page=inbox&batch='.(int)$r['id'].'" style="font-weight:750;text-decoration:underline;text-underline-offset:3px">'.e($r['title']).'</a>'
             .((string)($r['note'] ?? '') !== '' ? '<br><span class="muted small">'.e($r['note']).'</span>' : '')
             .((string)($r['event_date'] ?? '') !== '' ? '<br><span class="badge">'.e($r['event_date']).'</span>' : '').'</td>'
-            .'<td>'.e($r['uploader_name']).'</td>'
+            .'<td>'.((string)$r['uploader_name'] !== '' ? e($r['uploader_name']) : '<span class="muted">nenurodyta</span>').'</td>'
             .'<td>'.e((int)$r['files_count']).'</td>'
             .'<td class="small">'.e(human_bytes((int)$r['bytes_total'])).'</td>'
             .'<td class="small">'.$badge.($imported && $r['album_title'] ? '<br><a class="small" href="?page=album_edit&id='.(int)$r['album_id'].'" style="text-decoration:underline">'.e($r['album_title']).'</a>' : '').'</td>'
@@ -4319,7 +4319,7 @@ function inbox_batch_page(int $batchId): void {
     echo '<p><a class="btn mini" href="?page=inbox">← Visos siuntos</a></p>';
     echo '<h1>'.e($batch['title']).'</h1>';
     echo '<div class="card"><div class="formgrid" style="margin:0">'
-        .'<div><label>Kas įkėlė</label><div>'.e($batch['uploader_name']).'</div></div>'
+        .'<div><label>Kas įkėlė</label><div>'.((string)$batch['uploader_name'] !== '' ? e($batch['uploader_name']) : '<span class="muted">nenurodyta</span>').'</div></div>'
         .'<div><label>Gauta</label><div>'.e(substr((string)$batch['created_at'], 0, 16)).'</div></div>'
         .'<div><label>Renginio data</label><div>'.((string)($batch['event_date'] ?? '') !== '' ? e($batch['event_date']) : '<span class="muted">nenurodyta</span>').'</div></div>'
         .'<div><label>Failai</label><div>'.e(count($files)).' · '.e(human_bytes((int)$batch['bytes_total'])).'</div></div>'
@@ -4428,7 +4428,8 @@ function inbox_import(): void {
                 if (!$slugExists->fetchColumn()) break;
                 $slug = $base.'-'.$i++;
             }
-            $notes = 'Iš nario įkėlimo: '.(string)$batch['uploader_name'].((string)($batch['note'] ?? '') !== '' ? ' · '.(string)$batch['note'] : '');
+            $who = (string)$batch['uploader_name'] !== '' ? (string)$batch['uploader_name'] : 'vardas nenurodytas';
+            $notes = 'Iš nario įkėlimo: '.$who.((string)($batch['note'] ?? '') !== '' ? ' · '.(string)$batch['note'] : '');
             db()->prepare("INSERT INTO albums(uuid,source_type,source_path,slug,title,event_date,visibility,download_enabled,notes_internal,created_by,updated_by) VALUES(?,'inbox',?,?,?,?,'draft',1,?,?,?)")
                 ->execute([uid(), $prefix, $slug, $title, $date !== '' ? $date : null, $notes, $_SESSION['admin']['id'] ?? null, $_SESSION['admin']['id'] ?? null]);
             $albumId = (int)db()->lastInsertId();

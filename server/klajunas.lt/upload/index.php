@@ -339,20 +339,22 @@ try {
         $uploader = trim((string)($_POST['uploader'] ?? ''));
         $note     = trim((string)($_POST['note'] ?? ''));
         $date     = trim((string)($_POST['event_date'] ?? ''));
-        if (mb_strlen($title) < 3)    inbox_fail('Įrašykite laikiną pavadinimą (bent 3 simboliai).');
-        if (mb_strlen($uploader) < 2) inbox_fail('Įrašykite, kas įkelia.');
-        if ($date !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) inbox_fail('Data turi būti YYYY-MM-DD.');
+        if (mb_strlen($title) < 2) inbox_fail('Pavadinimas per trumpas - bent 2 simboliai.');
+        // Vardas nebutinas: dalis nariu ji vis tiek praleisdavo, o siunta atpazysti
+        // galima ir is pavadinimo su data. Data atvirksciai - be jos albumo kelio
+        // nesudarysi, tad ji privaloma.
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) inbox_fail('Renginio data privaloma (YYYY-MM-DD).');
         $title    = mb_substr($title, 0, 150);
         $uploader = mb_substr($uploader, 0, 80);
         $note     = mb_substr($note, 0, 400);
 
         $token  = bin2hex(random_bytes(6));
-        $folder = ($date !== '' ? $date : date('Y-m-d')).'-'.inbox_folder_slug($title).'-'.$token;
+        $folder = $date.'-'.inbox_folder_slug($title).'-'.$token;
         $prefix = INBOX_ROOT_PREFIX.'/'.$folder;
 
         inbox_db()->prepare("INSERT INTO inbox_batches(token,title,uploader_name,note,event_date,b2_prefix,status,ip_address,user_agent) VALUES(?,?,?,?,?,?,'open',?,?)")
             ->execute([
-                $token, $title, $uploader, $note !== '' ? $note : null, $date !== '' ? $date : null, $prefix,
+                $token, $title, $uploader, $note !== '' ? $note : null, $date, $prefix,
                 substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
                 substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255),
             ]);
@@ -515,6 +517,17 @@ button[disabled]{opacity:.5;cursor:not-allowed}
 .bigtitle::placeholder{color:var(--muted);font-weight:400}
 .bigtitle:focus{border-bottom-color:var(--accent)}
 .meta{margin-top:16px}
+.datefield{position:relative}
+.datefield #edate{padding-right:46px}
+/* Kalendoriaus mygtukas is tikruju yra gimtasis type=date laukas, uzdetas ant
+   ikonos ir padarytas permatomu. Taip kalendoriu atidaro pats naudotojo
+   paspaudimas - nereikia showPicker(), kuris be tikro gesto meta klaida. O
+   matomas lieka tekstinis YYYY-MM-DD, nes type=date formata pasirenka pati
+   narsykle pagal lokale (rode mm/dd/yyyy). */
+.calwrap{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:34px;height:34px;display:grid;place-items:center;color:var(--muted)}
+.calwrap:hover{color:var(--text)}
+.calicon{font-size:17px;line-height:1;pointer-events:none}
+.calinput{position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;background:none;opacity:0;cursor:pointer}
 .empty{padding:34px 16px;text-align:center}
 .empty-title{margin:0 0 16px;color:var(--muted)}
 .big{padding:14px 28px;font-size:15.5px}
@@ -567,21 +580,25 @@ button[disabled]{opacity:.5;cursor:not-allowed}
   <div class="card" id="formCard">
     <input id="title" class="bigtitle" maxlength="150" placeholder="Pridėkite pavadinimą" required>
     <div class="grid meta">
-      <div><label for="uploader">Kas įkelia *</label><input id="uploader" maxlength="80" placeholder="Vardas Pavardė" required></div>
-      <div><label for="edate">Renginio data</label><input id="edate" placeholder="YYYY-MM-DD" inputmode="numeric" pattern="\d{4}-\d{2}-\d{2}" maxlength="10" title="Metai-mėnuo-diena, pvz. 2026-09-21"></div>
+      <div><label for="edate">Renginio data *</label>
+        <div class="datefield">
+          <input id="edate" placeholder="YYYY-MM-DD" inputmode="numeric" pattern="\d{4}-\d{2}-\d{2}" maxlength="10" title="Metai-mėnuo-diena, pvz. 2026-09-21" required>
+          <span class="calwrap" title="Rinktis iš kalendoriaus"><span class="calicon" aria-hidden="true">&#128197;</span>
+            <input id="edatePicker" type="date" class="calinput" aria-label="Rinktis iš kalendoriaus"></span>
+        </div>
+      </div>
+      <div><label for="uploader">Kas įkelia</label><input id="uploader" maxlength="80" placeholder="Vardas Pavardė"></div>
       <div><label for="note">Pastaba adminui</label><input id="note" maxlength="400" placeholder="Nebūtina"></div>
     </div>
 
     <input id="inFiles" class="hide" type="file" multiple accept="image/*,video/*">
     <input id="inFolder" class="hide" type="file" multiple webkitdirectory directory>
-    <input id="inCamera" class="hide" type="file" accept="image/*" capture="environment">
 
     <div id="drop">
       <div class="empty" id="empty">
         <p class="empty-title">Nuotraukų dar nepasirinkta</p>
         <button type="button" class="primary big" id="btnFiles">Pridėti nuotraukas</button>
-        <p class="small" style="margin:16px 0 0">arba <button type="button" class="linkbtn" id="btnFolder">pasirinkti aplanką</button> ·
-          <button type="button" class="linkbtn" id="btnCamera">nufotografuoti</button><br>failus galima ir nutempti čia</p>
+        <p class="small" style="margin:16px 0 0">arba <button type="button" class="linkbtn" id="btnFolder">pasirinkti aplanką</button><br>failus galima ir nutempti čia</p>
       </div>
       <ul class="filelist hide" id="list"></ul>
     </div>
@@ -684,6 +701,14 @@ button[disabled]{opacity:.5;cursor:not-allowed}
   // --- failu pasirinkimas -------------------------------------------------
   // Bruksnelius dedam patys: telefono skaiciu klaviatura ju neturi, o formatas
   // turi likti YYYY-MM-DD - toks pat, kokio lauks serveris ir koks guli DB.
+  // Kalendorius: permatomas type=date laukas ant ikonos. Pries atidarant i ji
+  // perkeliam jau irasyta reiksme, kad kalendorius atsivertu ties ta diena.
+  var cal = $('edatePicker');
+  cal.addEventListener('pointerdown', function(){
+    cal.value = /^\d{4}-\d{2}-\d{2}$/.test($('edate').value) ? $('edate').value : '';
+  });
+  cal.addEventListener('change', function(){ if (cal.value) $('edate').value = cal.value; });
+
   $('edate').addEventListener('input', function(){
     var d = this.value.replace(/[^0-9]/g, '').slice(0, 8);
     var out = d.slice(0, 4);
@@ -695,8 +720,7 @@ button[disabled]{opacity:.5;cursor:not-allowed}
   $('btnFiles').onclick  = function(){ $('inFiles').click(); };
   $('more').onclick      = function(){ $('inFiles').click(); };
   $('btnFolder').onclick = function(){ $('inFolder').click(); };
-  $('btnCamera').onclick = function(){ $('inCamera').click(); };
-  ['inFiles','inFolder','inCamera'].forEach(function(id){
+  ['inFiles','inFolder'].forEach(function(id){
     $(id).addEventListener('change', function(ev){ addFiles(ev.target.files); ev.target.value = ''; });
   });
 
@@ -788,9 +812,10 @@ button[disabled]{opacity:.5;cursor:not-allowed}
   $('send').onclick = function(){
     if (S.running) return;
     var m = meta();
-    if (m.title.length < 3) { $('title').focus(); alert('Įrašykite laikiną pavadinimą.'); return; }
-    if (m.uploader.length < 2) { $('uploader').focus(); alert('Įrašykite, kas įkelia.'); return; }
-    if (m.event_date !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(m.event_date)) { $('edate').focus(); alert('Data rašoma YYYY-MM-DD, pvz. 2026-09-21. Galima ir palikti tuščią.'); return; }
+    // Klaida turi pasakyti, kas negerai: anksciau dvieju raidziu pavadinimas
+    // ("HA") gaudavo "Įrašykite laikiną pavadinimą", nors jis buvo irasytas.
+    if (m.title.length < 2) { $('title').focus(); alert('Pavadinimas per trumpas – bent 2 simboliai.'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(m.event_date)) { $('edate').focus(); alert('Įrašykite renginio datą (YYYY-MM-DD) arba pasirinkite ją kalendoriuje.'); return; }
     try { localStorage.setItem('inbox_uploader', m.uploader); } catch (e) {}
     run(m);
   };
