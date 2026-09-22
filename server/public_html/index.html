@@ -126,6 +126,13 @@
     border-radius: 99px; padding: 8px 15px; font-size: 13px; cursor: pointer;
     transition: all .18s;
   }
+  .pill-upload {
+    display: inline-flex; align-items: center; gap: 7px; text-decoration: none;
+    border-color: var(--amber-line); color: var(--amber-ink); background: var(--amber-soft);
+  }
+  .pill-upload svg { width: 15px; height: 15px; flex-shrink: 0; }
+  .pill-upload:hover { border-color: var(--amber-ink); color: var(--amber-ink); }
+  @media (max-width: 760px) { .pill-upload span { display: none; } .pill-upload { padding: 8px 11px; } }
   .pill:hover { border-color: var(--line-strong); color: var(--ink); }
   .pill:active { transform: translateY(1px); }
   .pill.primary { background: var(--amber-soft); border-color: var(--amber-line); color: var(--amber-ink); }
@@ -580,6 +587,10 @@
           <option value="views_desc">Most views</option>
         </select>
       </div>
+      <a class="pill pill-upload" href="https://upload.klajunas.lt/" title="Įkelti savo nuotraukas į klubo talpyklą">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        <span>Įkelti</span>
+      </a>
       <button class="pill" id="themeToggle" title="Perjungti temą">◑ Light</button>
     </div>
   </div>
