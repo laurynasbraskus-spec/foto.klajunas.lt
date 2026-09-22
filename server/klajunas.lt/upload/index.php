@@ -840,8 +840,18 @@ button[disabled]{opacity:.5;cursor:not-allowed}
       xhr.onload = function(){
         var j = null;
         try { j = JSON.parse(xhr.responseText); } catch (e) {}
-        if (!j) { reject(new Error('Serveris atsakė netinkamai (' + xhr.status + ')')); return; }
-        if (!j.ok) { reject(new Error(j.error || ('Klaida ' + xhr.status))); return; }
+        // Serveris ATSAKĖ - tegul ir blogai. Tokio atsakymo kartoti nėra prasmės:
+        // 35 MB video būtų išsiųstas antrą kartą tik tam, kad gautų tą pačią
+        // klaidą, o telefone tai atrodo kaip užstrigimas.
+        var err;
+        if (!j) {
+          err = new Error(xhr.status === 413 || xhr.status >= 500
+            ? 'Serveris atmetė failą (' + xhr.status + ') – greičiausiai per didelis šiam serveriui.'
+            : 'Serveris atsakė netinkamai (' + xhr.status + ')');
+        } else if (!j.ok) {
+          err = new Error(j.error || ('Klaida ' + xhr.status));
+        }
+        if (err) { err.answered = true; reject(err); return; }
         resolve(j);
       };
       xhr.onerror = function(){ reject(new Error('Ryšys nutrūko')); };
@@ -937,9 +947,10 @@ button[disabled]{opacity:.5;cursor:not-allowed}
             doneCount++;
           }).catch(function(err){
             delete inflight[item.id];
-            // Vienas pakartojimas: mobilus rysys kartais nutrūksta be
-            // priezasties, ir antras bandymas paprastai praeina.
-            if (attempt < 2) return new Promise(function(r){ setTimeout(r, 1500); }).then(attemptOnce);
+            // Vienas pakartojimas - bet tik jei rysys nutrūko: mobilus internetas
+            // kartais krenta be priezasties, ir antras bandymas praeina. Jei
+            // serveris atsake klaida, kartojimas nieko nepakeis.
+            if (attempt < 2 && !err.answered) return new Promise(function(r){ setTimeout(r, 1500); }).then(attemptOnce);
             item.state = 'error';
             item.error = err.message || 'Nepavyko';
             sentBytes += item.file.size;
