@@ -3337,7 +3337,7 @@ function settings_page(): void {
     // matyti, kad galetu perduoti klubo grupei, o jis saugo ne duomenis, o tik
     // ikelimo forma nuo praeiviu.
     $inboxOn = setting('inbox_enabled', '1') !== '0';
-    echo '<div style="grid-column:1/-1;margin-top:6px"><h2 style="margin:0">Uploads - nuotraukų įkėlimas</h2><p class="muted small" style="margin:6px 0 0">Narių puslapis: <code>https://upload.klajunas.lt/</code>. Be kodo jis neprima nieko. Gautos siuntos laukia <a href="?page=inbox" style="text-decoration:underline">Uploads</a> lange.</p></div>';
+    echo '<div style="grid-column:1/-1;margin-top:6px"><h2 style="margin:0">Uploads - nuotraukų įkėlimas</h2><p class="muted small" style="margin:6px 0 0">Narių puslapis: <a href="https://upload.klajunas.lt/" target="_blank" rel="noopener" style="text-decoration:underline;text-underline-offset:3px"><code>https://upload.klajunas.lt/</code></a>. Be kodo jis neprima nieko. Gautos siuntos laukia <a href="?page=inbox" style="text-decoration:underline">Uploads</a> lange.</p></div>';
     echo '<div><label>Upload chunk size</label><select id="takeoutProfile" name="takeout_stage_profile">';
     foreach (takeout_stage_profile_presets() as $v => $preset) {
         echo '<option value="'.e($v).'"'.($takeoutTuning['profile']===$v?' selected':'').'>'.e($preset['label']).'</option>';
@@ -4270,7 +4270,7 @@ function inbox_page(): void {
     // kaip ir Settings lange - tas pats nustatymas, tik po ranka.
     $live = $on && $code !== '';
     echo '<div class="card"><h2>Nuoroda nariams</h2>'
-        .'<p><code>https://upload.klajunas.lt/</code> · būsena: '
+        .'<p><a href="https://upload.klajunas.lt/" target="_blank" rel="noopener" style="text-decoration:underline;text-underline-offset:3px"><code>https://upload.klajunas.lt/</code></a> · būsena: '
         .($live ? '<span class="badge" style="border-color:var(--accent-line);color:var(--accent-ink)">įjungta</span>'
                 : '<span class="badge">'.($on ? 'neveikia — nėra kodo' : 'išjungta').'</span>').'</p>'
         .'<form method="post" action="?action=inbox_settings" class="actions" style="margin:10px 0 0">'
