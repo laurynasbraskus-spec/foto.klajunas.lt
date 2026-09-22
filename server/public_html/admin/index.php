@@ -4390,6 +4390,26 @@ function inbox_batch_page(int $batchId): void {
         .'<button class="btn" style="border-color:var(--err-line);color:#e05b6a">Ištrinti siuntą</button></form></div>';
     foot('Uploads');
 }
+/**
+ * Fotografavimo laikas is inbox_files i ka tik sukurtas photos eilutes.
+ *
+ * Anksciau ji nesdavo Takeout pavidalo sidecar failas, gulintis salia B2 - bet
+ * tai reiske dar viena POST'a i B2 kiekvienai nariu ikeltai nuotraukai. Laikas
+ * ir taip nuskaitomas is EXIF ikelimo metu ir guli DB, tad uztenka ji perkelti.
+ * Vardai sutampa: b2_create_photo_rows_from_prefix() i original_filename deda
+ * basename(rakto), o kopijuojant i albuma vardas nesikeicia.
+ */
+function inbox_apply_taken_at(int $batchId, int $albumId): int {
+    $rows = db()->prepare("SELECT b2_key, taken_at FROM inbox_files WHERE batch_id=? AND taken_at IS NOT NULL");
+    $rows->execute([$batchId]);
+    $upd = db()->prepare("UPDATE photos SET taken_at=? WHERE album_id=? AND original_filename=? AND taken_at IS NULL");
+    $n = 0;
+    foreach ($rows->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $upd->execute([(string)$r['taken_at'], $albumId, basename((string)$r['b2_key'])]);
+        $n += $upd->rowCount();
+    }
+    return $n;
+}
 function inbox_import(): void {
     require_superadmin(); csrf(); b2_load_config(); ensure_inbox_schema();
     $batchId = (int)($_POST['batch_id'] ?? 0);
@@ -4399,6 +4419,7 @@ function inbox_import(): void {
     $back = '?page=inbox&batch='.$batchId;
 
     $albumId = (int)($batch['album_id'] ?? 0);
+    $createdNew = false;
     if ($albumId > 0) {
         // Antras (ir tolesni) paspaudimai: albumas jau parinktas pirmo karto metu.
         $st = db()->prepare("SELECT * FROM albums WHERE id=? LIMIT 1");
@@ -4433,6 +4454,7 @@ function inbox_import(): void {
             db()->prepare("INSERT INTO albums(uuid,source_type,source_path,slug,title,event_date,visibility,download_enabled,notes_internal,created_by,updated_by) VALUES(?,'inbox',?,?,?,?,'draft',1,?,?,?)")
                 ->execute([uid(), $prefix, $slug, $title, $date !== '' ? $date : null, $notes, $_SESSION['admin']['id'] ?? null, $_SESSION['admin']['id'] ?? null]);
             $albumId = (int)db()->lastInsertId();
+            $createdNew = true;
             place_album_by_date($albumId);
             persist_album_metadata_json($albumId);
         }
@@ -4450,10 +4472,16 @@ function inbox_import(): void {
     }
     b2_copy_prefix_chunk($source.'/metadata', $prefix.'/metadata');
     $created = b2_create_photo_rows_from_prefix($albumId, $prefix);
+    $dated = inbox_apply_taken_at($batchId, $albumId);
+    // Naujame albume eiliskuma galima nustatyti saugiai - jame dar nieko nebuvo.
+    // I esama albuma tik iraseme laikus: jo tvarka gali buti sudeliota ranka, ir
+    // perrikiuoti ja be klausimo butu ne musu reikalas.
+    if ($createdNew && $dated > 0) apply_album_sort_preset($albumId, 'taken_asc');
     db()->prepare("UPDATE inbox_batches SET status='imported', imported_at=NOW() WHERE id=?")->execute([$batchId]);
     db()->prepare("UPDATE inbox_files SET status='imported' WHERE batch_id=?")->execute([$batchId]);
     audit('album', $albumId, 'inbox_import', 'Nario įkėlimas perkeltas į albumą', ['batch'=>$batchId, 'prefix'=>$prefix, 'copied'=>(int)$copy['copied'], 'created_photos'=>$created]);
-    flash('Perkelta: '.(int)$copy['copied'].' failai į B2, '.$created.' naujos nuotraukos albume.', 'ok', '?page=album_edit&id='.$albumId, 'Atidaryti albumą');
+    flash('Perkelta: '.(int)$copy['copied'].' failai į B2, '.$created.' naujos nuotraukos albume'
+        .($dated > 0 ? ', '.$dated.' su fotografavimo laiku' : '').'.', 'ok', '?page=album_edit&id='.$albumId, 'Atidaryti albumą');
     go($back);
 }
 function inbox_delete_file(): void {

@@ -204,7 +204,37 @@ function inbox_b2_upload_url(): array {
     if ($code >= 400 || !is_array($j)) throw new RuntimeException('B2 nedavė įkėlimo adreso');
     return $j;
 }
-/** 401 reiskia pasenusi upload URL - jis atnaujinamas ir bandoma dar karta. */
+/**
+ * Ikelimo adresas podelyje. b2_get_upload_url yra atskiras kreipinys i B2, o
+ * gautas adresas galioja para - kviesti ji kiekvienam failui reiskia prikabinti
+ * po papildoma kelione per Atlanta prie kiekvienos nuotraukos.
+ *
+ * Podelis - faile, ne sesijoje: sesija ikelimo metu jau uzdaryta (zr.
+ * session_write_close komentara), o ir rakinama ji butu bendra visiems
+ * lygiagretiems srautams. Raktas - siuntos zetonas + srauto numeris, nes B2
+ * NELEIDZIA to paties adreso naudoti dviems ikelimams vienu metu.
+ */
+function inbox_b2_upload_cache_file(string $batchToken, int $slot): string {
+    $dir = defined('B2_AUTH_CACHE_FILE') ? dirname((string)B2_AUTH_CACHE_FILE) : sys_get_temp_dir();
+    return rtrim($dir, '/\\').'/b2_up_'.substr(sha1($batchToken.'|'.$slot), 0, 24).'.json';
+}
+function inbox_b2_upload_slot(string $batchToken, int $slot): array {
+    $file = inbox_b2_upload_cache_file($batchToken, $slot);
+    if (is_file($file)) {
+        $c = json_decode((string)@file_get_contents($file), true);
+        if (is_array($c) && ($c['got'] ?? 0) > time() - 12 * 3600 && !empty($c['url']['uploadUrl'])) {
+            return $c['url'];
+        }
+    }
+    $url = inbox_b2_upload_url();
+    @file_put_contents($file, json_encode(['got' => time(), 'url' => $url]));
+    return $url;
+}
+function inbox_b2_upload_slot_store(string $batchToken, int $slot, array $url): void {
+    @file_put_contents(inbox_b2_upload_cache_file($batchToken, $slot), json_encode(['got' => time(), 'url' => $url]));
+}
+
+/** 401/503 reiskia pasenusi ar uzimta upload URL - imam nauja ir bandom dar karta. */
 function inbox_b2_put(string $data, string $key, string $mime, array &$upload, bool $retry = true): array {
     $ch = curl_init($upload['uploadUrl']);
     curl_setopt_array($ch, [
@@ -221,7 +251,10 @@ function inbox_b2_put(string $data, string $key, string $mime, array &$upload, b
     ]);
     $body = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
     $j = json_decode((string)$body, true);
-    if ($code === 401 && $retry) { $upload = inbox_b2_upload_url(); return inbox_b2_put($data, $key, $mime, $upload, false); }
+    if (($code === 401 || $code === 503 || $code === 408 || $code === 429) && $retry) {
+        $upload = inbox_b2_upload_url();
+        return inbox_b2_put($data, $key, $mime, $upload, false);
+    }
     if ($code >= 400 || !is_array($j)) throw new RuntimeException('B2 atmetė failą ('.$code.')');
     return $j;
 }
@@ -381,9 +414,16 @@ try {
     }
 
     if ($action === 'file') {
-        inbox_csrf(); inbox_require_gate_json(); inbox_ensure_schema();
+        inbox_csrf(); inbox_require_gate_json();
         $token = (string)($_POST['batch'] ?? '');
         $batchId = (int)($_SESSION['inbox_batches'][$token] ?? 0);
+        $slot = max(0, min(7, (int)($_POST['slot'] ?? 0)));
+        // PHP sesija guli faile ir uzrakinama visam uzklausimui. Kol vienas
+        // failas keliauja i B2, kiti to paties lango uzklausimai stovi eileje -
+        // t.y. lygiagretumo nebuvo nei su dviem, nei su keturiais srautais.
+        // Viskas, ko is sesijos reikia, jau nuskaityta, tad paleidziam ja.
+        // Lenteles kuriamos "start" metu, todel cia DDL irgi nebereikia.
+        session_write_close();
         if ($batchId <= 0) inbox_fail('Siunta nerasta - pradėkite iš naujo.', 403);
 
         $st = inbox_db()->prepare("SELECT * FROM inbox_batches WHERE id=? LIMIT 1");
@@ -424,30 +464,40 @@ try {
         $data = file_get_contents((string)$f['tmp_name']);
         if ($data === false) inbox_fail('Nepavyko perskaityti failo serveryje.', 500);
         $mime = inbox_mime($original);
-        $upload = inbox_b2_upload_url();
+        $upload = inbox_b2_upload_slot($token, $slot);
         inbox_b2_put($data, $key, $mime, $upload);
         $sha1 = sha1($data);
         unset($data);
 
         $facts = inbox_image_facts((string)$f['tmp_name'], $original);
+
+        // Miniatiura pirmiausia imama is narsykles: ji ta pati kadra sumazina
+        // per apie 0,1 s, o serveryje Imagick uz ta pati sumoka apie sekunde
+        // procesoriaus. Serverio kelias lieka atsarginis - HEIC ir video, kuriu
+        // narsykle nemoka perpiesti.
+        $thumb = null;
+        $tf = $_FILES['thumb'] ?? null;
+        if (is_array($tf) && (int)($tf['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK
+            && is_uploaded_file((string)$tf['tmp_name'])
+            && (int)$tf['size'] > 0 && (int)$tf['size'] <= 2097152) {
+            $probe = @getimagesize((string)$tf['tmp_name']);
+            // Tikrinam pavidala: tai, ka atsiuntė narsykle, keliauja i musu bucket.
+            if (is_array($probe) && (string)($probe['mime'] ?? '') === 'image/jpeg') {
+                $thumb = @file_get_contents((string)$tf['tmp_name']) ?: null;
+            }
+        }
+        if ($thumb === null) $thumb = inbox_thumb_jpeg((string)$f['tmp_name'], $original);
         $thumbKey = null;
-        $thumb = inbox_thumb_jpeg((string)$f['tmp_name'], $original);
         if ($thumb !== null) {
             $thumbKey = $prefix.'/thumbs/'.$safe.'.jpg';
             try { inbox_b2_put($thumb, $thumbKey, 'image/jpeg', $upload); }
             catch (Throwable $e) { $thumbKey = null; }
         }
-        // Sidecar tokio pat pavidalo, kaip Google Takeout: perkeliant partija i
-        // albuma, admin b2_create_photo_rows_from_prefix() is jo pasiima
-        // fotografavimo laika ir surikiuoja nuotraukas chronologiskai.
-        if (!empty($facts['taken_at'])) {
-            try {
-                inbox_b2_put(json_encode([
-                    'title' => $safe,
-                    'photoTakenTime' => ['timestamp'=>(string)strtotime((string)$facts['taken_at']), 'formatted'=>(string)$facts['taken_at']],
-                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $prefix.'/metadata/'.$safe.'.supplemental-metadata.json', 'application/json', $upload);
-            } catch (Throwable $e) { /* laikas - premija, ne salyga */ }
-        }
+        unset($thumb);
+        // Takeout pavidalo sidecar failo cia nebera: fotografavimo laikas guli
+        // inbox_files.taken_at, ir perkeldamas i albuma ji paima admin. Vienas
+        // POST i B2 maziau kiekvienai nuotraukai.
+        inbox_b2_upload_slot_store($token, $slot, $upload);
 
         inbox_db()->prepare("INSERT INTO inbox_files(batch_id,b2_key,thumb_b2_key,original_filename,mime_type,file_size,checksum_sha1,width,height,taken_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
             ->execute([$batchId, $key, $thumbKey, $original, $mime, $size, $sha1, $facts['width'], $facts['height'], $facts['taken_at']]);
@@ -775,11 +825,11 @@ button[disabled]{opacity:.5;cursor:not-allowed}
   };
 
   // --- siuntimas ----------------------------------------------------------
-  function post(fields, file, onProgress){
+  function post(fields, parts, onProgress){
     return new Promise(function(resolve, reject){
       var fd = new FormData();
       Object.keys(fields).forEach(function(k){ fd.append(k, fields[k]); });
-      if (file) fd.append('file', file, file.name);
+      (parts || []).forEach(function(part){ fd.append(part[0], part[1], part[2]); });
       var xhr = new XMLHttpRequest();
       xhr.open('POST', location.pathname, true);
       xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
@@ -798,6 +848,25 @@ button[disabled]{opacity:.5;cursor:not-allowed}
       xhr.ontimeout = function(){ reject(new Error('Baigėsi laukimo laikas')); };
       xhr.send(fd);
     });
+  }
+
+  // Miniatiura gaminama cia ir keliauja kartu su originalu tame paciame POST'e.
+  // Naršykle 12 Mpx kadra sumazina per apie 0,1 s; serveriui tas pats darbas
+  // kainuoja apie sekunde procesoriaus ir dar viena kelione i B2.
+  function makeThumb(file){
+    if (!/\.(jpe?g|png|webp|gif)$/i.test(file.name || '') || typeof createImageBitmap !== 'function') {
+      return Promise.resolve(null);
+    }
+    return createImageBitmap(file, { imageOrientation: 'from-image' }).then(function(bmp){
+      var max = 900, scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+      var w = Math.max(1, Math.round(bmp.width * scale));
+      var h = Math.max(1, Math.round(bmp.height * scale));
+      var c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(bmp, 0, 0, w, h);
+      if (bmp.close) bmp.close();
+      return new Promise(function(res){ c.toBlob(res, 'image/jpeg', 0.78); });
+    }).catch(function(){ return null; });   // HEIC ir kitos nemokamos - piesia serveris
   }
 
   function meta(){
@@ -843,16 +912,21 @@ button[disabled]{opacity:.5;cursor:not-allowed}
 
     var start = S.batch
       ? Promise.resolve(S.batch)
-      : post(Object.assign({ action: 'start', _token: TOKEN }, m)).then(function(j){ S.batch = j; return j; });
+      : post(Object.assign({ action: 'start', _token: TOKEN }, m), null).then(function(j){ S.batch = j; return j; });
 
     start.then(function(){
-      function sendOne(item){
+      function sendOne(item, slot){
         item.state = 'running';
         render();
         var attempt = 0;
         function attemptOnce(){
           attempt++;
-          return post({ action: 'file', _token: TOKEN, batch: S.batch.token }, item.file, function(p){
+          return makeThumb(item.file).then(function(thumb){
+            var parts = [['file', item.file, item.file.name]];
+            if (thumb) parts.push(['thumb', thumb, 'thumb.jpg']);
+            return parts;
+          }).then(function(parts){
+          return post({ action: 'file', _token: TOKEN, batch: S.batch.token, slot: slot }, parts, function(p){
             inflight[item.id] = p * item.file.size;
             tick();
           }).then(function(j){
@@ -871,17 +945,19 @@ button[disabled]{opacity:.5;cursor:not-allowed}
             sentBytes += item.file.size;
             failCount++;
           });
+          });
         }
         return attemptOnce().then(function(){ render(); tick(); });
       }
-      function worker(){
+      function worker(slot){
         if (idx >= queue.length) return Promise.resolve();
-        return sendOne(queue[idx++]).then(worker);
+        return sendOne(queue[idx++], slot).then(function(){ return worker(slot); });
       }
-      // Du srautai: telefone greiciau nei vienas, bet rysio neuzkemsa.
-      return Promise.all([worker(), worker()]);
+      // Keturi srautai. Kiekvienas turi savo B2 ikelimo adresa (slot), nes to
+      // paties adreso dviem ikelimams vienu metu B2 neleidzia.
+      return Promise.all([worker(0), worker(1), worker(2), worker(3)]);
     }).then(function(){
-      return post({ action: 'done', _token: TOKEN, batch: S.batch.token });
+      return post({ action: 'done', _token: TOKEN, batch: S.batch.token }, null);
     }).then(function(j){
       S.running = false;
       if (failCount === 0) {
