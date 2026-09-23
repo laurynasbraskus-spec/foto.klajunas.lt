@@ -449,6 +449,12 @@
     .pill-upload { position: absolute; top: 13px; right: 98px; padding: 0 12px; height: 40.8px; box-sizing: border-box; }
   }
 
+  /* Small phones: logo and buttons only — the name would crowd the pills.
+     The brand button keeps its aria-label, so nothing is lost for readers. */
+  @media (max-width: 359px) {
+    .brand .name { display: none; }
+  }
+
   /* ================= Phone (<=640px) ================= */
   @media (max-width: 640px) {
     .topbar-inner { padding: 10px 14px; gap: 10px; row-gap: 10px; position: relative; }
