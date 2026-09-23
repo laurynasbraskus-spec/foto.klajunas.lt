@@ -57,6 +57,12 @@ const INBOX_ROOT_PREFIX     = 'inbox';
 // atminti (duomenu blokas + cURL kopija) prie 512 MB memory_limit. Nuotraukos
 // sveria 3-8 MB, trumpi telefono video - iki keliasdesimties.
 const INBOX_MAX_FILE_BYTES  = 99614720;
+// Serverio ModSecurity nupjauna didesni nei ~12,5 MB uzklausos kuna ir grazina
+// 500 dar nepasiekes PHP (ismatuota: 12 MB praeina, 14 MB ne). Kol hostingas
+// SecRequestBodyLimit nepakeles, didesnio failo siusti isvis nera prasmes - tad
+// puslapis apie tai pasako is karto, o ne po kelių minuciu tylos telefone.
+// Pakelus riba serveryje, cia pakanka irasyti 0.
+const INBOX_WAF_BODY_LIMIT  = 12582912;
 const INBOX_MAX_BATCH_FILES = 600;
 const INBOX_GATE_MAX_TRIES  = 10;
 const INBOX_GATE_LOCK_SEC   = 300;
@@ -442,7 +448,8 @@ try {
         $ext      = inbox_ext($original);
         if (!in_array($ext, INBOX_ALLOWED_EXT, true)) inbox_fail('Netinkamas failo tipas (.'.$ext.').');
         if ($size <= 0) inbox_fail('Tuščias failas.');
-        if ($size > INBOX_MAX_FILE_BYTES) inbox_fail('Failas per didelis ('.inbox_human_bytes($size).').');
+        $sizeCap = INBOX_WAF_BODY_LIMIT > 0 ? min(INBOX_MAX_FILE_BYTES, INBOX_WAF_BODY_LIMIT) : INBOX_MAX_FILE_BYTES;
+        if ($size > $sizeCap) inbox_fail('Failas per didelis ('.inbox_human_bytes($size).'), riba '.inbox_human_bytes($sizeCap).'.');
 
         // Ta pati nuotrauka po pakartotinio bandymo neturi virsti dublikatu.
         $dup = inbox_db()->prepare("SELECT id FROM inbox_files WHERE batch_id=? AND original_filename=? AND file_size=? LIMIT 1");
@@ -662,7 +669,7 @@ button[disabled]{opacity:.5;cursor:not-allowed}
       <button class="btn hide" id="more" type="button">Pridėti dar</button>
       <button class="btn hide" id="clear" type="button">Išvalyti sąrašą</button>
     </div>
-    <p class="muted small" style="margin:12px 0 0">Keliami originalūs failai, po vieną; vienas failas – iki <?= e(inbox_human_bytes(INBOX_MAX_FILE_BYTES)) ?>. Didelė siunta gali užtrukti – palikite puslapį atvirą. Į galeriją nuotraukos patenka tik tada, kai jas peržiūri administratorius.</p>
+    <p class="muted small" style="margin:12px 0 0">Keliami originalūs failai, po vieną; vienas failas – iki <?= e(inbox_human_bytes(INBOX_WAF_BODY_LIMIT > 0 ? min(INBOX_MAX_FILE_BYTES, INBOX_WAF_BODY_LIMIT) : INBOX_MAX_FILE_BYTES)) ?>. Didelė siunta gali užtrukti – palikite puslapį atvirą. Į galeriją nuotraukos patenka tik tada, kai jas peržiūri administratorius.</p>
   </div>
 
   <div class="card done hide" id="doneCard">
@@ -674,7 +681,7 @@ button[disabled]{opacity:.5;cursor:not-allowed}
 <script>
 (function(){
   var TOKEN = <?= json_encode(inbox_token()) ?>;
-  var MAX_BYTES = <?= INBOX_MAX_FILE_BYTES ?>;
+  var MAX_BYTES = <?= INBOX_WAF_BODY_LIMIT > 0 ? min(INBOX_MAX_FILE_BYTES, INBOX_WAF_BODY_LIMIT) : INBOX_MAX_FILE_BYTES ?>;
   var OK_EXT = <?= json_encode(INBOX_ALLOWED_EXT) ?>;
   var S = { files: [], batch: null, running: false, seq: 0 };
 

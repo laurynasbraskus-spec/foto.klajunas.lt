@@ -32,18 +32,15 @@ Options -Indexes
   Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://foto.klajunas.lt; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 </IfModule>
 
-# ModSecurity (serverio WAF) numatytai nupjauna didesni nei 12,5 MB uzklausos
-# kuna ir grazina 500 dar nepasiekes PHP - isbandyta: 12 MB praeina, 14 MB jau
-# ne. Nariams tai reiskia, kad bet koks ilgesnis video neikeliamas.
+# ModSecurity (serverio WAF) nupjauna didesni nei 12,5 MB uzklausos kuna ir
+# grazina 500 dar nepasiekes PHP - ismatuota: 12 MB praeina, 14 MB jau ne. Del
+# to nariu video neikeliamas, nors musu riba 95 MB.
 #
-# Sitame kataloge WAF nieko ir neapsaugo: cia yra vienintelis skriptas, uz kodo
-# vartu, su CSRF zetonu, baltuoju pletiniu sarasu ir be jokiu SQL uzklausu is
-# ivesties. Todel ji cia isjungiam. Jei hostingas SecRuleEngine .htaccess'e
-# neleidzia, Apache mes 500 VISIEMS puslapio uzklausimams - tada si eilute
-# saliname ir riba kelia hostingo pusėje (SecRequestBodyLimit).
-<IfModule mod_security2.c>
-  SecRuleEngine Off
-</IfModule>
-<IfModule security2_module>
-  SecRuleEngine Off
-</IfModule>
+# BANDYTA ir NEPAVYKO: "SecRuleEngine Off" siame .htaccess. Sis hostingas tos
+# direktyvos .htaccess'e neleidzia, ir Apache uz tai mete 500 VISIEMS puslapio
+# uzklausimams - net neegzistuojanciam failui, t.y. puslapis buvo negyvas, kol
+# eilutes nepasalintos. Neatstatinek jos.
+#
+# Lieka du keliai: paprasyti hostingo pakelti SecRequestBodyLimit siam vhostui,
+# arba kelti failus tiesiai is narsykles i B2 (tada uzklausa per si serveri
+# apskritai neina).
