@@ -132,7 +132,8 @@
   }
   .pill-upload svg { width: 15px; height: 15px; flex-shrink: 0; }
   .pill-upload:hover { border-color: var(--amber-ink); color: var(--amber-ink); }
-  @media (max-width: 760px) { .pill-upload span { display: none; } .pill-upload { padding: 8px 11px; } }
+  /* Icon only below 860px — with the label the theme toggle wraps at 761-792px. */
+  @media (max-width: 860px) { .pill-upload span { display: none; } .pill-upload { padding-left: 11px; padding-right: 11px; } }
   .pill:hover { border-color: var(--line-strong); color: var(--ink); }
   .pill:active { transform: translateY(1px); }
   .pill.primary { background: var(--amber-soft); border-color: var(--amber-line); color: var(--amber-ink); }
@@ -436,6 +437,18 @@
     .pcard { cursor: pointer; }
   }
 
+  /* ================= Narrow tablet (<=760px) ================= */
+  /* Search + two filters + upload + theme don't fit next to the brand here, so
+     the theme toggle used to wrap onto a row of its own. Same fix as on phones:
+     the two pills go top-right on the brand row, controls get the full row. */
+  @media (max-width: 760px) {
+    .topbar-inner { position: relative; }
+    .controls { flex: 1 1 100%; justify-content: flex-start; }
+    .search { max-width: none; }
+    #themeToggle { position: absolute; top: 13px; right: 16px; }
+    .pill-upload { position: absolute; top: 13px; right: 98px; padding: 0 12px; height: 40.8px; box-sizing: border-box; }
+  }
+
   /* ================= Phone (<=640px) ================= */
   @media (max-width: 640px) {
     .topbar-inner { padding: 10px 14px; gap: 10px; row-gap: 10px; position: relative; }
@@ -449,6 +462,8 @@
 
     /* Theme toggle sits top-right on the brand row; admin is desktop-only. */
     #themeToggle { position: absolute; top: 12px; right: 14px; }
+    /* Upload sits just left of it — otherwise it wraps onto a row of its own. */
+    .pill-upload { top: 12px; right: 96px; }
     #btnAdmin, #adminPanel { display: none !important; }
 
     /* Filename + file size are noise here — keep only "N / total". */
