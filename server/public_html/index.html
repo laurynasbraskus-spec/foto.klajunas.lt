@@ -891,19 +891,24 @@
   function tokensIn(words, toks) {
     return toks.every(t => words.some(w => w.startsWith(t)));
   }
-  function albumWords(al, broad) {
-    const k = broad ? "_swB" : "_swN";
-    if (!al[k]) {
-      const parts = [al.name, al.subtitle || "", al.eventDate || "", al.eventDateLabel || ""];
-      if (broad) parts.push(al.eventPlace || "", (al.tags || []).join(" "));
-      al[k] = searchTokens(parts.join(" "));
+  // Pavadinimas ir paantraste tikrinami atskirai (kiekvienas su data), ne
+  // sujungti - kitaip "vilniaus taure" rastu "Vilniaus Žalgirio atviros
+  // varžybos" (paantraste "Žalgirio taurė").
+  function albumWordSets(al) {
+    if (!al._sw) {
+      const date = (al.eventDate || "") + " " + (al.eventDateLabel || "");
+      al._sw = {
+        strict: [al.name + " " + date, (al.subtitle || "") + " " + date].map(searchTokens),
+        broad: searchTokens([al.name, al.subtitle || "", date, al.eventPlace || "",
+                             (al.tags || []).join(" ")].join(" "))
+      };
     }
-    return al[k];
+    return al._sw;
   }
   function albumSearch(list, toks) {
     if (!toks.length) return list;
-    const strict = list.filter(al => tokensIn(albumWords(al, false), toks));
-    return strict.length ? strict : list.filter(al => tokensIn(albumWords(al, true), toks));
+    const strict = list.filter(al => albumWordSets(al).strict.some(w => tokensIn(w, toks)));
+    return strict.length ? strict : list.filter(al => tokensIn(albumWordSets(al).broad, toks));
   }
 
   function filteredAlbums() {
