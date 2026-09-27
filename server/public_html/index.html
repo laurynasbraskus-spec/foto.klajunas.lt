@@ -95,6 +95,15 @@
     border-radius: 99px; padding: 8px 14px; flex: 1; min-width: 190px; max-width: 340px;
     transition: border-color .18s, box-shadow .18s;
   }
+  .search { position: relative; }
+  .q-drop { position: absolute; top: calc(100% + 6px); left: 0; right: 0; min-width: 260px; z-index: 60;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.14); max-height: 60vh; overflow: auto; }
+  .q-drop button { display: block; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px;
+    background: transparent; color: var(--ink); font: inherit; font-size: 13.5px; cursor: pointer; }
+  .q-drop button small { color: var(--ink-faint); margin-left: 8px; font-size: 12px; }
+  .q-drop button:hover, .q-drop button.act { background: var(--amber-soft); }
+  .q-drop-empty { padding: 8px 10px; color: var(--ink-faint); font-size: 13px; }
   .search:focus-within { border-color: var(--amber-line); box-shadow: 0 0 0 3px var(--amber-soft); }
   .search svg { width: 15px; height: 15px; stroke: var(--ink-faint); flex-shrink: 0; }
   /* Sava "x", o ne narsykles: ta rodoma ne visose narsyklese, nepaklusta temai
@@ -590,10 +599,11 @@
     <div class="controls">
       <label class="search">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="q" type="search" placeholder="Search albums / photos…" autocomplete="off">
+        <input id="q" type="search" placeholder="Search albums…" autocomplete="off">
         <button type="button" id="qClear" class="q-clear" aria-label="Išvalyti paiešką" title="Išvalyti" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
+        <div id="qDrop" class="q-drop" role="listbox" hidden></div>
       </label>
       <div class="select-wrap" id="tagWrap">
         <select id="tagFilter" aria-label="Filter albums by tag"><option value="">All tags</option></select>
@@ -868,12 +878,38 @@
       .replace(/[^a-z0-9]+/g, "");
   }
 
+  // Paieska pagal zodzius bet kokia tvarka: "finalai 2019", "2019 finalai" ir
+  // "moletu finalai 2019" randa "Molėtų taurės finalai (2019)". Kiekvienas
+  // uzklausos zodis turi buti kurio nors albumo zodzio pradzia (taure -> taurės).
+  // Pirmiausia ieskom tik pavadinime, paantrasteje ir datoje; vieta ir zymes
+  // naudojamos tik jei ten nieko nerasta - kitaip "vilniaus taure" rastu ir
+  // "Klubų taurė" (vieta "Vilniaus r.").
+  function searchTokens(q) {
+    return String(q).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .split(/[^a-z0-9]+/).filter(Boolean);
+  }
+  function tokensIn(words, toks) {
+    return toks.every(t => words.some(w => w.startsWith(t)));
+  }
+  function albumWords(al, broad) {
+    const k = broad ? "_swB" : "_swN";
+    if (!al[k]) {
+      const parts = [al.name, al.subtitle || "", al.eventDate || "", al.eventDateLabel || ""];
+      if (broad) parts.push(al.eventPlace || "", (al.tags || []).join(" "));
+      al[k] = searchTokens(parts.join(" "));
+    }
+    return al[k];
+  }
+  function albumSearch(list, toks) {
+    if (!toks.length) return list;
+    const strict = list.filter(al => tokensIn(albumWords(al, false), toks));
+    return strict.length ? strict : list.filter(al => tokensIn(albumWords(al, true), toks));
+  }
+
   function filteredAlbums() {
-    const q = searchFold($("q").value.trim());
+    const toks = searchTokens($("q").value);
     const tag = $("tagFilter").value;
-    let list = ALBUMS
-      .filter(al => !tag || (al.tags || []).includes(tag))
-      .filter(al => !q || searchFold(al.name + " " + (al.eventPlace || "") + " " + (al.tags || []).join(" ")).includes(q));
+    let list = albumSearch(ALBUMS.filter(al => !tag || (al.tags || []).includes(tag)), toks);
     const d = al => al.eventDate || "0000";
     const so = al => Number.isFinite(al.sortOrder) ? al.sortOrder : Number.MAX_SAFE_INTEGER;
     const tie = (a, b) => so(a) - so(b) || a.name.localeCompare(b.name, "lt");
@@ -1020,10 +1056,10 @@
     el.textContent = text;
   }
 
+  // Albumo viduje paieska nuotrauku nefiltruoja - ju vardai techniniai
+  // (IMG_1234.jpg). Vietoj to rodomas albumu sarasas (renderSearchDrop).
   function photoPasses(p) {
-    const q = searchFold($("q").value.trim());
     if (favsOnly && !favs.has(p.path)) return false;
-    if (q && !searchFold(p.name).includes(q)) return false;
     return true;
   }
 
@@ -1121,7 +1157,7 @@
     // arrive would keep a stale, too-small total. With no filter active the
     // album's full published count is authoritative and correct from the first
     // tile; a favourites/search filter narrows to the loaded set, so use that.
-    const filtered = favsOnly || $("q").value.trim() !== "";
+    const filtered = favsOnly;
     const total = filtered ? visible.length : (currentAlbum && currentAlbum.count) || visible.length;
     g.querySelectorAll(".pindex-total").forEach(el => { el.textContent = total; });
   }
@@ -1528,9 +1564,59 @@
     const b = $("qClear");
     if (b) b.hidden = $("q").value === "";
   }
-  function runSearch() {
-    if (currentAlbum === null) renderArchive(); else applyPhotoFilter(true);
+  // Albumo viduje paieska rodo albumu sarasa po lauku; paspaudus (ar Enter)
+  // atidaromas albumas. Archyve - filtruojamas pats albumu tinklelis.
+  let dropIndex = 0;
+  function searchDropMatches() {
+    const toks = searchTokens($("q").value);
+    if (!toks.length) return [];
+    return albumSearch(ALBUMS, toks).slice()
+      .sort((a, b) => String(b.eventDate || "").localeCompare(String(a.eventDate || "")))
+      .slice(0, 12);
   }
+  function hideSearchDrop() { const d = $("qDrop"); if (d) { d.hidden = true; d.innerHTML = ""; } }
+  function renderSearchDrop() {
+    const d = $("qDrop");
+    if (!d) return;
+    if (currentAlbum === null || $("q").value.trim() === "") { hideSearchDrop(); return; }
+    const list = searchDropMatches();
+    d.innerHTML = "";
+    if (!list.length) {
+      const e = document.createElement("div"); e.className = "q-drop-empty"; e.textContent = "Albumų nerasta";
+      d.appendChild(e);
+    }
+    dropIndex = Math.min(dropIndex, Math.max(0, list.length - 1));
+    list.forEach((al, i) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = i === dropIndex ? "act" : "";
+      b.textContent = al.name;
+      if (al.eventDateLabel || al.eventDate) {
+        const sm = document.createElement("small"); sm.textContent = al.eventDateLabel || al.eventDate; b.appendChild(sm);
+      }
+      b.onmousedown = e => e.preventDefault(); // kad blur nepaslėptų prieš click
+      b.onclick = () => { hideSearchDrop(); $("q").value = ""; syncQClear(); openAlbum(al); };
+      d.appendChild(b);
+    });
+    d.hidden = false;
+  }
+  function runSearch() {
+    dropIndex = 0;
+    if (currentAlbum === null) { hideSearchDrop(); renderArchive(); } else renderSearchDrop();
+  }
+  $("q").addEventListener("keydown", e => {
+    const d = $("qDrop");
+    if (currentAlbum === null || !d || d.hidden) return;
+    const items = d.querySelectorAll("button");
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      dropIndex = (dropIndex + (e.key === "ArrowDown" ? 1 : -1) + items.length) % Math.max(1, items.length);
+      items.forEach((b, i) => b.classList.toggle("act", i === dropIndex));
+    } else if (e.key === "Enter") {
+      e.preventDefault(); if (items[dropIndex]) items[dropIndex].click();
+    } else if (e.key === "Escape") { hideSearchDrop(); }
+  });
+  $("q").addEventListener("blur", () => setTimeout(hideSearchDrop, 150));
+  $("q").addEventListener("focus", () => { if (currentAlbum !== null) renderSearchDrop(); });
   $("q").oninput = () => { syncQClear(); runSearch(); };
   if ($("qClear")) $("qClear").onclick = () => { $("q").value = ""; syncQClear(); runSearch(); $("q").focus(); };
   syncQClear();
