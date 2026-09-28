@@ -10,6 +10,12 @@
         .\upload_site.ps1                   # parodo plana, nieko nekeicia
         .\upload_site.ps1 -Execute          # ikelia
         .\upload_site.ps1 -Rollback -Execute # grazina naujausias kopijas
+        .\upload_site.ps1 -SkipGitCheck     # be git patikros (tik isimtiniais atvejais)
+
+    Pries ikeliant tikrinama, ar si kopija nera atsilikusi nuo GitHub (git
+    fetch + HEAD..@{u}). 2026-09-27 is atsilikusios kopijos ikeltas
+    admin/index.php serveryje istryne kitu dirbtu darbu (pasukimas, slug
+    alias'ai ir kt.) - jie buvo GitHub'e, bet ne sioje kopijoje.
 #>
 param(
     [string]$FtpHost    = 'ftp.klajunas.lt',
@@ -27,12 +33,59 @@ param(
     # Kai kurie Pure-FTPd nustatymai reikalauja, kad duomenu kanalas atnaujintu
     # valdymo kanalo TLS sesija; .NET to nemoka. -NoTls duomenu kanala palieka
     # atviru, valdymo kanalas su prisijungimo duomenimis lieka sifruotas.
-    [switch]$NoTls
+    [switch]$NoTls,
+    [switch]$SkipGitCheck
 )
 
 $ErrorActionPreference = 'Stop'
 if ($LogFile) { try { Start-Transcript -Path $LogFile -Force | Out-Null } catch {} }
 function Done([int]$code) { if ($LogFile) { try { Stop-Transcript | Out-Null } catch {} }; exit $code }
+
+# ---- Git sargas ----
+# Serveryje turi atsidurti tai, kas jau yra GitHub'e, o ne sena kopija. Jei si
+# kopija atsilikusi (kitas kompiuteris ar agentas jau istume pakeitimu), ikelimas
+# stabdomas: pirma git pull, tik tada ikelti. Neistumti vietiniai pakeitimai -
+# tik ispejimas, nes iprasta tvarka yra "pakeiciau - ikeliau - commit'inu".
+if (-not $Rollback -and -not $SkipGitCheck) {
+    $repoRoot = Split-Path (Split-Path $LocalRoot -Parent) -Parent
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Host "STOP: git nerastas. Idiek Git arba paleisk su -SkipGitCheck (savo rizika)." -ForegroundColor Red
+        Done 1
+    }
+    Push-Location $repoRoot
+    # Windows PowerShell 5.1 su 'Stop' git'o stderr isvesti pavercia klaida ir
+    # nutrauktu skripta dar pries musu aiskinamaji STOP pranesima.
+    $eapWas = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & git fetch --quiet 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "STOP: git fetch nepavyko ($repoRoot). Patikrink interneta / GitHub prieiga." -ForegroundColor Red
+            Done 1
+        }
+        $behindTxt = & git rev-list --count 'HEAD..@{u}' 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "STOP: sakai nera nuotolinio atitikmens (upstream). Nustatyk: git branch -u origin/master" -ForegroundColor Red
+            Done 1
+        }
+        $behind = [int]$behindTxt
+        if ($behind -gt 0) {
+            Write-Host "STOP: si kopija atsilikusi nuo GitHub per $behind commit'us." -ForegroundColor Red
+            Write-Host "      Pirma: git pull   (tada paleisk si skripta is naujo)." -ForegroundColor Red
+            Write-Host "      Ikelus dabar, serveryje butu istrintas GitHub'e esantis darbas." -ForegroundColor Red
+            Done 1
+        }
+        $dirty = & git status --porcelain -- 'server/public_html'
+        if ($dirty) {
+            Write-Host "Ispejimas: server/public_html yra neistumtu pakeitimu - po ikelimo padaryk commit ir git push:" -ForegroundColor Yellow
+            $dirty | ForEach-Object { Write-Host "   $_" -ForegroundColor Yellow }
+        }
+        Write-Host "Git: kopija sutampa su GitHub (atsilikimas 0)." -ForegroundColor Green
+    } finally {
+        $ErrorActionPreference = $eapWas
+        Pop-Location
+    }
+}
 
 $sec  = Read-Host "FTP slaptazodis" -AsSecureString
 $cred = New-Object System.Net.NetworkCredential($User, $sec)
