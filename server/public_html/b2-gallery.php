@@ -461,11 +461,18 @@ if (is_string($listCacheKey)) {
 }
 
 // Helpers
-function thumb_url(string $fileName, int $w = 420): string {
-    return 'img.php?file=' . rawurlencode($fileName) . '&w=' . $w . '&q=76&fmt=webp&v=7';
+// Rankinis pasukimas (admin'e ↺ ↻): kampas pagal laikrodzio rodykle keliauja
+// i img.php kaip ?rot=, originalas B2 lieka nepaliestas. Kitas kampas - kitas
+// adresas, tad Cloudflare ir narsykle neberodo senos, pasuktos kopijos.
+function rot_param(int $rot): string {
+    $rot = (($rot % 360) + 360) % 360;
+    return in_array($rot, [90, 180, 270], true) ? '&rot=' . $rot : '';
 }
-function view_url(string $fileName): string {
-    return 'img.php?file=' . rawurlencode($fileName) . '&w=1400&q=83&fmt=webp&v=7';
+function thumb_url(string $fileName, int $w = 420, int $rot = 0): string {
+    return 'img.php?file=' . rawurlencode($fileName) . '&w=' . $w . '&q=76&fmt=webp&v=7' . rot_param($rot);
+}
+function view_url(string $fileName, int $rot = 0): string {
+    return 'img.php?file=' . rawurlencode($fileName) . '&w=1400&q=83&fmt=webp&v=7' . rot_param($rot);
 }
 function photo_download_allowed(string $fileName): bool {
     return function_exists('gallery_download_allowed_for_file') ? gallery_download_allowed_for_file($fileName) : true;
@@ -574,12 +581,13 @@ function manifest_album_rows(): array {
             foreach ($q->fetchAll() as $r) { $counts[(int)$r['album_id']] = (int)$r['n']; }
         } catch (Throwable $e) { gallery_log($e); }
 
+        $rotSel = gallery_db_column_exists($db, 'photos', 'rotation') ? 'p.rotation' : '0';
         // ROW_NUMBER pakeicia buvusi "LIMIT 1" - rikiavimo tvarka ta pati, tad ir
         // virselis pasirenkamas tas pats, tik vienu kreipiniu visiems albumams.
         try {
             $q = $db->prepare(
-                "SELECT t.album_id,t.b2_key,t.fileName,t.compatibility_b2_key,t.original_b2_key,t.stored_filename,t.original_filename,t.source_path
-                   FROM (SELECT p.album_id,p.b2_key,p.b2_key AS fileName,$compatSelect,$originalB2Select,p.stored_filename,p.original_filename,a.source_path,
+                "SELECT t.album_id,t.b2_key,t.fileName,t.compatibility_b2_key,t.original_b2_key,t.stored_filename,t.original_filename,t.source_path,t.rotation
+                   FROM (SELECT p.album_id,p.b2_key,p.b2_key AS fileName,$compatSelect,$originalB2Select,p.stored_filename,p.original_filename,a.source_path,$rotSel AS rotation,
                                 ROW_NUMBER() OVER (PARTITION BY p.album_id ORDER BY CASE WHEN p.is_cover_candidate=1 THEN 0 ELSE 1 END ASC, CASE WHEN p.taken_at IS NULL THEN 1 ELSE 0 END ASC, p.taken_at ASC, p.sort_order ASC, p.id ASC) rn
                            FROM photos p JOIN albums a ON a.id=p.album_id
                           WHERE p.album_id IN ($in) AND p.visibility='published' AND p.is_missing=0 AND $imgExt) t
@@ -599,7 +607,7 @@ function manifest_album_rows(): array {
         if ($manualIds) {
             try {
                 $inM = implode(',', array_fill(0, count($manualIds), '?'));
-                $q = $db->prepare("SELECT p.id,p.album_id,p.b2_key,p.b2_key AS fileName,$compatSelect,$originalB2Select,p.stored_filename,p.original_filename,a.source_path FROM photos p JOIN albums a ON a.id=p.album_id WHERE p.id IN ($inM) AND p.visibility='published' AND p.is_missing=0");
+                $q = $db->prepare("SELECT p.id,p.album_id,p.b2_key,p.b2_key AS fileName,$compatSelect,$originalB2Select,p.stored_filename,p.original_filename,a.source_path,$rotSel AS rotation FROM photos p JOIN albums a ON a.id=p.album_id WHERE p.id IN ($inM) AND p.visibility='published' AND p.is_missing=0");
                 $q->execute($manualIds);
                 foreach ($q->fetchAll() as $r) { $manualRows[(int)$r['id']] = $r; }
             } catch (Throwable $e) { gallery_log($e); }
@@ -633,6 +641,8 @@ function manifest_album_rows(): array {
         } else {
             $cover = isset($coverRows[$albumId]) ? manifest_db_display_file_name($coverRows[$albumId]) : '';
         }
+        $coverRow = ($coverMode === 'manual' && $coverId > 0) ? ($manualRows[$coverId] ?? null) : ($coverRows[$albumId] ?? null);
+        $coverRot = ($cover !== '' && is_array($coverRow)) ? (int)($coverRow['rotation'] ?? 0) : 0;
         $out[] = [
             'type' => 'folder',
             // Albumo ID keliauja i prieki tam, kad dalinimosi nuoroda butu
@@ -653,6 +663,7 @@ function manifest_album_rows(): array {
             'authorName' => (string)($album['author_name'] ?? ''),
             'copyrightText' => (string)($album['copyright_text'] ?? ''),
             'coverFile' => $cover,
+            'coverRotation' => $coverRot,
             'sortOrder' => isset($album['sort_order']) ? (int)$album['sort_order'] : null,
             'dbsportasUrl' => trim((string)($album['dbsportas_url'] ?? '')),
             'klajunasUrl' => trim((string)($album['klajunas_url'] ?? '')),
@@ -735,6 +746,8 @@ function manifest_state_version(string $path): string {
     // SUM(CRC32(eilute)) neša ta pacia informacija, tik nelipdo tarpines eilutes:
     // ilgio lubu nebera, ir uzklausa is ~345 ms nukrenta i ~127 ms. Rikiavimas
     // nereikalingas - sort_order ir id patys ieina i maisa.
+    // is_missing ir visibility irgi ieina: be ju missing zymiu atstatymas
+    // (2026-09-23, 8777 eilutes) viesame sarase pasimatydavo tik po 30 min. TTL.
     try {
         if ($path === '') {
             $q = $db->query(
@@ -744,7 +757,7 @@ function manifest_state_version(string $path): string {
                     COALESCE(MAX(UNIX_TIMESTAMP(p.updated_at)), 0)
                     ),
                     '-',
-                    COALESCE(SUM(CRC32(CONCAT(p.id, ':', p.sort_order, ':', p.b2_key, ':', COALESCE(p.photo_views, '')))), 0),
+                    COALESCE(SUM(CRC32(CONCAT(p.id, ':', p.sort_order, ':', p.b2_key, ':', COALESCE(p.photo_views, ''), ':', p.is_missing, ':', p.visibility))), 0),
                     '-',
                     (SELECT COALESCE(SUM(CRC32(CONCAT_WS(':', a2.id, a2.title, COALESCE(a2.subtitle,''), COALESCE(a2.description,''), COALESCE(a2.event_date,''), COALESCE(a2.event_date_end,''), COALESCE(a2.location_name,''), a2.sort_order, COALESCE(a2.cover_photo_id,0), COALESCE(a2.cover_mode,''), COALESCE(a2.author_name,''), COALESCE(a2.copyright_text,''), COALESCE(a2.dbsportas_url,''), COALESCE(a2.klajunas_url,''), COALESCE(a2.other_url,'')))), 0) FROM albums a2 WHERE a2.visibility='published')
                  ) AS v
@@ -762,7 +775,7 @@ function manifest_state_version(string $path): string {
                 COALESCE(MAX(UNIX_TIMESTAMP(p.updated_at)), 0)
                 ),
                 '-',
-                COALESCE(SUM(CRC32(CONCAT(p.id, ':', p.sort_order, ':', p.b2_key, ':', COALESCE(p.photo_views, '')))), 0),
+                COALESCE(SUM(CRC32(CONCAT(p.id, ':', p.sort_order, ':', p.b2_key, ':', COALESCE(p.photo_views, ''), ':', p.is_missing, ':', p.visibility))), 0),
                 '-',
                 COALESCE(CRC32(MIN(CONCAT_WS(':', a.id, a.title, COALESCE(a.subtitle,''), COALESCE(a.event_date,''), COALESCE(a.event_date_end,''), COALESCE(a.location_name,''), a.sort_order, COALESCE(a.cover_photo_id,0), COALESCE(a.cover_mode,''), COALESCE(a.author_name,''), COALESCE(a.copyright_text,'')))), 0)
              ) AS v
@@ -783,7 +796,8 @@ function manifest_photos_for_path(string $path): array {
     try {
         $compatSelect = gallery_db_column_exists($db, 'photos', 'compatibility_b2_key') ? 'p.compatibility_b2_key' : 'NULL AS compatibility_b2_key';
         $originalB2Select = gallery_db_column_exists($db, 'photos', 'original_b2_key') ? 'p.original_b2_key' : 'NULL AS original_b2_key';
-        $q = $db->prepare("SELECT p.b2_key fileName,p.b2_key,$compatSelect,$originalB2Select,p.stored_filename,p.original_filename,p.file_size contentLength,p.title,p.description,p.photo_views,p.taken_at,p.width,p.height,p.metadata_json,p.camera_make,p.camera_model,p.lens_model,p.focal_length,p.aperture,p.shutter_speed,p.iso_value,a.source_path,a.event_date,a.event_date_end,a.location_name, a.download_enabled, a.visibility AS album_visibility, p.visibility AS photo_visibility, p.is_downloadable, p.is_missing FROM photos p JOIN albums a ON a.id=p.album_id WHERE a.visibility='published' AND p.visibility='published' AND p.is_missing=0 AND (a.slug=? OR a.source_path=?) ORDER BY p.sort_order ASC,p.id ASC");
+        $rotSelect = gallery_db_column_exists($db, 'photos', 'rotation') ? 'p.rotation' : '0 AS rotation';
+        $q = $db->prepare("SELECT p.b2_key fileName,p.b2_key,$compatSelect,$originalB2Select,$rotSelect,p.stored_filename,p.original_filename,p.file_size contentLength,p.title,p.description,p.photo_views,p.taken_at,p.width,p.height,p.metadata_json,p.camera_make,p.camera_model,p.lens_model,p.focal_length,p.aperture,p.shutter_speed,p.iso_value,a.source_path,a.event_date,a.event_date_end,a.location_name, a.download_enabled, a.visibility AS album_visibility, p.visibility AS photo_visibility, p.is_downloadable, p.is_missing FROM photos p JOIN albums a ON a.id=p.album_id WHERE a.visibility='published' AND p.visibility='published' AND p.is_missing=0 AND (a.slug=? OR a.source_path=?) ORDER BY p.sort_order ASC,p.id ASC");
         $q->execute([$path, $path]);
         $rows = $q->fetchAll();
         foreach ($rows as &$row) {
@@ -961,9 +975,10 @@ function b2_write_list_cache(string $dir, string $file, array $files): string {
 // egzistuoja, bet priesakinis Apache atsakymo vis tiek neatiduoda, kol backend'as
 // nebaigia - klientas laukdavo lygiai tiek pat.
 //
-// Albumo turinys galerijai ateina is DB, o ne is sio saraso, tad senstelejes
-// sarasas veluoja tik tai, kas i B2 ideta apeinant admin sasaja; tokiu atveju
-// uztenka istrinti cache/b2_filelist.
+// Albumo turinys ateina is DB, bet rodomos tik tos eilutes, kuriu failas yra
+// siame sarase. Todel admin'as po ikelimo / perkelimo / inbox importo pats
+// istrina to albumo saraso faila (gallery_list_cache_invalidate). Kas ideta i
+// B2 apeinant admin'a, pasirodys po TTL arba istrynus cache/b2_filelist.
 $listCacheTtl = 6 * 3600;
 $listWrite = 'skip';
 
@@ -1147,6 +1162,7 @@ if ($path === '') {
                 'hasDisplayPreview' => $displayFileName !== '',
                 'contentLength' => $contentLength,
                 'downloadAllowed' => $downloadAllowed,
+                'rotation' => (int)($photo['rotation'] ?? 0),
                 'dbMeta' => manifest_photo_meta($photo, $contentLength),
             ];
         }
@@ -1188,8 +1204,8 @@ foreach ($folders as $fo) {
         if (isset($fo[$albumField]) && $fo[$albumField] !== '' && $fo[$albumField] !== []) $it[$albumField] = $fo[$albumField];
     }
     if ($withCovers && $fo['coverFile'] !== '') {
-        $it['coverThumbUrl'] = thumb_url($fo['coverFile'], 420);
-        $it['coverViewUrl']  = view_url($fo['coverFile']);
+        $it['coverThumbUrl'] = thumb_url($fo['coverFile'], 420, (int)($fo['coverRotation'] ?? 0));
+        $it['coverViewUrl']  = view_url($fo['coverFile'], (int)($fo['coverRotation'] ?? 0));
     }
     $items[] = $it;
 }
@@ -1213,8 +1229,8 @@ foreach ($photos as $photo) {
         'previewMissing' => !$hasDisplayPreview,
         'previewStatus' => $hasDisplayPreview ? '' : HEIC_MISSING_DISPLAY_MESSAGE,
         'originalSize' => (int)($photo['contentLength'] ?? 0),
-        'thumbUrl' => $hasDisplayPreview ? thumb_url($fileName, 420) : '',
-        'viewUrl' => $hasDisplayPreview ? view_url($fileName) : '',
+        'thumbUrl' => $hasDisplayPreview ? thumb_url($fileName, 420, (int)($photo['rotation'] ?? 0)) : '',
+        'viewUrl' => $hasDisplayPreview ? view_url($fileName, (int)($photo['rotation'] ?? 0)) : '',
         'downloadAllowed' => $downloadAllowed,
         'downloadUrl' => download_url($downloadFile, $downloadAllowed),
         'compatibilityDownloadUrl' => $compatibilityFileName !== '' ? download_url($compatibilityFileName, $downloadAllowed) : '',

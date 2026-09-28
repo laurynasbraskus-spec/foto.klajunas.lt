@@ -56,6 +56,16 @@ if ($slug !== '' || $albumId > 0) {
             $q->execute([$slug, $slug]);
         }
         $al = $q->fetch();
+        if (!$al && $albumId === 0 && $slug !== '') {
+            // Pervadinto albumo senas slug'as (album_slug_aliases pildo admin'as).
+            try {
+                $q = $pdo->prepare("SELECT a.id,a.slug,a.title,a.subtitle,a.description,a.event_date,a.location_name,a.cover_photo_id
+                                      FROM album_slug_aliases s JOIN albums a ON a.id=s.album_id
+                                     WHERE s.slug=? AND a.visibility='published' LIMIT 1");
+                $q->execute([$slug]);
+                $al = $q->fetch();
+            } catch (Throwable $e) { $al = false; }
+        }
         if ($al) {
             $found = true;
             // Nuo čia dirbam su DABARTINIU slug'u — jis keliauja ir į SPA
@@ -72,7 +82,10 @@ if ($slug !== '' || $albumId > 0) {
 
             // Viršelis: pasirinktas cover, kitaip pirma rodoma nuotrauka. JPG
             // suderinamumo raktas pirmenybėje; OG scraper'iams duodam jpeg, ne webp.
-            $coverSql = "SELECT COALESCE(NULLIF(compatibility_b2_key,''), b2_key) k
+            // Pasukimo stulpelio gali dar nebuti - tada tiesiog be jo.
+            $rotCol = 'rotation';
+            try { $pdo->query("SELECT rotation FROM photos LIMIT 0"); } catch (Throwable $e) { $rotCol = '0'; }
+            $coverSql = "SELECT COALESCE(NULLIF(compatibility_b2_key,''), b2_key) k, $rotCol r
                            FROM photos
                           WHERE album_id=? AND visibility='published' AND is_missing=0 %s
                           ORDER BY CASE WHEN is_cover_candidate=1 THEN 0 ELSE 1 END,
@@ -81,15 +94,18 @@ if ($slug !== '' || $albumId > 0) {
             if ((int)$al['cover_photo_id'] > 0) {
                 $cq = $pdo->prepare(sprintf($coverSql, 'AND id=' . (int)$al['cover_photo_id']));
                 $cq->execute([(int)$al['id']]);
-                $cover = $cq->fetchColumn() ?: null;
+                $cr = $cq->fetch() ?: null;
+                $cover = $cr['k'] ?? null;
             }
             if (!$cover) {
                 $cq = $pdo->prepare(sprintf($coverSql, ''));
                 $cq->execute([(int)$al['id']]);
-                $cover = $cq->fetchColumn() ?: null;
+                $cr = $cq->fetch() ?: null;
+                $cover = $cr['k'] ?? null;
             }
+            $coverRot = (int)($cr['r'] ?? 0);
             if ($cover && preg_match('~\.(jpe?g|png|webp)$~i', (string)$cover)) {
-                $image = $base . '/img.php?file=' . rawurlencode((string)$cover) . '&w=1400&q=83&fmt=jpeg&v=7';
+                $image = $base . '/img.php?file=' . rawurlencode((string)$cover) . '&w=1400&q=83&fmt=jpeg&v=7' . (in_array($coverRot, [90, 180, 270], true) ? '&rot=' . $coverRot : '');
             }
         }
     } catch (Throwable $e) {

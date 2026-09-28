@@ -205,6 +205,24 @@ function safe_file(string $file): string {
  * ir taip pasiekti juodraščius — kelio atveju tokios rizikos nėra, nes kelio
  * neatspėsi.
  */
+function normalize_rotation(int $rot): int {
+    $rot = (($rot % 360) + 360) % 360;
+    return in_array($rot, [90, 180, 270], true) ? $rot : 0;
+}
+/** Pastoviam ?p=ID adresui kampas imamas is DB (tik generuojant miniatiura). */
+function photo_rotation_by_id(int $id): int {
+    $cfg = __DIR__ . '/../../foto-db-config.php';
+    if (!is_file($cfg)) return 0;
+    require_once $cfg;
+    try {
+        $pdo = new PDO('mysql:host=' . GALLERY_DB_HOST . ';dbname=' . GALLERY_DB_NAME . ';charset=utf8mb4', GALLERY_DB_USER, GALLERY_DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $q = $pdo->prepare('SELECT rotation FROM photos WHERE id = ? LIMIT 1');
+        $q->execute([$id]);
+        return normalize_rotation((int)($q->fetchColumn() ?: 0));
+    } catch (Throwable $e) {
+        return 0; // stulpelio dar nera - rodom kaip anksciau
+    }
+}
 function photo_key_by_id(int $id): string {
     $cfg = __DIR__ . '/../../foto-db-config.php';
     if (!is_file($cfg)) return '';
@@ -495,7 +513,7 @@ function make_placeholder_image(string $dstPath, int $w, int $h, string $title, 
 }
 
 /* ------------------------ Resize (always to JPEG, strips metadata) ------------------------ */
-function imagick_resize_to_image(string $srcPath, string $dstPath, int $w, int $h, string $fit, int $q, string $fmt): bool {
+function imagick_resize_to_image(string $srcPath, string $dstPath, int $w, int $h, string $fit, int $q, string $fmt, int $rot = 0): bool {
     if (!extension_loaded('imagick') || !class_exists('Imagick')) return false;
     if (is_heic_file($srcPath) && !heic_preview_supported()) return false;
 
@@ -511,6 +529,13 @@ function imagick_resize_to_image(string $srcPath, string $dstPath, int $w, int $
         $img->readImage($srcPath . '[0]');
         if (method_exists($img, 'autoOrient')) {
             @$img->autoOrient();
+        }
+        // Rankinis pasukimas is admin'o - PO EXIF pataisos, nes kai kurie
+        // telefonai issaugo jau pasuktus pikselius ir palieka Orientation zyme
+        // (Molėtų finalai 2019): tada EXIF pasuka neteisingai, o sis kampas atitaiso.
+        if ($rot) {
+            $img->rotateImage(new ImagickPixel('none'), $rot);
+            $img->setImagePage(0, 0, 0, 0);
         }
 
         $srcW = $img->getImageWidth();
@@ -560,8 +585,8 @@ function imagick_resize_to_image(string $srcPath, string $dstPath, int $w, int $
 }
 
 
-function image_resize_to_image(string $srcPath, string $dstPath, int $w, int $h, string $fit, int $q, string $fmt): void {
-    if (imagick_resize_to_image($srcPath, $dstPath, $w, $h, $fit, $q, $fmt)) {
+function image_resize_to_image(string $srcPath, string $dstPath, int $w, int $h, string $fit, int $q, string $fmt, int $rot = 0): void {
+    if (imagick_resize_to_image($srcPath, $dstPath, $w, $h, $fit, $q, $fmt, $rot)) {
         return;
     }
 
@@ -605,6 +630,11 @@ function image_resize_to_image(string $srcPath, string $dstPath, int $w, int $h,
         respond_text('Unsupported mime: ' . $mime, 415);
     }
     if (!$src) respond_text('Failed to decode image', 500);
+    if ($rot) {
+        // GD imagerotate() suka pries laikrodzio rodykle.
+        $rotated = imagerotate($src, 360 - $rot, 0);
+        if ($rotated) { imagedestroy($src); $src = $rotated; $srcW = imagesx($src); $srcH = imagesy($src); }
+    }
 
     if ($w <= 0 && $h <= 0) {
         $w = 1600;
@@ -819,7 +849,10 @@ try {
 
     if ($w <= 0 && $h <= 0) $w = 420; // default for grid thumbs
 
-    $thumbPath = thumb_cache_path((string)B2_BUCKET, $cacheKey, $w, $h, $fit, $q, $fmt);
+    // ?rot= - rankinis pasukimas (0/90/180/270). Iena i podelio rakta tik kai ne 0,
+    // tad visi esami podelio failai lieka galioti.
+    $rot = normalize_rotation((int)($_GET['rot'] ?? 0));
+    $thumbPath = thumb_cache_path((string)B2_BUCKET, $cacheKey . ($rot ? '|rot=' . $rot : ''), $w, $h, $fit, $q, $fmt);
     if (is_file($thumbPath) && filesize($thumbPath) > 0) {
         output_file($thumbPath, output_mime($fmt));
     }
@@ -829,6 +862,7 @@ try {
         $keyById = photo_key_by_id($photoId);
         if ($keyById === '') respond_text('Not found', 404);
         $file = safe_file($keyById);
+        if (!$rot) $rot = photo_rotation_by_id($photoId);
     }
 
     $lockPath = $thumbPath . '.lock';
@@ -874,7 +908,7 @@ try {
 
     // Resize/re-encode to cached derivative
     $tmpThumb = $thumbPath . '.tmp.' . bin2hex(random_bytes(4));
-    image_resize_to_image($tmpSrc, $tmpThumb, $w, $h, $fit, $q, $fmt);
+    image_resize_to_image($tmpSrc, $tmpThumb, $w, $h, $fit, $q, $fmt, $rot);
     @unlink($tmpSrc);
 
     if (!is_file($tmpThumb) || filesize($tmpThumb) <= 0) {

@@ -224,6 +224,9 @@ function ensure_schema(): void {
             db()->exec("ALTER TABLE albums ADD b2_oldest_upload_at DATETIME NULL AFTER synced_at");
         }
     } catch (Throwable $e) { /* non-fatal */ }
+    // Seni albumo slug'ai: pervadinus albuma dalintos /a/<senas-slug> nuorodos
+    // turi veikti toliau — og.php pagal cia rastą album_id nukreipia i dabartini.
+    db()->exec("CREATE TABLE IF NOT EXISTS album_slug_aliases (slug VARCHAR(191) NOT NULL PRIMARY KEY, album_id BIGINT UNSIGNED NOT NULL, created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP, INDEX album_slug_aliases_album_idx(album_id)) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
 
     db()->exec("CREATE TABLE IF NOT EXISTS access_logs (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -250,6 +253,7 @@ function ensure_schema(): void {
     } catch (Throwable) {
         // Older MySQL variants may not support JSON functions identically; leave existing data untouched.
     }
+    ensure_member_schema();
     $st = db()->prepare("INSERT INTO admins(email,name,role,is_active) VALUES(?,?,'superadmin',1) ON DUPLICATE KEY UPDATE role='superadmin', is_active=1");
     $st->execute(['info@klajunas.lt','OK Klajunas']);
     $st->execute(['okklajunas@gmail.com','OK Klajunas Gmail']);
@@ -262,6 +266,25 @@ function ensure_overlay_schema(): void {
     $q = db()->query("SHOW COLUMNS FROM albums LIKE 'metadata_json'");
     if (!$q->fetch()) db()->exec("ALTER TABLE albums ADD metadata_json JSON NULL AFTER notes_internal");
     ensure_photo_preview_schema();
+}
+/* Rankinis pasukimas: kampas pagal laikrodzio rodykle (0/90/180/270), taikomas
+ * TIK rodant (img.php ?rot=). Originalai B2 nekeiciami - ir HEIC, ir JPG. */
+function photo_rotation_column(): bool {
+    static $has = null;
+    if ($has !== null) return $has;
+    try {
+        if (!db()->query("SHOW COLUMNS FROM photos LIKE 'rotation'")->fetch()) {
+            db()->exec("ALTER TABLE photos ADD rotation SMALLINT NOT NULL DEFAULT 0 AFTER orientation");
+        }
+        $has = true;
+    } catch (Throwable $e) {
+        $has = false;
+    }
+    return $has;
+}
+function photo_rot_query(array $p): array {
+    $rot = ((((int)($p['rotation'] ?? 0)) % 360) + 360) % 360;
+    return in_array($rot, [90, 180, 270], true) ? ['rot' => $rot] : [];
 }
 function ensure_photo_preview_schema(): void {
     if (!db()->query("SHOW COLUMNS FROM photos LIKE 'original_format'")->fetch()) {
@@ -289,6 +312,143 @@ function ensure_photo_preview_schema(): void {
     db()->exec("UPDATE photos SET converted_from_heic = 1 WHERE converted_from_heic=0 AND LOWER(COALESCE(original_format,file_ext,'')) IN ('heic','heif') AND COALESCE(compatibility_b2_key,'')<>''");
     db()->exec("UPDATE photos SET preview_status = CASE WHEN LOWER(COALESCE(original_format,file_ext,'')) IN ('heic','heif') AND COALESCE(compatibility_b2_key,'')='' THEN 'failed' ELSE 'ready' END WHERE preview_status IS NULL OR preview_status=''");
     db()->exec("UPDATE photos SET preview_path = compatibility_b2_key, web_path = compatibility_b2_key, thumb_path = compatibility_b2_key WHERE COALESCE(compatibility_b2_key,'')<>'' AND (preview_path IS NULL OR preview_path='' OR web_path IS NULL OR web_path='' OR thumb_path IS NULL OR thumb_path='')");
+}
+/* ---------------------------------------------------------------------------
+ * Nariu ikelimo irankis (/upload)
+ *
+ * Nariai kelia originalus tiesiai i pasirinkto albumo kanonini B2 aplanka
+ * ({source_path}/originals/), todel B2 archyvas lieka sutvarkytas pats ir
+ * niekas niekada neperkeliama ir netrinama - invariantas nepazeidziamas.
+ * "Priskyrimas albumui" yra ne baitu judinimas, o DB busena: nario ikeltos
+ * nuotraukos visada gimsta draft, o tu jas perziuri ir paskelbi.
+ *
+ * Sios funkcijos gyvena admin faile todel, kad /upload/index.php ji ikrauna
+ * biblioteka (KLAJUNAS_ADMIN_LIB) - taip B2, EXIF ir DB logika yra VIENA, o ne
+ * dvi kopijos, kurios laikui begant issiskirtu (ta klaida jau kartą padaryta su
+ * simple-foto-admin/index.php).
+ * ------------------------------------------------------------------------ */
+function ensure_member_schema(): void {
+    db()->exec("CREATE TABLE IF NOT EXISTS member_invites (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        token_hash CHAR(64) NOT NULL UNIQUE,
+        token_hint VARCHAR(16) NOT NULL DEFAULT '',
+        label VARCHAR(191) NOT NULL DEFAULT '',
+        album_id BIGINT UNSIGNED NULL,
+        max_photos INT UNSIGNED NOT NULL DEFAULT 0,
+        uploads_done INT UNSIGNED NOT NULL DEFAULT 0,
+        photos_done INT UNSIGNED NOT NULL DEFAULT 0,
+        expires_at DATETIME NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_by BIGINT UNSIGNED NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        last_used_at DATETIME NULL,
+        INDEX member_invites_album_idx(album_id),
+        INDEX member_invites_active_idx(is_active)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    db()->exec("CREATE TABLE IF NOT EXISTS member_uploads (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        album_id BIGINT UNSIGNED NOT NULL,
+        admin_id BIGINT UNSIGNED NULL,
+        invite_id BIGINT UNSIGNED NULL,
+        contributor_name VARCHAR(191) NOT NULL DEFAULT '',
+        contributor_email VARCHAR(191) NULL,
+        session_key CHAR(32) NULL,
+        files_received INT UNSIGNED NOT NULL DEFAULT 0,
+        files_stored INT UNSIGNED NOT NULL DEFAULT 0,
+        files_skipped INT UNSIGNED NOT NULL DEFAULT 0,
+        bytes_stored BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        ip_address VARCHAR(45) NULL,
+        user_agent VARCHAR(500) NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY member_uploads_session_uk(session_key),
+        INDEX member_uploads_album_idx(album_id),
+        INDEX member_uploads_time_idx(created_at)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    // SHOW COLUMNS cia rasomas su iterptu literalu, ne prepared parametru:
+    // MariaDB nepalaiko "SHOW COLUMNS ... LIKE ?" paruostose uzklausose.
+    if (!db()->query("SHOW COLUMNS FROM photos LIKE 'contributor_name'")->fetch()) {
+        db()->exec("ALTER TABLE photos ADD contributor_name VARCHAR(191) NULL AFTER credit_line");
+    }
+    if (!db()->query("SHOW COLUMNS FROM photos LIKE 'contributor_email'")->fetch()) {
+        db()->exec("ALTER TABLE photos ADD contributor_email VARCHAR(191) NULL AFTER contributor_name");
+    }
+    if (!db()->query("SHOW COLUMNS FROM photos LIKE 'member_invite_id'")->fetch()) {
+        db()->exec("ALTER TABLE photos ADD member_invite_id BIGINT UNSIGNED NULL AFTER contributor_email");
+    }
+    if (!db()->query("SHOW COLUMNS FROM albums LIKE 'accepts_member_uploads'")->fetch()) {
+        db()->exec("ALTER TABLE albums ADD accepts_member_uploads TINYINT(1) NOT NULL DEFAULT 0 AFTER download_enabled");
+    }
+}
+
+/** Rolės, kurioms leidžiama kelti per /upload. Superadmin irgi - kad galėtum pats išbandyti. */
+function member_upload_roles(): array { return ['member', 'editor', 'superadmin']; }
+
+/** Nario ikelimu tikslinis prefiksas: tas pats kanoninis albumo aplankas kaip admin'e. */
+function member_album_prefix(array $album): string {
+    return album_storage_base_prefix((string)($album['source_path'] ?? ''));
+}
+
+/**
+ * Albumai, i kuriuos siuo metu gali kelti nariai.
+ *
+ * Salygos: ijungtas `accepts_member_uploads` IR yra B2 kelias. Be kelio failas
+ * neturetu kur atsidurti, o kelio spejimas cia butu tylus archyvo darkymas -
+ * geriau albumo nerodyti ir admin'e parodyti ispejima.
+ */
+function member_open_albums(): array {
+    return db()->query("SELECT id,title,subtitle,event_date,source_path,visibility FROM albums WHERE accepts_member_uploads=1 AND COALESCE(source_path,'')<>'' ORDER BY COALESCE(event_date,'0000-00-00') DESC, id DESC")->fetchAll(PDO::FETCH_ASSOC);
+}
+
+function member_album_by_id(int $albumId): ?array {
+    $st = db()->prepare("SELECT * FROM albums WHERE id=? LIMIT 1");
+    $st->execute([$albumId]);
+    return $st->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+function member_invite_token_hash(string $token): string { return hash('sha256', $token); }
+
+/**
+ * Randa GALIOJANTI kvietima pagal atviro teksto tokena.
+ *
+ * DB laikomas tik SHA-256 - nutekejes DB dump'as neduoda veikianciu nuorodu.
+ * Grazina null ir tada, kai kvietimas rastas, bet nebegalioja: skambintojui
+ * nesvarbu kuris is triju stabdziu suveike, o tyliai skirtingi pranesimai
+ * leistu spelioti, ar tokenas apskritai egzistuoja.
+ */
+function member_invite_by_token(string $token): ?array {
+    $token = trim($token);
+    if ($token === '' || !preg_match('/^[A-Za-z0-9_-]{16,96}$/', $token)) return null;
+    $st = db()->prepare("SELECT * FROM member_invites WHERE token_hash=? LIMIT 1");
+    $st->execute([member_invite_token_hash($token)]);
+    $invite = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    if (!$invite) return null;
+    if ((int)$invite['is_active'] !== 1) return null;
+    if (!empty($invite['expires_at']) && strtotime((string)$invite['expires_at']) < time()) return null;
+    // Limitas skaiciuoja NUOTRAUKAS, ne uzklausas: vienas 60 nuotrauku ikelimas
+    // issiskaido i ~10 POST partiju, tad skaiciuojant uzklausas "limitas 20"
+    // reisktu visai ne 20 nuotrauku.
+    if ((int)$invite['max_photos'] > 0 && (int)$invite['photos_done'] >= (int)$invite['max_photos']) return null;
+    return $invite;
+}
+
+/** Narys mato tik savo ikelimus; admin'as - visus. */
+function member_recent_uploads(int $limit = 50, ?int $albumId = null): array {
+    $limit = max(1, min(500, $limit));
+    $sql = "SELECT u.*, a.title album_title FROM member_uploads u LEFT JOIN albums a ON a.id=u.album_id";
+    $params = [];
+    if ($albumId !== null && $albumId > 0) { $sql .= " WHERE u.album_id=?"; $params[] = $albumId; }
+    $sql .= " ORDER BY u.id DESC LIMIT ".$limit;
+    $st = db()->prepare($sql);
+    $st->execute($params);
+    return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/** Kiek albume guli nario atsiustu, dar nepaskelbtu nuotrauku - "laukia perziuros". */
+function member_pending_counts(): array {
+    $rows = db()->query("SELECT album_id, COUNT(*) c FROM photos WHERE source_type='member_upload' AND visibility='draft' GROUP BY album_id")->fetchAll(PDO::FETCH_ASSOC);
+    $out = [];
+    foreach ($rows as $r) $out[(int)$r['album_id']] = (int)$r['c'];
+    return $out;
 }
 function takeout_image_views(?array $node): ?int {
     $value = $node['imageViews'] ?? $node['photoViews'] ?? null;
@@ -752,7 +912,7 @@ body.light .spill.s-published{color:#1f7a45;background:rgba(31,122,69,.1);border
     unset($_SESSION['flash']);
     if ($title !== 'Login') {
         $items = is_superadmin()
-            ? ['dashboard'=>'Dashboard','albums'=>'Albums','photos'=>'Photos','inbox'=>'Uploads','tags'=>'Tags','b2'=>'B2 Sync','takeout'=>'Takeout','import'=>'CSV','zip'=>'ZIP','settings'=>'Settings','access'=>'Access','audit'=>'Audit','admins'=>'Admins']
+            ? ['dashboard'=>'Dashboard','albums'=>'Albums','photos'=>'Photos','inbox'=>'Uploads','tags'=>'Tags','members'=>'Nariai','b2'=>'B2 Sync','takeout'=>'Takeout','import'=>'CSV','zip'=>'ZIP','settings'=>'Settings','access'=>'Access','audit'=>'Audit','admins'=>'Admins']
             : ['dashboard'=>'Dashboard','albums'=>'Albums','photos'=>'Photos'];
         $currentPage = (string)($_GET['page'] ?? 'dashboard');
         $currentAction = (string)($_GET['action'] ?? '');
@@ -761,7 +921,7 @@ body.light .spill.s-published{color:#1f7a45;background:rgba(31,122,69,.1);border
         // pati navigacija persikele i sonine juosta .side.
         echo '<div class="top"><div class="top-inner"><a class="brand" href="/" title="Atidaryti foto.klajunas.lt viešą galeriją"><img src="/foto-klajunas-logo.png" alt="foto.klajunas.lt" style="display:block;height:50px;width:auto"></a><h1 class="pagetitle">'.e($title).'</h1><div class="spacer"></div><button type="button" class="btn" id="themeToggle">◑ Light</button><span class="muted small">'.e($_SESSION['admin']['email'] ?? '').'</span><a class="btn" href="?action=logout">Logout</a></div></div>';
         echo '<div class="shell"><aside class="side"><nav class="nav">';
-        $groups = ['dashboard'=>'', 'albums'=>'Turinys', 'b2'=>'Įkėlimas', 'import'=>'', 'settings'=>'Sistema'];
+        $groups = ['dashboard'=>'', 'albums'=>'Turinys', 'members'=>'Įkėlimas', 'import'=>'', 'settings'=>'Sistema'];
         foreach ($items as $k=>$v) {
             if (isset($groups[$k]) && $groups[$k] !== '') echo '<div class="nav-group">'.e($groups[$k]).'</div>';
             echo '<a class="'.($currentPage===$k?'active':'').'" href="?page='.e($k).'">'.e($v).'</a>';
@@ -769,7 +929,14 @@ body.light .spill.s-published{color:#1f7a45;background:rgba(31,122,69,.1);border
         echo '</nav></aside><script>(function(){var b=document.getElementById("themeToggle");if(!b)return;function L(on){document.body.classList.toggle("light",on);b.textContent=on?"◐ Dark":"◑ Light";}L(document.body.classList.contains("light"));b.addEventListener("click",function(){var on=!document.body.classList.contains("light");try{localStorage.setItem("kadmin_theme",on?"light":"dark");}catch(e){}L(on);});})();</script><main class="wrap">';
     }
 }
-function foot(string $title): void { if ($title !== 'Login') echo '</main></div>'; if ($title !== 'Login') echo '<script>(function(){document.querySelectorAll("input[data-master-check]").forEach(function(master){var form=master.closest("form")||document;var boxes=Array.from(form.querySelectorAll("input[type=checkbox][name=\"ids[]\"]"));function sync(){master.checked=boxes.length>0&&boxes.every(function(b){return b.checked;});master.indeterminate=boxes.some(function(b){return b.checked;})&&!master.checked;}master.addEventListener("change",function(){boxes.forEach(function(b){b.checked=master.checked;});sync();});boxes.forEach(function(b){b.addEventListener("change",sync);});sync();});document.querySelectorAll("form input[name=q]").forEach(function(inp){var t;inp.addEventListener("input",function(){clearTimeout(t);t=setTimeout(function(){try{sessionStorage.setItem("kadmin_qfocus","1");}catch(e){}if(inp.form)inp.form.submit();},600);});});try{if(sessionStorage.getItem("kadmin_qfocus")==="1"){sessionStorage.removeItem("kadmin_qfocus");var qi=document.querySelector("form input[name=q]");if(qi){qi.focus();var L=qi.value.length;qi.setSelectionRange(L,L);}}}catch(e){}})();</script>'; echo '</body></html>'; }
+function foot(string $title): void { if ($title !== 'Login') echo '</main></div>'; if ($title !== 'Login') echo '<script>(function(){function bindChecks(root){root.querySelectorAll("input[data-master-check]").forEach(function(master){var form=master.closest("form")||document;var boxes=Array.from(form.querySelectorAll("input[type=checkbox][name=\"ids[]\"]"));function sync(){master.checked=boxes.length>0&&boxes.every(function(b){return b.checked;});master.indeterminate=boxes.some(function(b){return b.checked;})&&!master.checked;}master.addEventListener("change",function(){boxes.forEach(function(b){b.checked=master.checked;});sync();});boxes.forEach(function(b){b.addEventListener("change",sync);});sync();});}bindChecks(document);'
+        // Gyva paieska: anksciau po 600 ms pauzes buvo form.submit() - visas
+        // puslapis persikraudavo ir per ta laika vedami simboliai dingdavo.
+        // Dabar puslapis parsiunciamas fone ir pakeiciamas tik <main> turinys,
+        // o pati filtru forma (su lauku, kuriame rasoma) lieka ta pati.
+        // Pasenusius atsakymus (seq) ismetam; nepavykus - senas budas.
+        .'var seq=0;function liveSearch(inp){var form=inp.form;if(!form)return;var my=++seq;var u=new URL(form.getAttribute("action")||location.href,location.href);u.search=new URLSearchParams(new FormData(form)).toString();u.hash="";function fallback(){try{sessionStorage.setItem("kadmin_qfocus","1");}catch(e){}form.submit();}fetch(u.toString(),{credentials:"same-origin"}).then(function(r){if(!r.ok)throw new Error(r.status);return r.text();}).then(function(html){if(my!==seq)return;var doc=new DOMParser().parseFromString(html,"text/html");var nm=doc.querySelector("main.wrap"),om=document.querySelector("main.wrap");var nq=nm&&nm.querySelector("form input[name=q]");if(!om||!nq||!nq.form||!om.contains(form)){fallback();return;}var had=document.activeElement===inp,s=inp.selectionStart,e=inp.selectionEnd;nq.form.replaceWith(form);om.replaceWith(nm);if(had){inp.focus();try{inp.setSelectionRange(s,e);}catch(x){}}nm.querySelectorAll("script").forEach(function(o){if(form.contains(o))return;var n=document.createElement("script");n.textContent=o.textContent;o.replaceWith(n);});bindChecks(nm);history.replaceState(null,"",u.toString());}).catch(function(){if(my===seq)fallback();});}'
+        .'document.querySelectorAll("form input[name=q]").forEach(function(inp){var t;inp.addEventListener("input",function(){clearTimeout(t);t=setTimeout(function(){liveSearch(inp);},400);});});try{if(sessionStorage.getItem("kadmin_qfocus")==="1"){sessionStorage.removeItem("kadmin_qfocus");var qi=document.querySelector("form input[name=q]");if(qi){qi.focus();var L=qi.value.length;qi.setSelectionRange(L,L);}}}catch(e){}})();</script>'; echo '</body></html>'; }
 function status_select(string $name, string $value=''): string {
     $value = trim((string)$value);
     $value = $value !== '' ? normalize_visibility($value) : '';
@@ -801,7 +968,7 @@ function thumb_url(array $p, int $w=420): string {
     if ($displayKey === '') $displayKey = trim((string)($p['compatibility_b2_key'] ?? ''), '/');
     if ($displayKey === '' && preg_match('~\.(jpe?g|png|webp|gif|heic|heif)$~i', (string)($p['b2_key'] ?? ''))) $displayKey = trim((string)$p['b2_key'], '/');
     if ($displayKey === '') return '';
-    return '/img.php?'.http_build_query(['file'=>$displayKey,'w'=>$w,'h'=>280,'fit'=>'cover','q'=>76,'fmt'=>'webp','v'=>7]);
+    return '/img.php?'.http_build_query(['file'=>$displayKey,'w'=>$w,'h'=>280,'fit'=>'cover','q'=>76,'fmt'=>'webp','v'=>7] + photo_rot_query($p));
 }
 function preview_url(array $p, int $w=1600, int $h=1200): string {
     if (!preg_match('~\.(jpe?g|png|webp|heic|heif|gif)$~i', (string)$p['original_filename'])) return '';
@@ -810,13 +977,13 @@ function preview_url(array $p, int $w=1600, int $h=1200): string {
     if ($displayKey === '') $displayKey = trim((string)($p['compatibility_b2_key'] ?? ''), '/');
     if ($displayKey === '' && preg_match('~\.(jpe?g|png|webp|gif|heic|heif)$~i', (string)($p['b2_key'] ?? ''))) $displayKey = trim((string)$p['b2_key'], '/');
     if ($displayKey === '') return '';
-    return '/img.php?'.http_build_query(['file'=>$displayKey,'w'=>$w,'h'=>$h,'fit'=>'contain','q'=>84,'fmt'=>'webp','v'=>7]);
+    return '/img.php?'.http_build_query(['file'=>$displayKey,'w'=>$w,'h'=>$h,'fit'=>'contain','q'=>84,'fmt'=>'webp','v'=>7] + photo_rot_query($p));
 }
 function album_photo_board(int $albumId, ?int $coverPhotoId): void {
     $albumSt = db()->prepare("SELECT id,title,description,event_date,location_name,author_name,copyright_text,notes_internal,source_path,visibility,download_enabled,dbsportas_url,klajunas_url,other_url FROM albums WHERE id=? LIMIT 1");
     $albumSt->execute([$albumId]);
     $albumMeta = $albumSt->fetch() ?: ['id'=>$albumId,'title'=>'','description'=>'','event_date'=>'','location_name'=>'','author_name'=>'','copyright_text'=>'','notes_internal'=>''];
-    $ps=db()->prepare("SELECT id,original_filename,b2_key,compatibility_b2_key,thumb_path,preview_path,web_path,preview_status,preview_error,original_format,converted_from_heic,visibility,is_missing,is_cover_candidate,is_downloadable,sort_order,taken_at,camera_make,camera_model,lens_model,focal_length,aperture,shutter_speed,iso_value,width,height,file_size,city,region,country,latitude,longitude,orientation FROM photos WHERE album_id=? ORDER BY sort_order ASC,taken_at ASC,id ASC LIMIT 800");
+    $ps=db()->prepare("SELECT id,original_filename,b2_key,compatibility_b2_key,thumb_path,preview_path,web_path,preview_status,preview_error,original_format,converted_from_heic,visibility,is_missing,is_cover_candidate,is_downloadable,sort_order,taken_at,camera_make,camera_model,lens_model,focal_length,aperture,shutter_speed,iso_value,width,height,file_size,city,region,country,latitude,longitude,orientation,".(photo_rotation_column() ? 'rotation' : '0 AS rotation')." FROM photos WHERE album_id=? ORDER BY sort_order ASC,taken_at ASC,id ASC LIMIT 800");
     $ps->execute([$albumId]); $rows=$ps->fetchAll();
     $realB2Keys = [];
     $albumSourcePath = trim((string)($albumMeta['source_path'] ?? ''), '/');
@@ -913,6 +1080,19 @@ await sendLog(done,fail);
 sum.textContent="Baigta: "+done+" ✓, "+fail+" ✗ iš "+LIST.length+". Ataskaita įrašyta Audit žurnale.";btn.disabled=false;});
 document.getElementById("rjCopy").addEventListener("click",function(){var txt=JSON.stringify({album:AID,items:LOG},null,1);if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt);}else{var ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();}this.textContent="Nukopijuota";});
 })();</script>';
+    // Nariu ikelimo jungiklis stovi cia, o ne tik Nariu puslapyje: sprendimas
+    // "ar sis albumas priima nario nuotraukas" priimamas ziurint i alguma, ne i
+    // saraso eilute. Kelio patikra - toggle_member_album viduje.
+    $memberOpen = (int)db()->query("SELECT COALESCE(accepts_member_uploads,0) FROM albums WHERE id=".$albumId)->fetchColumn();
+    $memberWaiting = (int)db()->query("SELECT COUNT(*) FROM photos WHERE album_id=".$albumId." AND source_type='member_upload' AND visibility='draft'")->fetchColumn();
+    echo '<div class="actions" style="margin:0 0 10px;padding:10px 12px;border:1px solid '.($memberOpen ? 'var(--accent-line)' : 'var(--line)').';border-radius:10px;background:var(--panel2)">'
+        .'<strong style="font-size:13.5px">&#128100; Narių įkėlimai: '.($memberOpen ? 'ĮJUNGTI' : 'išjungti').'</strong>'
+        .'<span class="muted small" style="flex:1 1 240px">'.($memberOpen
+            ? 'Nariai gali kelti originalus į šį albumą per /upload. Jų nuotraukos gimsta draft ir viešai nematomos, kol nepaskelbi.'
+            : 'Įjungus, nariai galės kelti originalus tiesiai į šio albumo B2 aplanką originals/.').'</span>'
+        .($memberWaiting > 0 ? '<a class="btn mini" href="?page=photos&album_id='.e((string)$albumId).'&source=member&visibility=draft">'.e((string)$memberWaiting).' laukia peržiūros &rarr;</a>' : '')
+        .'<form method="post" action="?action=toggle_member_album" style="margin:0"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="album_id" value="'.e((string)$albumId).'"><input type="hidden" name="back" value="?page=album_edit&id='.e((string)$albumId).'"><button class="mini'.($memberOpen ? '' : ' primary').'">'.($memberOpen ? 'Išjungti' : 'Įjungti').'</button></form>'
+        .'</div>';
     echo '<form id="albumPhotoUploadForm" method="post" enctype="multipart/form-data" action="?action=upload_album_photos" class="actions" style="align-items:end" data-max-files="'.e((string)(int)$albumBatch['max_files']).'" data-max-bytes="'.e((string)(int)$albumBatch['batch_bytes']).'"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="album_id" value="'.e($albumId).'"><input type="hidden" name="sort_preset" id="uploadSortPreset" value="taken_asc"><div style="flex:0 1 320px;min-width:240px;max-width:320px"><label>Upload missing/additional photos + Takeout JSON sidecars</label><input id="albumPhotoFilesInput" type="file" name="photo_files[]" multiple accept="image/*,video/*,.heic,.heif,.json,application/json"></div><div style="min-width:180px"><label>Duplicate files in B2</label><select name="duplicate_mode"><option value="skip" selected>Skip media, add missing JSON</option><option value="overwrite">Overwrite media and JSON</option></select></div><div style="min-width:180px"><label>Visibility</label>'.status_select('visibility',$defaultVisibility).'</div><button class="primary" id="albumPhotoUploadButton">Upload photos</button></form>';
     echo '<div id="albumPhotoUploadProgress" class="muted small" style="display:none;margin:0 0 8px"></div>';
     echo '<p class="muted small" style="margin:4px 0 14px">Galima įkelti JPG, PNG ir iPhone HEIC/HEIF. HEIC failai saugomi originaliai, o galerijoje rodoma automatiškai sukurta JPG versija. Batch limit: '.e(human_bytes((int)$albumBatch['batch_bytes'])).' / '.e((string)(int)$albumBatch['max_files']).' files ('.e($albumBatch['label']).'). Serverio WAF atmeta uzklausas virs ~12 MB, todel failai siunciami tokiomis partijomis automatiskai. Pavieniai failai, didesni nei 12 MB (pvz., video), per admin neikeliami — juos kelkite i B2 rankiniu budu i albumo <code>originals/</code> aplanka ir paleiskite B2 Sync (scan + create missing), arba laikinai isjunkite WAF hostingo paneleje.</p>';
@@ -977,6 +1157,10 @@ document.getElementById("rjCopy").addEventListener("click",function(){var txt=JS
         echo '<div class="photo-tile-body"><div class="photo-title">'.e($p['original_filename']).'</div><div class="muted small">taken '.e($taken ?: 'n/a').'</div><div class="muted small">sort '.e($p['sort_order']).' · '.e($p['visibility']).'</div><div class="muted small">'.($existsInB2 ? '<span class="badge">B2 ok</span>' : '<span class="badge err">missing in B2</span>').((int)($p['is_missing'] ?? 0) ? ' <span class="badge">DB missing</span>' : '').($missingCompatibility ? ' <span class="badge">JPG preview missing</span>' : '').($existsInB2 && !photo_is_previewable((string)$p['original_filename']) ? ' <span class="badge" title="Šio failo peržiūra negalima — tik atsisiuntimas">No preview / Download and view only · '.e(photo_kind_label((string)$p['original_filename'])).'</span>' : '').'</div><div class="photo-tools">';
         echo '<button class="mini quick '.($isCover?'pill-on':'').'" type="button" data-op="cover">Cover</button>';
         echo '<button class="mini quick" type="button" data-op="hide">Hidden</button>';
+        $rotNow = (int)($p['rotation'] ?? 0);
+        echo '<button class="mini quick" type="button" data-op="rot_ccw" title="Pasukti prieš laikrodžio rodyklę (originalas B2 nekeičiamas)">↺</button>';
+        echo '<button class="mini quick" type="button" data-op="rot_cw" title="Pasukti pagal laikrodžio rodyklę (originalas B2 nekeičiamas)">↻</button>';
+        if ($rotNow) echo '<button class="mini quick pill-on" type="button" data-op="rot_reset" title="Grąžinti pradinę padėtį">'.e((string)$rotNow).'° ×</button>';
         echo '<a class="btn mini" href="?page=photo_edit&id='.e($p['id']).'&album_id='.e($albumId).'">Edit</a>';
         echo '<button class="mini err delete-photo" type="button">Delete</button>';
         echo '<label class="muted small" style="display:inline-flex;align-items:center;gap:5px;margin:0"><input class="delete-sidecar-toggle" type="checkbox" checked style="width:auto;padding:0"> + JSON</label>';
@@ -1887,6 +2071,12 @@ function album_fix_badges(array $r): string {
     if ($missing > 0) {
         $bits[] = '<a class="btn mini" style="border-color:var(--err-line);color:var(--text)" href="?page=photos&album_id='.$id.'&missing=1" title="Peržiūrėti trūkstamus failus / Re-check in B2">⚠ '.$missing.' missing</a>';
     }
+    // Nario atsiustos nuotraukos guli draft busenoje ir vieso saraso nepasiekia.
+    // Be sio zenkliuko jos tyliai gulėtu neribotai - kaip ir tuscias albumas.
+    $memberPending = (int)($r['member_pending'] ?? 0);
+    if ($memberPending > 0) {
+        $bits[] = '<a class="btn mini" style="border-color:var(--accent-line);color:var(--accent-ink)" href="?page=photos&album_id='.$id.'&source=member&visibility=draft" title="Narių įkeltos nuotraukos laukia peržiūros">&#128100; '.$memberPending.' laukia</a>';
+    }
     if ($previewFailed > 0) {
         $bits[] = '<a class="btn mini" href="?page=photos&album_id='.$id.'" title="Nuotraukos be JPG peržiūros">'.$previewFailed.' no preview</a>';
     }
@@ -1964,7 +2154,7 @@ function albums(): void {
     // (suma per nulį eiluciu), preview_failed 0 ir cover_mode 'auto', tad be
     // sios salygos jis i "tik taisytini" filtra nepakliudavo.
     $havingFix = $needsFix ? " HAVING (photos_count = 0 OR missing_count > 0 OR preview_failed > 0 OR a.cover_mode = 'none')" : '';
-    $st = db()->prepare("SELECT a.*, COUNT(p.id) photos_count, COALESCE(SUM(p.is_missing=1),0) missing_count, COALESCE(SUM(p.preview_status='failed'),0) preview_failed FROM albums a LEFT JOIN photos p ON p.album_id=a.id $where GROUP BY a.id{$havingFix} ORDER BY {$sortMap[$sort]} LIMIT 250");
+    $st = db()->prepare("SELECT a.*, COUNT(p.id) photos_count, COALESCE(SUM(p.is_missing=1),0) missing_count, COALESCE(SUM(p.preview_status='failed'),0) preview_failed, COALESCE(SUM(p.source_type='member_upload' AND p.visibility='draft'),0) member_pending FROM albums a LEFT JOIN photos p ON p.album_id=a.id $where GROUP BY a.id{$havingFix} ORDER BY {$sortMap[$sort]} LIMIT 250");
     $st->execute($p); $rows=$st->fetchAll();
     // Vienpusis: albumas = trinamas dublikatas TIK jei egzistuoja ILGESNIS to
     // paties kamieno albumas (šis yra priešdėlio-stub). Turi sutapti su
@@ -2224,7 +2414,7 @@ function album_edit(): void {
 
 function photos(): void {
     head('Photos');
-    $q=trim((string)($_GET['q'] ?? '')); $vis=trim((string)($_GET['visibility'] ?? '')); if ($vis !== '') $vis = normalize_visibility($vis); $album=(int)($_GET['album_id'] ?? 0); $missing=(int)($_GET['missing'] ?? 0); $p=[]; $where='WHERE 1=1';
+    $q=trim((string)($_GET['q'] ?? '')); $vis=trim((string)($_GET['visibility'] ?? '')); if ($vis !== '') $vis = normalize_visibility($vis); $album=(int)($_GET['album_id'] ?? 0); $missing=(int)($_GET['missing'] ?? 0); $source=(string)($_GET['source'] ?? '') === 'member' ? 'member' : ''; $p=[]; $where='WHERE 1=1';
     $sort=(string)($_GET['sort'] ?? 'order');
     $dir=strtolower((string)($_GET['dir'] ?? 'asc')) === 'desc' ? 'desc' : 'asc';
     $sortMap=[
@@ -2236,13 +2426,13 @@ function photos(): void {
         'size'=>'p.file_size '.($dir==='desc'?'DESC':'ASC').',p.sort_order ASC,p.id ASC',
     ];
     if(!isset($sortMap[$sort])) { $sort='order'; $dir='asc'; }
-    $sortLinks=function(string $key,string $label) use($q,$vis,$album,$missing): string {
-        $base=['page'=>'photos','q'=>$q,'visibility'=>$vis,'album_id'=>$album ?: null,'missing'=>$missing ?: null,'sort'=>$key];
+    $sortLinks=function(string $key,string $label) use($q,$vis,$album,$missing,$source): string {
+        $base=['page'=>'photos','q'=>$q,'visibility'=>$vis,'album_id'=>$album ?: null,'missing'=>$missing ?: null,'source'=>$source ?: null,'sort'=>$key];
         $az='?'.http_build_query(array_filter($base + ['dir'=>'asc'], fn($v)=>$v!=='' && $v!==null));
         $za='?'.http_build_query(array_filter($base + ['dir'=>'desc'], fn($v)=>$v!=='' && $v!==null));
         return e($label).' <span class="sort-links"><a href="'.e($az).'" title="Ascending">↑</a> <a href="'.e($za).'" title="Descending">↓</a></span>';
     };
-    if ($vis !== '') { $where.=' AND p.visibility=?'; $p[]=$vis; } if ($album) { $where.=' AND p.album_id=?'; $p[]=$album; } if ($missing) { $where.=' AND p.is_missing=1'; }
+    if ($vis !== '') { $where.=' AND p.visibility=?'; $p[]=$vis; } if ($album) { $where.=' AND p.album_id=?'; $p[]=$album; } if ($missing) { $where.=' AND p.is_missing=1'; } if ($source==='member') { $where.=" AND p.source_type='member_upload'"; }
     if (!is_superadmin()) { $where.=' AND a.created_by=?'; $p[] = current_admin_id(); }
     $where .= search_sql(['p.title','p.original_filename','p.b2_key','p.author_name','p.camera_model','p.city','p.country'], $q, $p);
     $st=db()->prepare("SELECT p.*,a.title album_title,a.created_by album_created_by FROM photos p LEFT JOIN albums a ON a.id=p.album_id $where ORDER BY {$sortMap[$sort]} LIMIT 300"); $st->execute($p); $rows=$st->fetchAll();
@@ -2253,12 +2443,23 @@ function photos(): void {
     $albumSelectLen = 14;
     foreach ($albums as $a) $albumSelectLen = max($albumSelectLen, min(82, mb_strlen((string)$a['title'], 'UTF-8')) + 2);
     $albumSelectWidth = min(86, max(18, $albumSelectLen));
+    // Tikslinio albumo sarasas veiksmui „Priskirti kitam albumui". Kelio
+    // buvimas tikrinamas pacioje operacijoje (bulk/move_album): jei albumas be
+    // B2 kelio, veiksmas sustoja su nuoroda i Storage path, o ne kopijuoja i
+    // niekur.
+    $albumTargetOptions = '';
+    foreach ($albums as $a) {
+        $targetTitle = (string)$a['title'];
+        if (mb_strlen($targetTitle, 'UTF-8') > 60) $targetTitle = mb_substr($targetTitle, 0, 59, 'UTF-8').'…';
+        $albumTargetOptions .= '<option value="'.e((string)$a['id']).'">'.e($targetTitle).'</option>';
+    }
     $photoStatusSelect = str_replace('<select ', '<select onchange="this.form.submit()" style="width:16ch;max-width:16ch" ', status_select('visibility',$vis));
-    echo '<h1>Photos</h1><form id="photoFilterForm"><input type="hidden" name="page" value="photos"><input type="hidden" name="missing" value="'.e($missing).'"><input type="hidden" name="sort" value="'.e($sort).'"><input type="hidden" name="dir" value="'.e($dir).'"><div class="actions"><input style="width:320px;max-width:100%" name="q" placeholder="Search filename, title, EXIF, B2 key..." value="'.e($q).'">'.$photoStatusSelect.'<select name="album_id" onchange="this.form.submit()" style="width:'.e((string)$albumSelectWidth).'ch;max-width:100%"><option value="0">Any album</option>';
+    echo '<h1>Photos</h1><form id="photoFilterForm"><input type="hidden" name="page" value="photos"><input type="hidden" name="missing" value="'.e($missing).'"><input type="hidden" name="source" value="'.e($source).'"><input type="hidden" name="sort" value="'.e($sort).'"><input type="hidden" name="dir" value="'.e($dir).'"><div class="actions"><input style="width:320px;max-width:100%" name="q" placeholder="Search filename, title, EXIF, B2 key..." value="'.e($q).'">'.$photoStatusSelect.'<select name="album_id" onchange="this.form.submit()" style="width:'.e((string)$albumSelectWidth).'ch;max-width:100%"><option value="0">Any album</option>';
     foreach ($albums as $a) { $albumOptTitle = (string)$a['title']; if (mb_strlen($albumOptTitle, 'UTF-8') > 82) $albumOptTitle = mb_substr($albumOptTitle, 0, 81, 'UTF-8').'…'; echo '<option value="'.e($a['id']).'"'.($album===(int)$a['id']?' selected':'').' title="'.e((string)$a['title']).'">'.e($albumOptTitle).'</option>'; }
     $back='?'.($_SERVER['QUERY_STRING'] ?? 'page=photos');
     $returnKey = remember_return_path($back);
-    echo '</select>'.(is_superadmin()?'<a class="btn" href="?action=export&type=photos">Export CSV</a>':'').'</div></form>'; if (is_superadmin()) echo '<form method="post" action="?action=create_tag_inline" class="actions"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="return_key" value="'.e($returnKey).'"><input name="name" style="width:22ch;max-width:22ch" placeholder="New tag name"><button class="primary">Create New Tag</button></form>'; echo '<form method="post" action="?action=bulk_photos" onsubmit="if(this.bulk_action.value===&quot;clean_missing&quot;)return confirm(&quot;Sutvarkyti pažymėtų nuotraukų missing įrašus? Eilutės, kurių failai NĖRA B2, bus ištrintos iš DB; kurių failai rasti — atstatytos. B2 failai neliečiami.&quot;);"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="return_key" value="'.e($returnKey).'"><div class="actions"><select name="bulk_action" style="width:20ch;max-width:20ch"><option value="">Bulk action</option><option value="published">Publish</option><option value="draft">Move to draft</option><option value="private">Set private</option><option value="hidden">Hide</option><option value="download_on">Downloadable on</option><option value="download_off">Downloadable off</option><option value="recheck_b2">Re-check in B2</option><option value="clean_missing">Clean missing DB rows</option><option value="create_jpg">Create JPG for other media (HEIC/video)</option></select><input style="max-width:180px" name="author_name" placeholder="Set author"><input style="max-width:180px" name="copyright_text" placeholder="Set copyright">'.(is_superadmin() ? '<select name="tag_id_to_add" style="width:22ch;max-width:22ch">'.$tagOptions.'</select>' : '').'<button>Apply</button></div><table><tr><th><input type="checkbox" data-master-check aria-label="Select all"></th><th><a href="?page=photos'.($album?'&album_id='.e((string)$album):'').'">Order</a></th><th>Thumb</th><th>'.$sortLinks('file','File').'</th><th>'.$sortLinks('album','Album').'</th><th>'.$sortLinks('visibility','Visibility').'</th><th>'.$sortLinks('taken','EXIF').'</th><th>'.$sortLinks('size','Size').'</th></tr>';
+    $memberChipHref='?'.http_build_query(array_filter(['page'=>'photos','q'=>$q,'visibility'=>$vis,'album_id'=>$album ?: null,'missing'=>$missing ?: null,'source'=>$source==='member' ? null : 'member'], fn($v)=>$v!=='' && $v!==null));
+    echo '</select><a class="btn'.($source==='member'?' primary':'').'" href="'.e($memberChipHref).'" title="Rodyti tik narių per /upload įkeltas nuotraukas">&#128100; Narių įkėlimai</a>'.(is_superadmin()?'<a class="btn" href="?action=export&type=photos">Export CSV</a>':'').'</div></form>'; if (is_superadmin()) echo '<form method="post" action="?action=create_tag_inline" class="actions"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="return_key" value="'.e($returnKey).'"><input name="name" style="width:22ch;max-width:22ch" placeholder="New tag name"><button class="primary">Create New Tag</button></form>'; echo '<form method="post" action="?action=bulk_photos" onsubmit="if(this.bulk_action.value===&quot;clean_missing&quot;)return confirm(&quot;Sutvarkyti pažymėtų nuotraukų missing įrašus? Eilutės, kurių failai NĖRA B2, bus ištrintos iš DB; kurių failai rasti — atstatytos. B2 failai neliečiami.&quot;);if(this.bulk_action.value===&quot;move_album&quot;){if(!this.target_album_id.value||this.target_album_id.value===&quot;0&quot;){alert(&quot;Pasirink albumą, į kurį priskirti.&quot;);return false;}return confirm(&quot;Priskirti pažymėtas nuotraukas kitam albumui? Failai bus NUKOPIJUOTI į to albumo originals/ aplanką; seni B2 objektai lieka vietoje ir netrinami.&quot;);}"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="return_key" value="'.e($returnKey).'"><div class="actions"><select name="bulk_action" style="width:20ch;max-width:20ch"><option value="">Bulk action</option><option value="published">Publish</option><option value="draft">Move to draft</option><option value="private">Set private</option><option value="hidden">Hide</option><option value="download_on">Downloadable on</option><option value="download_off">Downloadable off</option><option value="recheck_b2">Re-check in B2</option><option value="clean_missing">Clean missing DB rows</option><option value="create_jpg">Create JPG for other media (HEIC/video)</option><option value="rotate_cw">Pasukti ↻ 90°</option><option value="rotate_ccw">Pasukti ↺ 90°</option><option value="rotate_180">Pasukti 180°</option><option value="rotate_reset">Pasukimas: atstatyti</option><option value="move_album">Priskirti kitam albumui &#8594;</option></select><select name="target_album_id" style="width:26ch;max-width:26ch" title="Tikslinis albumas veiksmui &bdquo;Priskirti kitam albumui&ldquo;"><option value="0">&rarr; į albumą…</option>'.$albumTargetOptions.'</select><input style="max-width:180px" name="author_name" placeholder="Set author"><input style="max-width:180px" name="copyright_text" placeholder="Set copyright">'.(is_superadmin() ? '<select name="tag_id_to_add" style="width:22ch;max-width:22ch">'.$tagOptions.'</select>' : '').'<button>Apply</button></div><table><tr><th><input type="checkbox" data-master-check aria-label="Select all"></th><th><a href="?page=photos'.($album?'&album_id='.e((string)$album):'').'">Order</a></th><th>Thumb</th><th>'.$sortLinks('file','File').'</th><th>'.$sortLinks('album','Album').'</th><th>'.$sortLinks('visibility','Visibility').'</th><th>'.$sortLinks('taken','EXIF').'</th><th>'.$sortLinks('size','Size').'</th></tr>';
     foreach ($rows as $i=>$r) {
         $size='';
         if($r['width']&&$r['height']) $size=round(($r['width']*$r['height'])/1000000).' MP<br><span class="muted small">'.e($r['width']).' x '.e($r['height']).'</span>';
@@ -2276,7 +2477,7 @@ function photos(): void {
         $thumbHtml=$thumb?'<button type="button" class="photo-list-preview-trigger" data-preview="'.e($preview).'" data-title="'.e($r['original_filename']).'" data-key="'.e($r['b2_key']).'" style="display:block;padding:0;border:0;background:transparent;cursor:zoom-in">'.$thumbImg.'</button>':$thumbImg;
         $canEdit = is_superadmin() || ((int)($r['album_created_by'] ?? 0) === current_admin_id());
         $orderControls='<div class="actions" style="margin:0;gap:4px;align-items:center"><span class="badge">'.e((string)($i+1)).'</span><button class="mini" formmethod="post" formaction="?action=move_photo_sort&id='.e($r['id']).'&dir=up" title="Move up"'.($i===0?' disabled':'').'>↑</button><button class="mini" formmethod="post" formaction="?action=move_photo_sort&id='.e($r['id']).'&dir=down" title="Move down"'.($i===count($rows)-1?' disabled':'').'>↓</button>'.($canEdit ? '<a class="btn mini" href="?page=photo_edit&id='.e($r['id']).'">Edit</a>' : '<span class="badge">read-only</span>').'</div>';
-        echo '<tr><td>'.($canEdit ? '<input type="checkbox" name="ids[]" value="'.e($r['id']).'" data-fname="'.e($r['original_filename']).'">' : '<span class="muted">•</span>').'</td><td>'.$orderControls.'</td><td>'.$thumbHtml.'</td><td><strong>'.e($r['original_filename']).'</strong><br><span class="muted small">'.e($r['b2_key']).'</span></td><td><a href="?page=album_edit&id='.e((string)$r['album_id']).'#albumPhotoUploadForm" title="Atidaryti albumą / įkėlimo formą" style="text-decoration:underline;text-underline-offset:3px">'.e($r['album_title']).'</a></td><td><span class="badge">'.e($r['visibility']).'</span>'.($r['is_missing']?' <span class="badge">missing</span>':(photo_is_previewable((string)$r['original_filename'])?'':' <span class="badge" title="Šio failo peržiūra negalima — tik atsisiuntimas">No preview / Download and view only · '.e(photo_kind_label((string)$r['original_filename'])).'</span>')).'</td><td>'.$exif.'</td><td>'.$size.'</td></tr>';
+        echo '<tr><td>'.($canEdit ? '<input type="checkbox" name="ids[]" value="'.e($r['id']).'" data-fname="'.e($r['original_filename']).'">' : '<span class="muted">•</span>').'</td><td>'.$orderControls.'</td><td>'.$thumbHtml.'</td><td><strong>'.e($r['original_filename']).'</strong><br><span class="muted small">'.e($r['b2_key']).'</span>'.(trim((string)($r['contributor_name'] ?? ''))!=='' ? '<br><span class="badge" title="Įkėlė narys per /upload">&#128100; '.e((string)$r['contributor_name']).'</span>' : '').'</td><td><a href="?page=album_edit&id='.e((string)$r['album_id']).'#albumPhotoUploadForm" title="Atidaryti albumą / įkėlimo formą" style="text-decoration:underline;text-underline-offset:3px">'.e($r['album_title']).'</a></td><td><span class="badge">'.e($r['visibility']).'</span>'.($r['is_missing']?' <span class="badge">missing</span>':(photo_is_previewable((string)$r['original_filename'])?'':' <span class="badge" title="Šio failo peržiūra negalima — tik atsisiuntimas">No preview / Download and view only · '.e(photo_kind_label((string)$r['original_filename'])).'</span>')).'</td><td>'.$exif.'</td><td>'.$size.'</td></tr>';
     }
     // Tuščias sąrašas be paaiškinimo klaidina: įkėlimo įrankiai yra album_edit,
     // ne čia. Pasakom, kodėl tuščia, ir duodam nuorodą į teisingą vietą.
@@ -2413,6 +2614,239 @@ function save_admin(): void {
         flash('Admin saved: '.$email);
     }
     go('?page=admins');
+}
+
+/* ----------------------------- Nariai (/upload) ---------------------------- */
+
+function member_upload_base_url(): string {
+    $host = (string)($_SERVER['HTTP_HOST'] ?? 'foto.klajunas.lt');
+    $host = preg_replace('/[^A-Za-z0-9.:-]/', '', $host) ?: 'foto.klajunas.lt';
+    return 'https://'.$host.'/upload/';
+}
+
+function save_member(): void {
+    require_superadmin();
+    csrf();
+    $email = strtolower(trim((string)($_POST['email'] ?? '')));
+    $name  = trim((string)($_POST['name'] ?? ''));
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) { flash('Reikalingas galiojantis el. paštas.', 'err'); go('?page=members'); }
+    // Nario pridejimas NIEKADA nezemina esamos roles: jei si pasta jau turi
+    // superadmin teises, "pridedu kaip nari" neturi jo nuzeminti iki member.
+    $st = db()->prepare("SELECT id, role FROM admins WHERE email=? LIMIT 1");
+    $st->execute([$email]);
+    $existing = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    if ($existing && in_array(strtolower((string)$existing['role']), ['superadmin','editor'], true)) {
+        db()->prepare("UPDATE admins SET is_active=1, name=COALESCE(NULLIF(?,''),name) WHERE id=?")->execute([$name, (int)$existing['id']]);
+        flash('Paskyra '.$email.' jau turi „'.$existing['role'].'" teises — jai narių įkėlimas leidžiamas be pakeitimų.');
+        go('?page=members');
+    }
+    db()->prepare("INSERT INTO admins(email,name,role,is_active) VALUES(?,?, 'member',1) ON DUPLICATE KEY UPDATE name=COALESCE(NULLIF(VALUES(name),''),name), role='member', is_active=1")
+        ->execute([$email, $name !== '' ? $name : $email]);
+    audit('member', null, 'member_add', 'Narys pridėtas: '.$email);
+    flash('Narys pridėtas: '.$email.'. Jis gali jungtis per Google adresu '.member_upload_base_url());
+    go('?page=members');
+}
+
+function toggle_member_active(): void {
+    require_superadmin();
+    csrf();
+    $id = (int)($_POST['id'] ?? 0);
+    $st = db()->prepare("SELECT id,email,role,is_active FROM admins WHERE id=? LIMIT 1");
+    $st->execute([$id]);
+    $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    $back = (string)($_POST['back'] ?? '?page=members');
+    if (!preg_match('/^\?page=members/', $back)) $back = '?page=members';
+    if (!$row) { flash('Narys nerastas.', 'err'); go($back); }
+    if (strtolower((string)$row['role']) !== 'member') { flash('Šis puslapis valdo tik „member" roles paskyras — admin\'us keisk Admins skiltyje.', 'err'); go($back); }
+    $next = (int)$row['is_active'] === 1 ? 0 : 1;
+    db()->prepare("UPDATE admins SET is_active=? WHERE id=?")->execute([$next, $id]);
+    audit('member', $id, $next ? 'member_enable' : 'member_disable', ($next ? 'Narys įjungtas: ' : 'Nario prieiga atšaukta: ').$row['email']);
+    flash($next ? 'Nario prieiga atstatyta: '.$row['email'] : 'Nario prieiga atšaukta: '.$row['email']);
+    go($back);
+}
+
+function toggle_member_album(): void {
+    require_superadmin();
+    csrf();
+    $id = (int)($_POST['album_id'] ?? 0);
+    $album = member_album_by_id($id);
+    $back = (string)($_POST['back'] ?? '?page=members');
+    if (!preg_match('/^\?page=(members|album_edit)/', $back)) $back = '?page=members';
+    if (!$album) { flash('Albumas nerastas.', 'err'); go($back); }
+    $next = (int)($album['accepts_member_uploads'] ?? 0) === 1 ? 0 : 1;
+    if ($next === 1 && member_album_prefix($album) === '') {
+        flash('Albumas „'.$album['title'].'" neturi B2 kelio. Nustatyk Storage path — kitaip nario failas neturėtų kur atsidurti.', 'err', '?page=album_edit&id='.$id, 'Nustatyti kelią');
+        go($back);
+    }
+    db()->prepare("UPDATE albums SET accepts_member_uploads=?, updated_by=? WHERE id=?")->execute([$next, current_admin_id() ?: null, $id]);
+    audit('album', $id, $next ? 'member_uploads_on' : 'member_uploads_off', ($next ? 'Narių įkėlimai įjungti: ' : 'Narių įkėlimai išjungti: ').$album['title']);
+    flash($next ? 'Narių įkėlimai įjungti: '.$album['title'] : 'Narių įkėlimai išjungti: '.$album['title']);
+    go($back);
+}
+
+function create_member_invite(): void {
+    require_superadmin();
+    csrf();
+    $label = trim((string)($_POST['label'] ?? ''));
+    $albumId = (int)($_POST['album_id'] ?? 0);
+    $maxPhotos = max(0, min(20000, (int)($_POST['max_photos'] ?? 0)));
+    $days = max(0, min(365, (int)($_POST['expires_days'] ?? 30)));
+    if ($label === '') { flash('Įrašyk, kam ši nuoroda skirta — vėliau iš „ab12cd" nebeatsiminsi.', 'err'); go('?page=members'); }
+    if ($albumId > 0) {
+        $album = member_album_by_id($albumId);
+        if (!$album) { flash('Albumas nerastas.', 'err'); go('?page=members'); }
+        if (member_album_prefix($album) === '') { flash('Albumas „'.$album['title'].'" neturi B2 kelio — pirma nustatyk Storage path.', 'err', '?page=album_edit&id='.$albumId, 'Nustatyti kelią'); go('?page=members'); }
+    }
+    // 32 baitai -> 43 simboliu URL-safe tokenas. DB laikomas tik SHA-256, todel
+    // nuoroda parodoma VIENA KARTA - veliau jos atkurti neimanoma (ir neturi buti).
+    $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+    $expires = $days > 0 ? date('Y-m-d H:i:s', time() + $days * 86400) : null;
+    db()->prepare("INSERT INTO member_invites(token_hash,token_hint,label,album_id,max_photos,expires_at,is_active,created_by) VALUES(?,?,?,?,?,?,1,?)")
+        ->execute([member_invite_token_hash($token), substr($token, 0, 6), $label, $albumId ?: null, $maxPhotos, $expires, current_admin_id() ?: null]);
+    $inviteId = (int)db()->lastInsertId();
+    $_SESSION['member_invite_new'] = ['id' => $inviteId, 'url' => member_upload_base_url().'?k='.$token, 'label' => $label];
+    audit('member_invite', $inviteId, 'create', 'Kvietimo nuoroda sukurta: '.$label, ['album_id'=>$albumId ?: null,'max_photos'=>$maxPhotos,'expires_at'=>$expires]);
+    flash('Kvietimo nuoroda sukurta. Nukopijuok ją dabar — vėliau nebus rodoma.');
+    go('?page=members');
+}
+
+function revoke_member_invite(): void {
+    require_superadmin();
+    csrf();
+    $id = (int)($_POST['id'] ?? 0);
+    $st = db()->prepare("SELECT id,label FROM member_invites WHERE id=? LIMIT 1");
+    $st->execute([$id]);
+    $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    if (!$row) { flash('Kvietimas nerastas.', 'err'); go('?page=members'); }
+    db()->prepare("UPDATE member_invites SET is_active=0 WHERE id=?")->execute([$id]);
+    audit('member_invite', $id, 'revoke', 'Kvietimo nuoroda atšaukta: '.$row['label']);
+    flash('Kvietimo nuoroda atšaukta: '.$row['label']);
+    go('?page=members');
+}
+
+function members_page(): void {
+    require_superadmin();
+    head('Nariai');
+    $baseUrl = member_upload_base_url();
+    $fresh = $_SESSION['member_invite_new'] ?? null;
+    unset($_SESSION['member_invite_new']);
+    $pending = member_pending_counts();
+    $pendingTotal = array_sum($pending);
+
+    echo '<h1>Nariai ir jų įkėlimai</h1>';
+    echo '<div class="card" style="margin-bottom:16px"><h2>Kaip tai veikia</h2>'
+        .'<p class="muted" style="margin:0 0 10px">Narys atsidaro <a href="'.e($baseUrl).'" target="_blank" rel="noopener" style="text-decoration:underline;text-underline-offset:3px">'.e($baseUrl).'</a>, prisijungia (Google arba kvietimo nuoroda), pasirenka vieną iš žemiau pažymėtų albumų ir įkelia originalus. Failai keliauja tiesiai į to albumo B2 aplanką <code>originals/</code> — archyvas susitvarko pats, niekas neperkeliama ir netrinama.</p>'
+        .'<p class="muted" style="margin:0">Visos nario nuotraukos gimsta <strong>draft</strong> būsenoje ir viešai nematomos, kol jų nepaskelbi.'
+        .($pendingTotal > 0 ? ' Šiuo metu peržiūros laukia <strong>'.e((string)$pendingTotal).'</strong>.' : '').'</p></div>';
+
+    if (is_array($fresh) && !empty($fresh['url'])) {
+        echo '<div class="card" style="margin-bottom:16px;border-color:var(--accent-line)"><h2>Nauja kvietimo nuoroda: '.e((string)$fresh['label']).'</h2>'
+            .'<p class="muted" style="margin:0 0 10px">Ši nuoroda rodoma <strong>vieną kartą</strong> — duomenų bazėje laikomas tik jos kriptografinis atspaudas, tad atkurti nebus galima. Nukopijuok ir perduok nariui saugiu kanalu.</p>'
+            .'<div class="actions"><input id="freshInviteUrl" readonly value="'.e((string)$fresh['url']).'" style="flex:1 1 420px;min-width:260px"><button type="button" class="primary" id="copyInviteUrl">Kopijuoti</button></div>'
+            .'<script>(function(){var b=document.getElementById("copyInviteUrl"),i=document.getElementById("freshInviteUrl");if(!b||!i)return;b.addEventListener("click",function(){i.select();i.setSelectionRange(0,999999);try{document.execCommand("copy");b.textContent="Nukopijuota ✓";}catch(e){b.textContent="Kopijuok ranka";}});})();</script></div>';
+    }
+
+    /* --- Albumai, atviri nariams --- */
+    $albums = db()->query("SELECT id,title,event_date,source_path,visibility,accepts_member_uploads,(SELECT COUNT(*) FROM photos WHERE photos.album_id=albums.id) photos_count FROM albums ORDER BY accepts_member_uploads DESC, COALESCE(event_date,'0000-00-00') DESC, id DESC LIMIT 400")->fetchAll();
+    $open = array_values(array_filter($albums, fn($a) => (int)$a['accepts_member_uploads'] === 1));
+    echo '<div class="card" style="margin-bottom:16px"><h2>Albumai, atviri narių įkėlimams ('.e((string)count($open)).')</h2>';
+    if (!$open) {
+        echo '<p class="muted">Kol kas nė vieno. Kol neatidarysi bent vieno albumo, narys matys tuščią sąrašą ir nieko įkelti negalės.</p>';
+    } else {
+        echo '<table><tr><th>Albumas</th><th>Data</th><th>B2 kelias</th><th>Laukia peržiūros</th><th></th></tr>';
+        foreach ($open as $a) {
+            $aid = (int)$a['id'];
+            $waiting = (int)($pending[$aid] ?? 0);
+            echo '<tr><td><a href="?page=album_edit&id='.e((string)$aid).'" style="text-decoration:underline;text-underline-offset:3px">'.e((string)$a['title']).'</a></td>'
+                .'<td>'.e((string)($a['event_date'] ?? '')).'</td>'
+                .'<td><span class="muted small">'.e((string)$a['source_path']).'</span></td>'
+                .'<td>'.($waiting > 0 ? '<a class="btn mini" href="?page=photos&album_id='.e((string)$aid).'&source=member&visibility=draft">'.e((string)$waiting).' peržiūrėti →</a>' : '<span class="muted small">—</span>').'</td>'
+                .'<td><form method="post" action="?action=toggle_member_album" style="margin:0"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="album_id" value="'.e((string)$aid).'"><button class="mini">Uždaryti</button></form></td></tr>';
+        }
+        echo '</table>';
+    }
+    echo '<h3>Atidaryti dar vieną albumą</h3><form method="post" action="?action=toggle_member_album" class="actions" style="margin:0"><input type="hidden" name="_token" value="'.e(token()).'"><select name="album_id" style="flex:1 1 380px;max-width:520px">';
+    foreach ($albums as $a) {
+        if ((int)$a['accepts_member_uploads'] === 1) continue;
+        $noPath = member_album_prefix($a) === '';
+        echo '<option value="'.e((string)$a['id']).'">'.e((string)$a['title']).($a['event_date'] ? ' · '.e((string)$a['event_date']) : '').($noPath ? ' — ⚠ be B2 kelio' : '').'</option>';
+    }
+    echo '</select><button class="primary">Atidaryti narių įkėlimams</button></form></div>';
+
+    /* --- Nariai su Google prisijungimu --- */
+    $members = db()->query("SELECT id,email,name,is_active,last_login_at FROM admins WHERE role='member' ORDER BY is_active DESC, email")->fetchAll();
+    echo '<div class="card" style="margin-bottom:16px"><h2>Nariai su Google prisijungimu ('.e((string)count($members)).')</h2>'
+        .'<p class="muted" style="margin:0 0 12px">Įleidžiami tik čia išvardyti el. paštai. Nario paskyra neduoda jokios prieigos prie admin\'o — tik prie /upload.</p>'
+        .'<form method="post" action="?action=save_member" class="actions" style="margin:0 0 14px"><input type="hidden" name="_token" value="'.e(token()).'">'
+        .'<input name="email" placeholder="vardas@gmail.com" style="flex:1 1 260px;max-width:340px"><input name="name" placeholder="Vardas Pavardė (nebūtina)" style="flex:1 1 220px;max-width:300px"><button class="primary">Pridėti narį</button></form>';
+    if ($members) {
+        echo '<table><tr><th>El. paštas</th><th>Vardas</th><th>Būsena</th><th>Paskutinis prisijungimas</th><th></th></tr>';
+        foreach ($members as $m) {
+            $active = (int)$m['is_active'] === 1;
+            echo '<tr><td>'.e((string)$m['email']).'</td><td>'.e((string)$m['name']).'</td>'
+                .'<td>'.($active ? '<span class="badge">aktyvus</span>' : '<span class="badge" style="border-color:var(--err-line)">atšauktas</span>').'</td>'
+                .'<td><span class="muted small">'.e((string)($m['last_login_at'] ?? '—')).'</span></td>'
+                .'<td><form method="post" action="?action=toggle_member_active" style="margin:0"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="id" value="'.e((string)$m['id']).'"><button class="mini">'.($active ? 'Atšaukti prieigą' : 'Atstatyti').'</button></form></td></tr>';
+        }
+        echo '</table>';
+    } else {
+        echo '<p class="muted">Narių dar nėra.</p>';
+    }
+    echo '</div>';
+
+    /* --- Kvietimo nuorodos --- */
+    echo '<div class="card" style="margin-bottom:16px"><h2>Kvietimo nuorodos (be paskyros)</h2>'
+        .'<p class="muted" style="margin:0 0 12px">Vienkartiniams talkininkams, kurie neturi Google paskyros arba kurių nenori įrašinėti į narių sąrašą. Kas turi nuorodą — tas gali kelti, todėl duok jai trumpą galiojimą ir nuotraukų limitą (0 = be limito).</p>'
+        .'<form method="post" action="?action=create_member_invite" class="actions" style="margin:0 0 14px"><input type="hidden" name="_token" value="'.e(token()).'">'
+        .'<div style="flex:1 1 220px"><label>Kam skirta</label><input name="label" placeholder="pvz. Jonas — Pirmoji lyga"></div>'
+        .'<div style="flex:1 1 260px"><label>Albumas</label><select name="album_id"><option value="0">Bet kuris atviras albumas</option>';
+    foreach ($albums as $a) {
+        if (member_album_prefix($a) === '') continue;
+        echo '<option value="'.e((string)$a['id']).'">'.e((string)$a['title']).($a['event_date'] ? ' · '.e((string)$a['event_date']) : '').'</option>';
+    }
+    echo '</select></div>'
+        .'<div style="flex:0 1 130px"><label>Galioja (d.)</label><input name="expires_days" type="number" min="0" max="365" value="30"></div>'
+        .'<div style="flex:0 1 170px"><label>Nuotraukų limitas</label><input name="max_photos" type="number" min="0" max="20000" value="300"></div>'
+        .'<button class="primary" style="align-self:end">Sukurti nuorodą</button></form>'
+        .'<p class="muted small" style="margin:0 0 14px">Prie albumo pririšta nuoroda leidžia kelti būtent į jį — nesvarbu, ar tas albumas įtrauktas į atvirų sąrašą. Atšaukti ją galima tik čia, mygtuku „Atšaukti". Nuoroda be albumo rodo narui visą atvirų albumų sąrašą.</p>';
+    $invites = db()->query("SELECT i.*, a.title album_title FROM member_invites i LEFT JOIN albums a ON a.id=i.album_id ORDER BY i.is_active DESC, i.id DESC LIMIT 100")->fetchAll();
+    if ($invites) {
+        echo '<table><tr><th>Kam</th><th>Albumas</th><th>Būsena</th><th>Įkelta</th><th>Galioja iki</th><th></th></tr>';
+        $now = time();
+        foreach ($invites as $inv) {
+            $expired = !empty($inv['expires_at']) && strtotime((string)$inv['expires_at']) < $now;
+            $usedUp = (int)$inv['max_photos'] > 0 && (int)$inv['photos_done'] >= (int)$inv['max_photos'];
+            $state = (int)$inv['is_active'] !== 1 ? 'atšaukta' : ($expired ? 'pasibaigusi' : ($usedUp ? 'limitas išnaudotas' : 'aktyvi'));
+            $stateStyle = $state === 'aktyvi' ? '' : ' style="border-color:var(--err-line)"';
+            echo '<tr><td><strong>'.e((string)$inv['label']).'</strong><br><span class="muted small">…'.e((string)$inv['token_hint']).'… · sukurta '.e((string)$inv['created_at']).'</span></td>'
+                .'<td>'.($inv['album_id'] ? e((string)$inv['album_title']) : '<span class="muted small">bet kuris atviras</span>').'</td>'
+                .'<td><span class="badge"'.$stateStyle.'>'.e($state).'</span></td>'
+                .'<td>'.e((string)$inv['photos_done']).((int)$inv['max_photos'] > 0 ? ' / '.e((string)$inv['max_photos']).' nuotr.' : ' nuotr.').'<br><span class="muted small">'.e((string)$inv['uploads_done']).' įkėlimai</span></td>'
+                .'<td><span class="muted small">'.e((string)($inv['expires_at'] ?? 'neribotai')).'</span></td>'
+                .'<td>'.((int)$inv['is_active'] === 1 ? '<form method="post" action="?action=revoke_member_invite" style="margin:0"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="id" value="'.e((string)$inv['id']).'"><button class="mini">Atšaukti</button></form>' : '').'</td></tr>';
+        }
+        echo '</table>';
+    }
+    echo '</div>';
+
+    /* --- Paskutiniai ikelimai --- */
+    $uploads = member_recent_uploads(40);
+    echo '<div class="card"><h2>Paskutiniai narių įkėlimai</h2>';
+    if (!$uploads) {
+        echo '<p class="muted">Kol kas nieko.</p>';
+    } else {
+        echo '<table><tr><th>Kada</th><th>Kas</th><th>Albumas</th><th>Failai</th><th>Dydis</th></tr>';
+        foreach ($uploads as $u) {
+            echo '<tr><td><span class="muted small">'.e((string)$u['created_at']).'</span></td>'
+                .'<td>'.e((string)$u['contributor_name']).($u['contributor_email'] ? '<br><span class="muted small">'.e((string)$u['contributor_email']).'</span>' : '').'</td>'
+                .'<td><a href="?page=photos&album_id='.e((string)$u['album_id']).'&source=member" style="text-decoration:underline;text-underline-offset:3px">'.e((string)($u['album_title'] ?? '—')).'</a></td>'
+                .'<td>'.e((string)$u['files_stored']).' įkelta'.((int)$u['files_skipped'] > 0 ? ', '.e((string)$u['files_skipped']).' praleista' : '').'</td>'
+                .'<td><span class="muted small">'.e(human_bytes((int)$u['bytes_stored'])).'</span></td></tr>';
+        }
+        echo '</table>';
+    }
+    echo '</div>';
+    foot('Nariai');
 }
 
 function admins(): void {
@@ -3052,6 +3486,19 @@ function canonical_album_prefix_js(string $title, ?string $eventDate = null): st
 function canonical_path_equal(string $a, string $b): bool {
     return strtolower(trim($a, "/ \t\n\r\0\x0B")) === strtolower(trim($b, "/ \t\n\r\0\x0B"));
 }
+/* Ar kelias "pakankamai kanoninis", kad jo nesiulytume pervadinti.
+ * Skirtumas tik datos intervalo priesagoje ("2021-01-10_17__..." pries
+ * "2021-01-10__...") nera priezastis kopijuoti viso aplanko B2: vienos dienos
+ * renginys pabaigos datos neturi, o Takeout/senas kelias ja kartais turi.
+ * Naudojama TIK busenai ir pasiulymams - B2 operacijos lygina tiksliai
+ * (canonical_path_equal). */
+function canonical_path_without_date_range(string $path): string {
+    $path = canonical_path_key($path);
+    return (string)(preg_replace('~(/\d{4}-\d{2}-\d{2})_(?:\d{4}-\d{2}-\d{2}|\d{2}-\d{2}|\d{2})__~', '$1__', $path) ?? $path);
+}
+function canonical_path_equivalent(string $a, string $b): bool {
+    return canonical_path_equal($a, $b) || canonical_path_without_date_range($a) === canonical_path_without_date_range($b);
+}
 function canonical_path_key(string $path): string {
     return strtolower(trim($path, "/ \t\n\r\0\x0B"));
 }
@@ -3110,7 +3557,7 @@ function duplicate_b2_prefixes_for_album(array $album, array $folderRows, string
 function album_storage_summary(array $album): array {
     $current = trim((string)($album['source_path'] ?? ''), '/');
     $canonical = canonical_album_prefix((string)($album['title'] ?? ''), $album['event_date'] ?? null, $album['event_date_end'] ?? null);
-    if (canonical_path_equal($current, $canonical)) {
+    if (canonical_path_equivalent($current, $canonical)) {
         return ['label' => 'canonical', 'action' => 'View B2'];
     }
     if ($current === '') {
@@ -3397,12 +3844,21 @@ function b2_storage_root_prefix_from_key(string $key): string {
     $parts = explode('/', $key);
     return $parts[0] ?? '';
 }
+// Visas B2 sarasas B2 puslapiui - skaitomas VIENA karta per uzklausa. Anksciau
+// saknu ir aplanku lenteles ji skaite atskirai: ~25 000 failu archyvui tai
+// dvigubai daugiau B2 kreipiniu ir ~22 s puslapio krovimo.
+function b2_storage_full_listing(): array {
+    static $cache = null;
+    if ($cache === null) {
+        $files = b2_list_prefix('', 100);
+        $cache = [$files, b2_last_list_truncated()];
+    }
+    b2_last_list_truncated($cache[1]);
+    return $cache[0];
+}
 function b2_storage_root_rows(): array {
     $rows = [];
-    // 60 puslapiu po 1000. Su 20 lentele rode "albums 20000 files, 2.99 GB",
-    // nors bucket'e yra 25 787 failai - nupjauta dalis tiesiog nepatekdavo i
-    // suma, ir skaicius atrode kaip tikrovė.
-    foreach (b2_list_prefix('', 60) as $file) {
+    foreach (b2_storage_full_listing() as $file) {
         $name = (string)($file['fileName'] ?? '');
         $root = b2_storage_root_prefix_from_key($name);
         if ($root === '') continue;
@@ -3426,7 +3882,7 @@ function b2_compatibility_key_for_original(string $originalKey, array $files): ?
 }
 function b2_storage_folder_rows(): array {
     $rows = [];
-    foreach (b2_list_prefix('', 60) as $file) {
+    foreach (b2_storage_full_listing() as $file) {
         $name = (string)($file['fileName'] ?? '');
         $folder = b2_storage_album_prefix_from_key($name);
         if ($folder === '') continue;
@@ -3561,7 +4017,8 @@ function b2_create_photo_rows_from_prefix(int $albumId, string $prefix): int {
 function b2_link_photo_rows_to_prefix(int $albumId, string $prefix): array {
     $prefix = trim($prefix, '/');
     if ($albumId <= 0 || $prefix === '') return ['created'=>0,'updated'=>0,'relinked'=>0,'missing'=>0,'real_images'=>0,'found'=>0];
-    $files = b2_list_prefix($prefix, 20);
+    // Pabaigoje nerastos eilutes zymimos missing - tik pagal PILNA sarasa.
+    $files = b2_list_prefix($prefix, 50, true);
     $images = [];
     foreach ($files as $file) {
         $key = trim((string)($file['fileName'] ?? ''), '/');
@@ -3660,7 +4117,7 @@ function cleanup_missing_photo_rows(): void {
     if ($prefix === '') $prefix = album_storage_base_prefix((string)(album_photo_prefix_guess($albumId) ?? ''));
     $realKeys = [];
     if ($prefix !== '') {
-        foreach (b2_list_prefix($prefix, 30) as $fileRow) {
+        foreach (b2_list_prefix($prefix, 50, true) as $fileRow) {
             $realKeys[trim((string)($fileRow['fileName'] ?? ''), '/')] = true;
         }
     }
@@ -3961,6 +4418,11 @@ function render_b2_storage_panel(): void {
     try {
         $rootRows = b2_storage_root_rows();
         $folderRows = b2_storage_folder_rows();
+        // Nukirptas sarasas rodytu velyvesnius aplankus kaip "nera B2" /
+        // "DB/B2 mismatch" - o pagal tai lengva padaryti zalingu sutvarkymu.
+        if (b2_last_list_truncated()) {
+            $folderError = 'B2 sąrašas NEPILNAS (daugiau nei 100 000 failų) — žemiau esantys „nėra B2" / „mismatch" gali būti klaidingi. Nieko netaisykite pagal šią lentelę.';
+        }
     } catch (Throwable $e) {
         $folderError = $e->getMessage();
     }
@@ -3999,7 +4461,7 @@ function render_b2_storage_panel(): void {
             if (!$galbum) $galbum = likely_album_for_b2_prefix($gp, $albums);
             if ($galbum) {
                 $gtarget = canonical_album_prefix((string)$galbum['title'], $galbum['event_date'] ?? null, $galbum['event_date_end'] ?? null);
-                $groupKey[$gi] = sprintf('a%010d|%d|%s', (int)$galbum['id'], canonical_path_equal($gp, $gtarget) ? 0 : 1, $gp);
+                $groupKey[$gi] = sprintf('a%010d|%d|%s', (int)$galbum['id'], canonical_path_equivalent($gp, $gtarget) ? 0 : 1, $gp);
             } else {
                 $groupKey[$gi] = 'z|0|'.$gp;
             }
@@ -4019,7 +4481,7 @@ function render_b2_storage_panel(): void {
             $dbCell = '<span class="muted">n/a</span>';
             if ($album) {
                 $target = canonical_album_prefix((string)$album['title'], $album['event_date'] ?? null, $album['event_date_end'] ?? null);
-                $isCanonical = canonical_path_equal($prefix, $target);
+                $isCanonical = canonical_path_equivalent($prefix, $target);
                 // Dvi to paties albumo eilutes atrodo vienodai, todel is ju
                 // neaisku, kuri yra tikslas, o kuri senas kelias. Pazymim.
                 $roleHtml = $isCanonical
@@ -4064,7 +4526,7 @@ function render_b2_storage_panel(): void {
                 $likelyAlbum = likely_album_for_b2_prefix($prefix, $albums);
                 if ($likelyAlbum) {
                     $likelyTarget = canonical_album_prefix((string)$likelyAlbum['title'], $likelyAlbum['event_date'] ?? null, $likelyAlbum['event_date_end'] ?? null);
-                    $roleHtml = canonical_path_equal($prefix, $likelyTarget)
+                    $roleHtml = canonical_path_equivalent($prefix, $likelyTarget)
                         ? '<span class="role role-canon">kanoninis kelias</span>'
                         : '<span class="role role-old">senas kelias</span>';
                 }
@@ -4138,14 +4600,55 @@ function render_b2_storage_panel(): void {
         }
     }
 
-    echo '<div id="b2MoveProgress" style="display:none;position:fixed;inset:0;z-index:90;background:rgba(5,8,10,.76);backdrop-filter:blur(3px);place-items:center"><div class="card" style="max-width:560px;width:calc(100% - 40px)"><h2 style="margin-top:0">Moving B2 storage...</h2><p class="muted">Copy + delete is running on the server. Keep this tab open until the page reloads.</p><div style="height:10px;border-radius:999px;background:#0d1116;border:1px solid var(--line);overflow:hidden"><div style="width:45%;height:100%;background:#995f20;animation:b2move 1.2s ease-in-out infinite"></div></div><p class="small muted" id="b2MoveProgressText" style="margin-bottom:0"></p></div></div><style>@keyframes b2move{0%{transform:translateX(-110%)}100%{transform:translateX(230%)}}tr:target{outline:2px solid var(--accent-line);outline-offset:-2px;background:var(--accent-soft)}</style><script>(function(){function showProgress(textValue){var overlay=document.getElementById("b2MoveProgress");var text=document.getElementById("b2MoveProgressText");if(text)text.textContent=textValue;if(overlay)overlay.style.display="grid";}document.querySelectorAll(".b2-move-form").forEach(function(form){form.addEventListener("submit",function(e){var files=form.getAttribute("data-files")||"0";var current=form.getAttribute("data-current")||"";var input=form.querySelector("[name=source_path]");var target=(input&&input.value?input.value:form.getAttribute("data-target")||"").trim();var album=form.getAttribute("data-album")||"this album";if(!target){e.preventDefault();return false;}var label=form.getAttribute("data-mode")==="canonical"?"canonical":"custom";var msg="Move B2 storage to "+label+" path?\\n\\nAlbum: "+album+"\\nFiles: "+files+"\\nFrom: "+current+"\\nTo: "+target+"\\n\\nThis will copy files to the target path, delete old B2 objects, and update DB photo keys.";if(!window.confirm(msg)){e.preventDefault();return false;}showProgress("Moving "+files+" files from "+current+" to "+target);});});document.querySelectorAll(".b2-merge-form").forEach(function(form){form.addEventListener("submit",function(e){var files=form.getAttribute("data-files")||"0";var current=form.getAttribute("data-current")||"";var input=form.querySelector("[name=target_prefix]");var target=(input&&input.value?input.value:form.getAttribute("data-target")||"").trim();var album=form.getAttribute("data-album")||"selected DB album";if(!target){e.preventDefault();return false;}var msg="Merge this B2 folder into one DB album?\\n\\nAlbum: "+album+"\\nFiles: "+files+"\\nFrom B2 folder: "+current+"\\nSingle album source path: "+target+"\\n\\nThis will copy files to the target path, update DB photos from target, and delete the old B2 folder after verification.";if(!window.confirm(msg)){e.preventDefault();return false;}showProgress("Merging "+files+" files from "+current+" into "+target);});});})();</script></div>';
+    echo '<div id="b2MoveProgress" style="display:none;position:fixed;inset:0;z-index:90;background:rgba(5,8,10,.76);backdrop-filter:blur(3px);place-items:center"><div class="card" style="max-width:560px;width:calc(100% - 40px)"><h2 style="margin-top:0">Moving B2 storage...</h2><p class="muted">Copy + delete is running on the server. Keep this tab open until the page reloads.</p><div style="height:10px;border-radius:999px;background:#0d1116;border:1px solid var(--line);overflow:hidden"><div style="width:45%;height:100%;background:#995f20;animation:b2move 1.2s ease-in-out infinite"></div></div><p class="small muted" id="b2MoveProgressText" style="margin-bottom:0"></p></div></div><style>@keyframes b2move{0%{transform:translateX(-110%)}100%{transform:translateX(230%)}}tr:target{outline:2px solid var(--accent-line);outline-offset:-2px;background:var(--accent-soft)}</style><script>(function(){function showProgress(textValue){var overlay=document.getElementById("b2MoveProgress");var text=document.getElementById("b2MoveProgressText");if(text)text.textContent=textValue;if(overlay)overlay.style.display="grid";}document.querySelectorAll(".b2-move-form").forEach(function(form){form.addEventListener("submit",function(e){var files=form.getAttribute("data-files")||"0";var current=form.getAttribute("data-current")||"";var input=form.querySelector("[name=source_path]");var target=(input&&input.value?input.value:form.getAttribute("data-target")||"").trim();var album=form.getAttribute("data-album")||"this album";if(!target){e.preventDefault();return false;}var label=form.getAttribute("data-mode")==="canonical"?"canonical":"custom";var msg="Move B2 storage to "+label+" path?\\n\\nAlbum: "+album+"\\nFiles: "+files+"\\nFrom: "+current+"\\nTo: "+target+"\\n\\nBus nukopijuoti TIK šio albumo failai (jo nuotraukos, JPG peržiūros, metaduomenys), patikrintas SHA1, perjungta DB ir ištrintos tik patikrintos jų senos kopijos. Kitiems albumams priklausantys ar nepriskirti failai (pvz. perkeltų nuotraukų kopijos) liks sename aplanke.";if(!window.confirm(msg)){e.preventDefault();return false;}showProgress("Moving "+files+" files from "+current+" to "+target);});});document.querySelectorAll(".b2-merge-form").forEach(function(form){form.addEventListener("submit",function(e){var files=form.getAttribute("data-files")||"0";var current=form.getAttribute("data-current")||"";var input=form.querySelector("[name=target_prefix]");var target=(input&&input.value?input.value:form.getAttribute("data-target")||"").trim();var album=form.getAttribute("data-album")||"selected DB album";if(!target){e.preventDefault();return false;}var msg="Merge this B2 folder into one DB album?\\n\\nAlbum: "+album+"\\nFiles: "+files+"\\nFrom B2 folder: "+current+"\\nSingle album source path: "+target+"\\n\\nThis will copy files to the target path, update DB photos from target, and delete the old B2 folder after verification.";if(!window.confirm(msg)){e.preventDefault();return false;}showProgress("Merging "+files+" files from "+current+" into "+target);});});})();</script></div>';
 }
 function b2_page(): void {
     require_superadmin();
     b2_load_config();
     head('B2 Sync');
     $defaultBucket=defined('B2_BUCKET') ? (string)B2_BUCKET : '';
-    echo '<h1>B2 Sync</h1><div class="card"><form method="post" action="?action=b2_log"><input type="hidden" name="_token" value="'.e(token()).'"><div class="formgrid"><div><label>Bucket</label><input name="bucket" value="'.e($defaultBucket).'"></div><div><label>Prefix</label><input name="prefix" value="'.e(setting('b2_prefix')).'" placeholder="Empty = same allowed albums as frontend"></div><div><label>Mode</label><select name="mode"><option value="scan + update existing" selected>scan + update existing</option><option value="scan + create missing">scan + create missing</option><option value="scan only">scan only</option></select></div></div><div class="actions"><label><input type="checkbox" name="mark_missing" value="1"> Mark missing DB rows when files no longer exist in B2</label></div><p class="muted">Sync reads B2 storage and updates DB overlay rows. Empty prefix uses the same allowed album prefixes as the public frontend. B2 folder names are virtual; deleting every file under a folder makes that folder disappear from B2 listings.</p><button class="primary">Run sync</button></form></div>';
+    // Eigai: nuo kurio paleidimo ieskoti naujo ir ar kuris nors dar vyksta
+    // (atidarius puslapi is naujo eiga rodoma toliau).
+    $lastRunId = 0; $runningRunId = 0;
+    try {
+        $lastRunId = (int)db()->query("SELECT COALESCE(MAX(id),0) FROM b2_sync_runs")->fetchColumn();
+        $runningRunId = (int)db()->query("SELECT COALESCE(MAX(id),0) FROM b2_sync_runs WHERE status='running' AND started_at > NOW() - INTERVAL 15 MINUTE")->fetchColumn();
+    } catch (Throwable $e) {}
+    echo '<h1>B2 Sync</h1><div class="card"><form method="post" action="?action=b2_log" id="b2SyncForm" data-last-run="'.e((string)$lastRunId).'" data-running-run="'.e((string)$runningRunId).'"><input type="hidden" name="_token" value="'.e(token()).'"><div class="formgrid"><div><label>Bucket</label><input name="bucket" value="'.e($defaultBucket).'"></div><div><label>Prefix</label><input name="prefix" value="'.e(setting('b2_prefix')).'" placeholder="Empty = same allowed albums as frontend"></div><div><label>Mode</label><select name="mode"><option value="scan + update existing" selected>scan + update existing</option><option value="scan + create missing">scan + create missing</option><option value="scan only">scan only</option></select></div></div><div class="actions"><label><input type="checkbox" name="mark_missing" value="1"> Suderinti missing žymes: atstatyti rastas B2, pažymėti dingusias (tik pilnam B2 sąrašui, su saugikliu)</label><label><input type="checkbox" name="dry_run" value="1"> Dry run (nieko nekeisti, tik parodyti)</label></div><p class="muted">Sync reads B2 storage and updates DB overlay rows. Empty prefix uses the same allowed album prefixes as the public frontend. B2 folder names are virtual; deleting every file under a folder makes that folder disappear from B2 listings.</p><button class="primary" id="b2SyncBtn">Run sync</button></form>'
+        .'<div id="b2SyncProgress" style="display:none;margin-top:14px">'
+        .'<div style="height:12px;border-radius:999px;background:var(--card-bg,#0d1116);border:1px solid var(--line);overflow:hidden"><div id="b2SyncBar" style="width:0;height:100%;background:var(--accent-line,#995f20);transition:width .4s ease"></div></div>'
+        .'<p id="b2SyncText" style="margin:8px 0 2px;font-weight:600"></p><p id="b2SyncSub" class="small muted" style="margin:0"></p></div></div>'
+        .'<script>(function(){'
+        .'var form=document.getElementById("b2SyncForm");if(!form)return;'
+        .'var box=document.getElementById("b2SyncProgress"),bar=document.getElementById("b2SyncBar"),txt=document.getElementById("b2SyncText"),sub=document.getElementById("b2SyncSub"),btn=document.getElementById("b2SyncBtn");'
+        .'var after=+form.getAttribute("data-last-run")||0,runId=+form.getAttribute("data-running-run")||0,timer=null;'
+        .'var names={start:"Pradedama",list:"Skaitomas B2 sąrašas",files:"Tikrinami failai",reconcile:"Derinamos missing žymės",albums:"Baigiami albumai"};'
+        .'function num(n){return (+n||0).toLocaleString("lt-LT");}'
+        .'function fmt(x){if(x==null)return "…";x=Math.max(0,Math.round(x));var m=Math.floor(x/60),s=x%60;return (m?m+" min ":"")+s+" s";}'
+        .'function render(r){box.style.display="block";'
+        .'if(r.status==="running"){var st=(r.stages&&r.stages[r.stage])||{done:0,total:0};var tot=st.total||(r.stage==="list"?r.est_files:0);'
+        .'bar.style.width=(r.pct||0)+"%";'
+        .'txt.textContent=(names[r.stage]||r.stage)+": "+num(st.done)+(tot?" / "+(st.total?"":"~")+num(tot):"")+" įrašų";'
+        .'sub.textContent=(r.pct!=null?r.pct.toFixed(1).replace(".",",")+" %":"")+" · praėjo "+fmt(r.elapsed)+" · liko ~"+fmt(r.eta);return;}'
+        .'var res=r.result||{};bar.style.width=r.status==="finished"?"100%":bar.style.width;'
+        .'if(r.status==="finished"){txt.textContent="Baigta"+(res.dry_run?" (DRY RUN — niekas nepakeista)":"")+": "+num(res.photos)+" nuotr., B2 failų "+num(res.b2_files)+(res.listing_complete===false?" (SĄRAŠAS NEPILNAS)":"");'
+        .'sub.textContent=(res.missing_restored!=null?"Missing: "+num(res.missing_restored)+" atstatyta, "+num(res.missing_marked)+" pažymėta"+(res.missing_skipped?" — "+res.missing_skipped:"")+". ":"")+"Lentelė žemiau atsinaujins perkrovus puslapį.";}'
+        .'else{txt.textContent="Nepavyko: "+(res.error||r.status);sub.textContent="";}}'
+        .'function stop(){clearTimeout(timer);timer=null;btn.disabled=false;}'
+        .'function poll(){var url=runId?"?action=b2_sync_status&id="+runId:"?action=b2_sync_status&after="+after;'
+        .'fetch(url,{credentials:"same-origin",headers:{"Accept":"application/json","X-Requested-With":"XMLHttpRequest"}}).then(function(x){return x.json();})'
+        .'.then(function(j){var r=j&&j.run;if(r){runId=r.id;render(r);if(r.status!=="running"){stop();return;}}timer=setTimeout(poll,1000);})'
+        .'.catch(function(){timer=setTimeout(poll,2000);});}'
+        .'form.addEventListener("submit",function(e){e.preventDefault();if(timer)return;runId=0;btn.disabled=true;box.style.display="block";bar.style.width="0";txt.textContent="Paleidžiama…";sub.textContent="";'
+        .'fetch(form.getAttribute("action"),{method:"POST",body:new FormData(form),credentials:"same-origin",headers:{"X-Requested-With":"XMLHttpRequest","Accept":"application/json"}})'
+        .'.then(function(x){return x.json().catch(function(){return {ok:false,error:"HTTP "+x.status};});})'
+        .'.then(function(j){if(j&&j.ok===false&&!runId){stop();txt.textContent=j.error||"Klaida";}})'
+        // Rysys gali nutrukti (pvz. Cloudflare 100 s riba) - sync tesiasi serveryje, eiga rodo poll.
+        .'.catch(function(){});'
+        .'timer=setTimeout(poll,700);});'
+        .'if(runId){btn.disabled=true;poll();}'
+        .'})();</script>';
+    render_b2_sync_runs();
     // Atstatymas po klaidingo zymejimo. "is_missing" yra tik veliava - failai B2
     // lieka vietoje, - todel ji nuimti saugu ir grizti atgal galima bet kada.
     // Reikalingas todel, kad nebaigtas B2 sarasas gali pazymeti tukstancius
@@ -4165,6 +4668,29 @@ function b2_page(): void {
     }
     render_b2_storage_panel();
     foot('B2 Sync');
+}
+// Paskutiniai B2 Sync paleidimai - kad butu matyti ir nutruke ('running')
+// ar nepavyke, o ne tik audit'e esantys sekmingi.
+function render_b2_sync_runs(): void {
+    try {
+        $runs = db()->query("SELECT id,prefix,mode,options,status,result,started_at,finished_at FROM b2_sync_runs ORDER BY id DESC LIMIT 8")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) { return; }
+    if (!$runs) return;
+    echo '<div class="card"><h2>Paskutiniai B2 Sync paleidimai</h2><table><tr><th>#</th><th>Pradžia</th><th>Režimas</th><th>Būsena</th><th>Rezultatas</th></tr>';
+    foreach ($runs as $r) {
+        $opts = json_decode((string)($r['options'] ?? ''), true) ?: [];
+        $res = json_decode((string)($r['result'] ?? ''), true) ?: [];
+        $bits = [];
+        foreach (['photos'=>'nuotr.','b2_files'=>'B2 failų','missing_restored'=>'atstatyta','missing_marked'=>'pažymėta missing','restored'=>'atstatyta','marked'=>'pažymėta missing','error'=>'klaida'] as $k => $label) {
+            if (isset($res[$k]) && $res[$k] !== '' ) $bits[] = $label.': '.(is_scalar($res[$k]) ? (string)$res[$k] : json_encode($res[$k]));
+        }
+        if (isset($res['listing_complete']) && !$res['listing_complete']) $bits[] = 'SĄRAŠAS NEPILNAS';
+        foreach (['missing_skipped','mark_skipped'] as $k) if (!empty($res[$k])) $bits[] = (string)$res[$k];
+        $status = (string)$r['status'];
+        if ($status === 'running' && strtotime((string)$r['started_at']) < time() - 900) $status = 'nutrūko?';
+        echo '<tr><td>'.e((string)$r['id']).'</td><td class="small">'.e((string)$r['started_at']).'</td><td class="small">'.e((string)$r['mode']).(!empty($opts['mark_missing']) ? ' + missing' : '').(!empty($opts['dry_run']) ? ' (dry)' : '').($r['prefix'] !== '' && $r['prefix'] !== null ? '<br>'.e((string)$r['prefix']) : '').'</td><td><span class="badge">'.e($status).'</span></td><td class="small">'.e(implode(' · ', $bits)).'</td></tr>';
+    }
+    echo '</table></div>';
 }
 /**
  * Inbox - laikina nariu ikelimu talpykla.
@@ -4479,6 +5005,7 @@ function inbox_import(): void {
     if ($createdNew && $dated > 0) apply_album_sort_preset($albumId, 'taken_asc');
     db()->prepare("UPDATE inbox_batches SET status='imported', imported_at=NOW() WHERE id=?")->execute([$batchId]);
     db()->prepare("UPDATE inbox_files SET status='imported' WHERE batch_id=?")->execute([$batchId]);
+    gallery_list_cache_invalidate_album($albumId);
     audit('album', $albumId, 'inbox_import', 'Nario įkėlimas perkeltas į albumą', ['batch'=>$batchId, 'prefix'=>$prefix, 'copied'=>(int)$copy['copied'], 'created_photos'=>$created]);
     flash('Perkelta: '.(int)$copy['copied'].' failai į B2, '.$created.' naujos nuotraukos albume'
         .($dated > 0 ? ', '.$dated.' su fotografavimo laiku' : '').'.', 'ok', '?page=album_edit&id='.$albumId, 'Atidaryti albumą');
@@ -4645,11 +5172,12 @@ function save_album(): void {
     }
     $existingDownloadEnabled = null;
     if ($id) {
-        $q = db()->prepare("SELECT download_enabled FROM albums WHERE id=? LIMIT 1");
+        $q = db()->prepare("SELECT download_enabled,slug FROM albums WHERE id=? LIMIT 1");
         $q->execute([$id]);
         $existingRow = $q->fetch(PDO::FETCH_ASSOC) ?: [];
         $existingDownloadEnabled = (int)($existingRow['download_enabled'] ?? 1);
     }
+    $oldSlug = (string)($existingRow['slug'] ?? '');
     $albumDescription = $_POST['description'] ?: null;
     $visibility = normalize_visibility($_POST['visibility'] ?? 'draft');
     $data=[$title,$slug,$_POST['subtitle'] ?: null,$albumDescription,$_POST['event_date'] ?: null,$_POST['event_date_end'] ?: null,$_POST['location_name'] ?: null,$_POST['sport_type'] ?: null,$_POST['author_name'] ?: null,$_POST['copyright_text'] ?: null,$coverPhotoId,$coverMode,$visibility,(int)($_POST['sort_order'] ?? 0),isset($_POST['download_enabled'])?1:0,$_POST['seo_title'] ?: null,$albumDescription,$_POST['dbsportas_url'] ?: null,$_POST['klajunas_url'] ?: null,$_POST['other_url'] ?: null,$_POST['notes_internal'] ?: null,$_SESSION['admin']['id'] ?? null];
@@ -4657,6 +5185,11 @@ function save_album(): void {
     if ($id) {
         require_album_editable_by_id($id);
         db()->prepare("UPDATE albums SET title=?,slug=?,subtitle=?,description=?,event_date=?,event_date_end=?,location_name=?,sport_type=?,author_name=?,copyright_text=?,cover_photo_id=?,cover_mode=?,visibility=?,sort_order=?,download_enabled=?,seo_title=?,seo_description=?,dbsportas_url=?,klajunas_url=?,other_url=?,notes_internal=?,updated_by=?,updated_at=NOW() WHERE id=?")->execute([...$data,$id]);
+        if ($oldSlug !== '' && $oldSlug !== $slug) {
+            // Senas slug'as lieka alias'u, kad jau isdalintos nuorodos veiktu.
+            db()->prepare("INSERT INTO album_slug_aliases(slug,album_id) VALUES(?,?) ON DUPLICATE KEY UPDATE album_id=VALUES(album_id)")->execute([$oldSlug, $id]);
+            audit('album',$id,'slug_change','Slug: '.$oldSlug.' → '.$slug,['old'=>$oldSlug,'new'=>$slug]);
+        }
         if ((int)($existingDownloadEnabled ?? 1) !== 0 && (int)($data[14] ?? 1) === 0) {
             db()->prepare("UPDATE photos SET is_downloadable=0, updated_by=? WHERE album_id=?")->execute([$_SESSION['admin']['id'] ?? null, $id]);
         }
@@ -4719,192 +5252,217 @@ function save_storage_path(): void {
     } elseif ($renameSourcePath === '' || $renameSourcePath === $newSourcePath) {
         $renameSourcePath = $guess ?: $renameSourcePath;
     }
+    // 2026-09-25: perkeliami TIK albumui priklausantys failai. Senas kelias
+    // kopijuodavo ir trindavo VISA aplanka (zr. b2_owned_migration_plan).
+    storage_migrate_album_owned($id, (string)($renameSourcePath !== '' ? $renameSourcePath : $oldSourcePath), $newSourcePath, $backUrl);
+}
+
+/* Albumo B2 perkelimo planas - TIK albumui priklausantys failai (gryna
+ * funkcija, be B2/DB: testuojama atskirai).
+ *
+ * Kodel: 2026-09-24 albumus skaidem per "Priskirti kitam albumui" (kopijuoja,
+ * seni failai lieka). Senas "Make canonical" kopijuodavo VISA aplanka, pagal
+ * jame rastus vaizdus kurdavo DB eilutes ir trindavo VISA sena aplanka. Taip
+ * perkeltos nuotraukos grizdavo i senaji albuma, o bendro aplanko (pvz. #48 ir
+ * #566) kito albumo failai butu istrinti.
+ *
+ * Priklauso albumui:
+ *  - failai, i kuriuos rodo SIO albumo eilutes ($albumRefs);
+ *  - ju metadata/<vardas>.* sidecar'ai;
+ *  - jpg-originals/, archive-originals/, thumbs/, previews/ su tuo paciu kamienu;
+ *  - albumo failai: metadata/metadata.json, .album-netrinti.json.
+ * Svetimi (i juos rodo KITU albumu eilutes) ir nepriskirti (visa kita, pvz.
+ * perkeltu nuotrauku likuciai) - nekopijuojami ir netrinami.
+ *
+ * $srcFiles/$dstFiles: [pilnas vardas => ['size'=>int,'sha1'=>string]].
+ */
+function b2_owned_migration_plan(string $src, string $dst, array $albumRefs, array $otherRefs, array $srcFiles, array $dstFiles): array {
+    $src = trim($src, '/'); $dst = trim($dst, '/');
+    $other = [];
+    foreach ($otherRefs as $r) { $r = trim((string)$r, '/'); if ($r !== '') $other[$r] = true; }
+    $refsUnderSrc = []; $outside = [];
+    foreach ($albumRefs as $r) {
+        $r = trim((string)$r, '/');
+        if ($r === '') continue;
+        if (str_starts_with($r, $src.'/')) $refsUnderSrc[$r] = true;
+        elseif (!str_starts_with($r, $dst.'/')) $outside[dirname($r)] = true;
+    }
+    $bases = []; $stems = [];
+    foreach (array_keys($refsUnderSrc) as $r) {
+        $b = basename($r); $bases[$b] = true;
+        $stems[(string)pathinfo($b, PATHINFO_FILENAME)] = true;
+    }
+    $owned = []; $foreign = []; $unowned = []; $missingSrc = [];
+    foreach (array_keys($refsUnderSrc) as $r) if (!isset($srcFiles[$r])) $missingSrc[] = $r;
+    foreach ($srcFiles as $name => $_) {
+        $name = trim((string)$name, '/');
+        if (!str_starts_with($name, $src.'/')) continue;
+        $rel = substr($name, strlen($src) + 1);
+        if (isset($other[$name])) { $foreign[] = $name; continue; }
+        $b = basename($rel);
+        $isOwned = isset($refsUnderSrc[$name])
+            || $rel === '.album-netrinti.json' || $rel === 'metadata/metadata.json';
+        if (!$isOwned && str_starts_with($rel, 'metadata/')) {
+            foreach ($bases as $ob => $_x) { if (str_starts_with($b, $ob.'.')) { $isOwned = true; break; } }
+        }
+        if (!$isOwned && preg_match('~^(jpg-originals|archive-originals|thumbs|previews)/~', $rel)) {
+            $isOwned = isset($stems[(string)pathinfo($b, PATHINFO_FILENAME)]);
+        }
+        if ($isOwned) $owned[$name] = $dst.'/'.$rel; else $unowned[] = $name;
+    }
+    $expected = array_flip(array_values($owned));
+    $dstConflicts = [];
+    foreach ($dstFiles as $d => $meta) {
+        $d = trim((string)$d, '/');
+        if (!str_starts_with($d, $dst.'/')) continue;
+        if (isset($other[$d])) { $dstConflicts[] = $d.' (kito albumo)'; continue; }
+        if (!isset($expected[$d])) { $dstConflicts[] = $d; continue; }
+        $s = array_search($d, $owned, true);
+        if ($s !== false && !b2_same_content($srcFiles[$s] ?? [], (array)$meta)) $dstConflicts[] = $d.' (kitas turinys)';
+    }
+    // Failai, i kuriuos rodo IR sis, IR kitas albumas - bendri; jiems perkelti
+    // reikia zmogaus sprendimo (pvz. #48 ir #566 viename aplanke).
+    $shared = array_values(array_filter(array_keys($refsUnderSrc), fn($r) => isset($other[$r])));
+    return ['owned'=>$owned, 'foreign'=>$foreign, 'unowned'=>$unowned, 'outside'=>array_keys($outside), 'shared'=>$shared,
+            'dst_conflicts'=>$dstConflicts, 'missing_src'=>$missingSrc];
+}
+// Ar du B2 failai to paties turinio: SHA1, o jei jo nera (didelis failas) - dydis.
+function b2_same_content(array $a, array $b): bool {
+    if (!isset($a['size'], $b['size']) || (int)$a['size'] !== (int)$b['size']) return false;
+    $sa = preg_replace('~^unverified:~', '', (string)($a['sha1'] ?? ''));
+    $sb = preg_replace('~^unverified:~', '', (string)($b['sha1'] ?? ''));
+    if ($sa === '' || $sb === '' || $sa === 'none' || $sb === 'none') return true;
+    return strtolower($sa) === strtolower($sb);
+}
+// Sena kopija trinama TIK jei tame paciame santykiniame kelyje naujame aplanke
+// guli identiska kopija ir i sena failo varda nerodo joks kitas albumas.
+function b2_owned_deletable(string $src, string $dst, array $owned, array $otherRefs, array $srcFiles, array $dstFiles): array {
+    $other = [];
+    foreach ($otherRefs as $r) $other[trim((string)$r, '/')] = true;
+    $out = [];
+    foreach ($owned as $s => $d) {
+        if (isset($other[$s]) || !isset($srcFiles[$s], $dstFiles[$d])) continue;
+        if (b2_same_content($srcFiles[$s], $dstFiles[$d])) $out[] = $s;
+    }
+    return $out;
+}
+function storage_album_ref_columns(): array {
+    static $cols = null;
+    if ($cols !== null) return $cols;
+    $cols = [];
+    foreach (['b2_key','compatibility_b2_key','original_b2_key','thumb_path','preview_path','web_path'] as $c) {
+        try { if (db()->query("SHOW COLUMNS FROM photos LIKE '".$c."'")->fetch()) $cols[] = $c; } catch (Throwable $e) {}
+    }
+    return $cols;
+}
+function storage_album_refs(int $albumId, bool $others, array $prefixes): array {
+    $cols = storage_album_ref_columns();
+    $out = [];
+    foreach ($cols as $c) {
+        $w = []; $p = [$albumId];
+        foreach ($prefixes as $pre) { $w[] = "$c LIKE ?"; $p[] = trim($pre, '/').'/%'; }
+        $sql = "SELECT $c FROM photos WHERE album_id".($others ? '<>' : '=')."?".($others ? ' AND ('.implode(' OR ', $w).')' : " AND $c IS NOT NULL AND $c<>''");
+        $st = db()->prepare($sql); $st->execute($p);
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $v) { $v = trim((string)$v, '/'); if ($v !== '') $out[$v] = true; }
+    }
+    return array_keys($out);
+}
+function storage_b2_meta_map(string $prefix): array {
+    $map = [];
+    foreach (b2_list_prefix($prefix, 50, true) as $f) {
+        $n = trim((string)($f['fileName'] ?? ''), '/');
+        if ($n === '') continue;
+        $map[$n] = ['size'=>(int)($f['contentLength'] ?? 0), 'sha1'=>(string)($f['contentSha1'] ?? ''), 'file'=>$f];
+    }
+    return $map;
+}
+/* Vykdo b2_owned_migration_plan: kopijuoja -> tikrina SHA1 -> perjungia DB ->
+ * trina tik patikrintas senas priklausanciu failu kopijas. Nutrukus laiko
+ * ribai kartojama tuo paciu mygtuku (jau nukopijuoti failai praleidziami). */
+function storage_migrate_album_owned(int $id, string $srcPath, string $dst, string $backUrl): void {
+    $src = album_storage_base_prefix($srcPath);
+    $dst = trim($dst, '/');
+    if ($src === '' || canonical_path_equal($src, $dst)) { flash('Senas ir naujas kelias sutampa - nieko nekeičiama.', 'err'); go($backUrl); }
+    b2_load_config();
     try {
-        $folderRows = b2_storage_folder_rows();
-        // Didesni nei viena porcija albumai persikelia per kelis paspaudimus, todel
-        // tiksliniame kelyje jau gali gulet ankstesnes porcijos failai. Jei tai musu
-        // pacio kopijos likutis - tesiam; kitaip abu patikrinimai butu uzblokave
-        // migracija, kuria patys ka tik pradejom.
-        $resumeBase = $renameSourcePath !== '' ? album_storage_base_prefix($renameSourcePath) : '';
-        $resumingCopy = $resumeBase !== '' && !canonical_path_equal($resumeBase, $newSourcePath)
-            && b2_prefix_is_partial_copy_of($newSourcePath, $resumeBase);
-        $targetExists = false;
-        foreach ($folderRows as $row) {
-            $realPrefix = (string)($row['prefix'] ?? '');
-            if ($realPrefix === '') continue;
-            if (!canonical_path_equal($realPrefix, $newSourcePath)) continue;
-            if (canonical_path_equal($realPrefix, $renameSourcePath)) continue;
-            if ($resumingCopy) continue;
-            $targetExists = true;
-            break;
-        }
-        // Anksciau cia buvo du stabdziai: "tikslinis aplankas jau yra" ir "sis
-        // albumas turi dublikatiniu aplanku - pirma padaryk Merge". Praktikoje
-        // tai reiske ta pati darba dviem veiksmais, o tarpine bukle (dalis failu
-        // vienur, dalis kitur) buvo pavojingesne uz pati suliejima. Dabar
-        // perkelimas i kanonini pats surenka viska i vieta: kopijuoja, patikrina
-        // ir tik tada perjungia DB.
-        $mergingIntoExisting = $targetExists;
-        $absorb = [];
-        $duplicates = duplicate_b2_prefixes_for_album($album, $folderRows, $renameSourcePath ?: $oldSourcePath);
-        if ($resumingCopy && $duplicates) {
-            $duplicates = array_values(array_filter(
-                $duplicates,
-                fn($row) => !canonical_path_equal((string)($row['prefix'] ?? ''), $newSourcePath)
-            ));
-        }
-        foreach ($duplicates as $row) {
-            $dupPrefix = album_storage_base_prefix((string)($row['prefix'] ?? ''));
-            if ($dupPrefix === '') continue;
-            if (canonical_path_equal($dupPrefix, $newSourcePath)) continue;
-            if ($renameSourcePath !== '' && canonical_path_equal($dupPrefix, $renameSourcePath)) continue;
-            $absorb[$dupPrefix] = true;
-        }
-        $absorb = array_keys($absorb);
+        $albumRefs = storage_album_refs($id, false, []);
+        $otherRefs = storage_album_refs($id, true, [$src, $dst]);
+        $srcFiles = storage_b2_meta_map($src);
+        $dstFiles = storage_b2_meta_map($dst);
     } catch (Throwable $e) {
-        flash('Storage path was not saved: could not verify real B2 folders before rename: '.$e->getMessage(), 'err');
-        go($backUrl);
+        flash('Perkėlimas sustabdytas, nieko nepakeista: '.$e->getMessage(), 'err'); go($backUrl);
     }
-    try {
-        if ($renameSourcePath !== '' && $renameSourcePath !== $newSourcePath) {
-            $renameSourcePath = album_storage_base_prefix($renameSourcePath);
-            $copy = b2_copy_prefix_chunk($renameSourcePath, $newSourcePath);
-            $copied = (int)($copy['copied'] ?? 0);
-            $remaining = (int)($copy['remaining'] ?? 0);
-            $oldFiles = (int)($copy['old_files'] ?? 0);
-            $oldImages = (int)($copy['old_images'] ?? 0);
-            $targetImages = (int)($copy['target_images'] ?? 0);
-            $missingTargets = (int)($copy['missing_targets'] ?? 0);
-            if ($oldFiles <= 0) {
-                flash('Storage path was not saved: old B2 prefix has no files to move.', 'err');
-                go($backUrl);
-            }
-            if ($remaining > 0 || $missingTargets > 0 || $targetImages < $oldImages) {
-                $done = (int)($copy['target_files'] ?? 0);
-                flash('Perkelta '.$done.' iš '.$oldFiles.' failų (šį kartą nukopijuota '.$copied.', liko '.max($remaining, $missingTargets).'). DB kelias dar nekeistas – spausk tą patį veiksmą dar kartą, kol bus perkelti visi.', 'err');
-                go($backUrl);
-            }
-            if ($copied > 0) {
-                flash('B2 copy verified: all '.$oldFiles.' source files exist at target before DB switch.');
-            }
-        }
-    } catch (Throwable $e) {
-        flash('B2 copy failed before DB switch: '.$e->getMessage(), 'err');
-        go($backUrl);
+    $plan = b2_owned_migration_plan($src, $dst, $albumRefs, $otherRefs, $srcFiles, $dstFiles);
+    if ($plan['outside']) {
+        flash('Perkėlimas sustabdytas, nieko nepakeista: albumo nuotraukos yra ir kituose aplankuose ('.implode(', ', array_slice($plan['outside'], 0, 5)).'). Pirma sutvarkyk jas (Priskirti kitam albumui / B2 Sync).', 'err'); go($backUrl);
     }
-    // Dublikatiniai to paties albumo aplankai surenkami i ta pati kanonini
-    // kelia. Kopijuojam PRIES DB perjungima ir tik pilnai patikrine - kitaip
-    // liktu albumas, kurio dalis nuotrauku niekur neberodo.
-    $absorbed = [];
-    foreach ($absorb as $dupPrefix) {
-        try {
-            $copy = b2_copy_prefix_chunk($dupPrefix, $newSourcePath);
-            $remaining = (int)($copy['remaining'] ?? 0);
-            $missingTargets = (int)($copy['missing_targets'] ?? 0);
-            if ($remaining > 0 || $missingTargets > 0) {
-                flash('Sujungiama "'.$dupPrefix.'": nukopijuota '.(int)($copy['copied'] ?? 0).', liko '.max($remaining, $missingTargets).'. DB dar nekeistas - spausk ta pati veiksma dar karta.', 'err');
-                go($backUrl);
-            }
-            $absorbed[] = $dupPrefix;
-        } catch (Throwable $e) {
-            flash('Nepavyko sujungti dublikatinio aplanko "'.$dupPrefix.'": '.$e->getMessage(), 'err');
-            go($backUrl);
-        }
+    if ($plan['shared']) {
+        flash('Perkėlimas sustabdytas, nieko nepakeista: '.count($plan['shared']).' šio albumo failus naudoja ir kitas albumas (pvz. '.$plan['shared'][0].'). Pirma nuspręsk, kuriam albumui jie priklauso.', 'err'); go($backUrl);
     }
-    if ($absorbed) flash('Sujungti dublikatiniai B2 aplankai: '.implode(', ', $absorbed).'.');
-    if ($mergingIntoExisting) flash('Tikslinis aplankas jau egzistavo - failai sulieti i ji.');
-    try {
-        assert_album_b2_target_ready($id, $newSourcePath);
-    } catch (Throwable $e) {
-        flash('Storage path was not saved: '.$e->getMessage(), 'err');
-        go($backUrl);
+    if ($plan['dst_conflicts']) {
+        flash('Perkėlimas sustabdytas, nieko nepakeista: tiksliniame aplanke "'.$dst.'" yra šiam albumui nepriklausančių failų: '.implode(', ', array_slice($plan['dst_conflicts'], 0, 5)).(count($plan['dst_conflicts']) > 5 ? ' …' : '').'.', 'err'); go($backUrl);
     }
+    if (!$plan['owned']) { flash('Perkėlimas sustabdytas: sename aplanke "'.$src.'" nerasta šiam albumui priklausančių failų.', 'err'); go($backUrl); }
+    // Kopijavimas (porcijomis; jau esantys identiski praleidziami).
+    $deadline = microtime(true) + b2_time_budget();
+    $copied = 0; $remaining = 0;
+    foreach ($plan['owned'] as $s => $d) {
+        if (isset($dstFiles[$d]) && b2_same_content($srcFiles[$s], $dstFiles[$d])) continue;
+        if (microtime(true) > $deadline) { $remaining++; continue; }
+        @set_time_limit(30);
+        try { b2_copy_file_version($srcFiles[$s]['file'], $d); $copied++; }
+        catch (Throwable $e) { flash('Kopijavimo klaida ('.$s.'): '.$e->getMessage().' DB nepakeista.', 'err'); go($backUrl); }
+    }
+    if ($remaining > 0) {
+        flash('Nukopijuota '.$copied.', liko '.$remaining.' failų. DB dar nepakeista - spausk tą patį mygtuką dar kartą.'); go($backUrl);
+    }
+    // Patikra: kiekvienas priklausantis failas naujoje vietoje, tas pats turinys.
+    try { $dstFiles = storage_b2_meta_map($dst); }
+    catch (Throwable $e) { flash('Patikra nepavyko, DB nepakeista: '.$e->getMessage(), 'err'); go($backUrl); }
+    $bad = [];
+    foreach ($plan['owned'] as $s => $d) if (!isset($dstFiles[$d]) || !b2_same_content($srcFiles[$s], $dstFiles[$d])) $bad[] = $d;
+    if ($bad) { flash('Patikra nepavyko ('.count($bad).' failai, pvz. '.$bad[0].'). DB nepakeista.', 'err'); go($backUrl); }
+    // DB perjungimas - tik sio albumo eilutes, visuose kelio stulpeliuose.
     try {
         db()->beginTransaction();
-        if (!empty($renameSourcePath) && $renameSourcePath !== $newSourcePath) {
-            db()->prepare("UPDATE photos SET b2_key = CONCAT(?, SUBSTRING(b2_key, ?)), is_missing=0, updated_by=? WHERE album_id=? AND b2_key LIKE ?")->execute([
-                $newSourcePath,
-                strlen($renameSourcePath) + 1,
-                $_SESSION['admin']['id'] ?? null,
-                $id,
-                $renameSourcePath . '/%',
-            ]);
+        foreach (storage_album_ref_columns() as $c) {
+            db()->prepare("UPDATE photos SET $c = CONCAT(?, SUBSTRING($c, ?)), updated_by=? WHERE album_id=? AND $c LIKE ?")
+                ->execute([$dst, strlen($src) + 1, $_SESSION['admin']['id'] ?? null, $id, $src.'/%']);
         }
-        $reconciled = reconcile_album_b2_keys($id, $newSourcePath);
-        db()->prepare("UPDATE albums SET source_path=?, updated_by=? WHERE id=?")->execute([$newSourcePath, $_SESSION['admin']['id'] ?? null, $id]);
-        $linkStats = b2_link_photo_rows_to_prefix($id, $newSourcePath);
-        $consolidated = consolidate_album_photo_rows_to_prefix($id, $newSourcePath);
-        $verify = b2_album_mapping_status($id, $newSourcePath);
-        if (!$verify['ok']) {
-            db()->rollBack();
-            flash('Storage path was not saved: DB/B2 mismatch after verify. DB photos '.$verify['db_active'].', B2 images '.$verify['b2_images'].', DB found in B2 '.$verify['db_found'].', missing rows '.$verify['missing_db_rows'].', orphan B2 images '.$verify['orphan_b2_images'].'.', 'err');
-            go($backUrl);
-        }
-        db()->prepare("UPDATE photos SET is_missing=0, updated_by=? WHERE album_id=? AND b2_key LIKE ?")->execute([$_SESSION['admin']['id'] ?? null, $id, $newSourcePath.'/%']);
-        $deduped = delete_missing_duplicate_photo_rows($id);
+        db()->prepare("UPDATE albums SET source_path=?, updated_by=? WHERE id=?")->execute([$dst, $_SESSION['admin']['id'] ?? null, $id]);
+        $st = db()->prepare("SELECT b2_key FROM photos WHERE album_id=? AND is_missing=0 AND b2_key IS NOT NULL AND b2_key<>''");
+        $st->execute([$id]);
+        $notFound = [];
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $k) { $k = trim((string)$k, '/'); if (!isset($dstFiles[$k])) $notFound[] = $k; }
+        if ($notFound) throw new RuntimeException(count($notFound).' DB nuotraukų nerasta naujame aplanke (pvz. '.$notFound[0].')');
         db()->commit();
-        if ($reconciled > 0) flash('DB photo keys synchronized with B2: '.$reconciled.' updated.');
-        if (($linkStats['created'] ?? 0) > 0 || ($linkStats['relinked'] ?? 0) > 0) flash('DB/B2 mapping completed: created '.$linkStats['created'].', relinked '.$linkStats['relinked'].' photo rows.');
-        if (($consolidated['deleted'] ?? 0) > 0) flash('Consolidated '.$consolidated['deleted'].' duplicate photo rows into the verified B2 prefix.');
-        if ($deduped > 0) flash('Removed '.$deduped.' missing duplicate photo rows after mapping verify.');
     } catch (Throwable $e) {
         if (db()->inTransaction()) db()->rollBack();
-        flash('Storage path was not saved: DB/B2 key reconcile failed: '.$e->getMessage(), 'err');
-        go($backUrl);
-    }
-    if (!empty($renameSourcePath) && $renameSourcePath !== $newSourcePath) {
-        try {
-            // Trinam TIK isitikine, kad DB tikrai rodo i nauja kelia. Anksciau
-            // sio patikrinimo nebuvo: jei DB perjungimas buvo atsuktas arba
-            // trynimas nuejo ne tuo prefiksu, senas aplankas netekdavo
-            // originalu, o DB likdavo rodyti i ji - albumas dingdavo is viesos
-            // galerijos, nors visi failai buvo sveiki naujoje vietoje.
-            $check = db()->prepare("SELECT source_path FROM albums WHERE id=? LIMIT 1");
-            $check->execute([$id]);
-            $dbPath = trim((string)($check->fetchColumn() ?: ''), '/');
-            if (!canonical_path_equal($dbPath, $newSourcePath)) {
-                throw new RuntimeException('DB source_path yra "'.$dbPath.'", o ne "'.$newSourcePath.'" - senas aplankas netrinamas.');
-            }
-            // Trinam tik bazini albumo prefiksa, ne atskira poaplanki.
-            $deletePrefix = album_storage_base_prefix($renameSourcePath);
-            if ($deletePrefix === '' || canonical_path_equal($deletePrefix, $newSourcePath)) {
-                throw new RuntimeException('Neteisingas trynimo prefiksas: "'.$deletePrefix.'".');
-            }
-            $delete = b2_delete_prefix_chunk($deletePrefix);
-            if ((int)($delete['remaining'] ?? 0) > 0) {
-                flash('DB path switched. Old B2 prefix cleanup deleted '.$delete['deleted'].' files, '.$delete['remaining'].' remain. Run the same move once more to finish cleanup.');
-            } else {
-                flash('Old B2 prefix cleaned up: '.$delete['deleted'].' files deleted.');
-            }
-        } catch (Throwable $e) {
-            flash('DB path switched, but old B2 prefix cleanup failed: '.$e->getMessage(), 'err');
-        }
-    }
-    // Sujungtus dublikatus valom pagal ta pati principa: tik isitikine, kad DB
-    // rodo i kanonini kelia ir kad trinamas ne jis pats.
-    foreach ($absorbed as $dupPrefix) {
-        try {
-            $check = db()->prepare("SELECT source_path FROM albums WHERE id=? LIMIT 1");
-            $check->execute([$id]);
-            $dbPath = trim((string)($check->fetchColumn() ?: ''), '/');
-            if (!canonical_path_equal($dbPath, $newSourcePath)) {
-                throw new RuntimeException('DB source_path yra "'.$dbPath.'" - dublikatas netrinamas.');
-            }
-            if (canonical_path_equal($dupPrefix, $newSourcePath)) continue;
-            $delete = b2_delete_prefix_chunk($dupPrefix);
-            if ((int)($delete['remaining'] ?? 0) > 0) {
-                flash('Dublikatas "'.$dupPrefix.'": istrinta '.$delete['deleted'].', liko '.$delete['remaining'].'. Paleisk veiksma dar karta.');
-            } else {
-                flash('Dublikatas "'.$dupPrefix.'" isvalytas: '.$delete['deleted'].' failu.');
-            }
-        } catch (Throwable $e) {
-            flash('Dublikato "'.$dupPrefix.'" isvalyti nepavyko: '.$e->getMessage(), 'err');
-        }
+        flash('DB perjungimas atšauktas, niekas nepakeista: '.$e->getMessage(), 'err'); go($backUrl);
     }
     persist_album_metadata_json($id);
-    audit('album',$id,'update','Storage path updated to: '.$newSourcePath);
-    $final = b2_album_mapping_status($id, $newSourcePath);
-    flash('Storage path saved and verified. DB photos '.$final['db_active'].', B2 images '.$final['b2_images'].', found '.$final['db_found'].'.');
+    audit('album', $id, 'storage_move_owned', 'B2 perkelta (tik albumo failai): '.$src.' -> '.$dst,
+        ['owned'=>count($plan['owned']), 'copied'=>$copied, 'unowned_left'=>count($plan['unowned']), 'foreign_left'=>count($plan['foreign'])]);
+    // Seni failai: trinam tik identiskai nukopijuotas priklausancias kopijas.
+    $deleted = 0; $delLeft = 0;
+    try {
+        $otherNow = storage_album_refs($id, true, [$src]);
+        $deletable = b2_owned_deletable($src, $dst, $plan['owned'], $otherNow, $srcFiles, $dstFiles);
+        $deadline = microtime(true) + b2_time_budget();
+        foreach ($deletable as $s) {
+            if (microtime(true) > $deadline) { $delLeft++; continue; }
+            @set_time_limit(30);
+            b2_delete_file_version((string)($srcFiles[$s]['file']['fileId'] ?? ''), $s);
+            $deleted++;
+        }
+    } catch (Throwable $e) {
+        flash('DB perjungta, bet senų kopijų valymas nepavyko: '.$e->getMessage(), 'err');
+    }
+    $msg = 'Perkelta į "'.$dst.'": '.count($plan['owned']).' albumo failai (nukopijuota '.$copied.'), patikrinta SHA1, DB perjungta. Senų kopijų ištrinta '.$deleted.'.';
+    if ($delLeft > 0) $msg .= ' Liko ištrinti '.$delLeft.' - B2 puslapyje senas aplankas liks, jį galima išvalyti pakartotinai.';
+    if ($plan['unowned']) $msg .= ' Sename aplanke palikta '.count($plan['unowned']).' šiam albumui nepriklausančių failų (pvz. perkeltų nuotraukų kopijos) - jie netrinti.';
+    if ($plan['foreign']) $msg .= ' Palikta '.count($plan['foreign']).' kito albumo failų - jie netrinti.';
+    flash($msg);
     go($backUrl);
 }
 
@@ -5024,6 +5582,31 @@ function same_upload_identity(array $file, array $exif, ?array $photo, ?array $b
         if (!empty($exif['mime_type']) && !empty($photo['mime_type']) && strcasecmp((string)$exif['mime_type'], (string)$photo['mime_type']) !== 0) return false;
     }
     return true;
+}
+/* Galerijos (b2-gallery.php) B2 failu saraso podelis albumo aplankui.
+ * Galerija rodo tik tas DB nuotraukas, kuriu failas yra siame sarase, o sarasas
+ * laikomas 6 h. Be isvalymo ka tik ikeltos ar perkeltos nuotraukos esamame
+ * albume viesai nesimatydavo iki 6 h (2026-09-26, #1 ir #624 po Flickr).
+ * Kelias ir raktas turi sutapti su b2-gallery.php: <domeno katalogas>/cache/
+ * b2_filelist/sha256(B2_BUCKET_ID|source_path/).json. admin/ yra public_html
+ * viduje, todel domeno katalogas - dirname(__DIR__, 2). */
+function gallery_list_cache_invalidate(string $sourcePath): bool {
+    $sourcePath = trim($sourcePath, '/');
+    if ($sourcePath === '') return false;
+    if (!defined('B2_BUCKET_ID')) { try { b2_load_config(); } catch (Throwable $e) { return false; } }
+    if (!defined('B2_BUCKET_ID')) return false;
+    $file = dirname(__DIR__, 2).'/cache/b2_filelist/'.hash('sha256', (string)B2_BUCKET_ID.'|'.$sourcePath.'/').'.json';
+    return is_file($file) ? @unlink($file) : false;
+}
+function gallery_list_cache_invalidate_album(int $albumId): void {
+    if ($albumId <= 0) return;
+    try {
+        $st = db()->prepare("SELECT source_path FROM albums WHERE id=? LIMIT 1");
+        $st->execute([$albumId]);
+        gallery_list_cache_invalidate((string)($st->fetchColumn() ?: ''));
+    } catch (Throwable $e) {
+        // Podelio isvalymas - ne kritinis: blogiausiu atveju nuotraukos pasirodys po TTL.
+    }
 }
 function admin_img_cache_dir(): string {
     $dir = dirname(__DIR__) . '/cache/b2_img_cache';
@@ -5370,6 +5953,7 @@ function upload_album_photos(): void {
     if ($visibility === 'published' && (string)($album['visibility'] ?? '') !== 'published') {
         db()->prepare("UPDATE albums SET visibility='published', updated_by=? WHERE id=?")->execute([$_SESSION['admin']['id'] ?? null, $albumId]);
     }
+    gallery_list_cache_invalidate_album($albumId);
     audit('photo',$albumId,'album_upload','Additional album photos uploaded',['mode'=>$duplicateMode,'uploaded'=>$uploaded,'overwritten'=>$overwritten,'compatibility_uploaded'=>$compatibilityUploaded,'compatibility_missing'=>$compatibilityMissing,'compatibility_invalid'=>$compatibilityInvalid,'json_uploaded'=>$jsonUploaded,'json_backfilled'=>$jsonBackfilled,'created'=>$created,'updated'=>$updated,'skipped'=>$skipped]);
     $compatibilityNote = $compatibilityMissing > 0 ? " $compatibilityMissing HEIC originalas įkeltas, bet JPG peržiūra nesukurta." : '';
     $invalidNote = $compatibilityInvalid > 0 ? " $compatibilityInvalid sugeneruota JPG peržiūros versija netinkama, įkeltas tik originalus failas." : '';
@@ -5513,6 +6097,11 @@ function photo_quick(): void {
     elseif($op==='favorite') db()->prepare("UPDATE photos SET is_cover_candidate=1-is_cover_candidate,updated_by=? WHERE id=? AND album_id=?")->execute([$_SESSION['admin']['id']??null,$photoId,$albumId]);
     elseif($op==='hide') db()->prepare("UPDATE photos SET visibility='hidden',updated_by=? WHERE id=? AND album_id=?")->execute([$_SESSION['admin']['id']??null,$photoId,$albumId]);
     elseif($op==='toggle_publish') db()->prepare("UPDATE photos SET visibility=IF(visibility='published','draft','published'),updated_by=? WHERE id=? AND album_id=?")->execute([$_SESSION['admin']['id']??null,$photoId,$albumId]);
+    elseif(in_array($op, ['rot_cw','rot_ccw','rot_reset'], true)) {
+        if (!photo_rotation_column()) json_error('Nepavyko paruošti pasukimo stulpelio DB.', 500);
+        if ($op === 'rot_reset') db()->prepare("UPDATE photos SET rotation=0,updated_by=? WHERE id=? AND album_id=?")->execute([$_SESSION['admin']['id']??null,$photoId,$albumId]);
+        else db()->prepare("UPDATE photos SET rotation=MOD(rotation+?,360),updated_by=? WHERE id=? AND album_id=?")->execute([$op==='rot_cw'?90:270,$_SESSION['admin']['id']??null,$photoId,$albumId]);
+    }
     else json_error('Bad operation.', 400);
     audit('photo',$photoId,'quick_'.$op,'Quick photo action');
     json_exit(['ok' => true]);
@@ -5779,6 +6368,18 @@ function bulk(string $table): void {
         $ph=implode(',', array_fill(0,count($ids),'?'));
     }
     $rawAction = $status;
+    if ($table==='photos' && in_array($rawAction, ['rotate_cw','rotate_ccw','rotate_180','rotate_reset'], true)) {
+        if (!photo_rotation_column()) { flash('Nepavyko paruošti pasukimo stulpelio DB.', 'err'); go(consume_return_path('?page=photos')); }
+        if ($rawAction === 'rotate_reset') {
+            db()->prepare("UPDATE photos SET rotation=0, updated_by=? WHERE id IN ($ph)")->execute([$_SESSION['admin']['id'] ?? null, ...$ids]);
+        } else {
+            $deg = ['rotate_cw'=>90, 'rotate_ccw'=>270, 'rotate_180'=>180][$rawAction];
+            db()->prepare("UPDATE photos SET rotation=MOD(rotation+?,360), updated_by=? WHERE id IN ($ph)")->execute([$deg, $_SESSION['admin']['id'] ?? null, ...$ids]);
+        }
+        audit('photo', $ids[0], $rawAction, 'Pasuktos '.count($ids).' nuotr. (tik rodymas, originalai B2 nekeisti)', ['ids'=>$ids]);
+        flash('Pasukta nuotraukų: '.count($ids).'. Originalai B2 nekeisti — keičiasi tik rodymas.');
+        go(consume_return_path('?page=photos'));
+    }
     if ($table==='photos' && $rawAction==='recheck_b2') {
         b2_load_config();
         $st = db()->prepare("SELECT p.id, p.album_id, p.b2_key, p.is_missing, a.source_path FROM photos p JOIN albums a ON a.id=p.album_id WHERE p.id IN ($ph)");
@@ -5794,7 +6395,7 @@ function bulk(string $table): void {
         $upd = db()->prepare("UPDATE photos SET is_missing=?, synced_at=NOW(), updated_by=? WHERE id=?");
         foreach ($byPrefix as $prefix => $rowsInPrefix) {
             $keys = [];
-            foreach (b2_list_prefix($prefix, 30) as $fileRow) {
+            foreach (b2_list_prefix($prefix, 50, true) as $fileRow) {
                 $keys[trim((string)($fileRow['fileName'] ?? ''), '/')] = true;
             }
             foreach ($rowsInPrefix as $r) {
@@ -5831,7 +6432,7 @@ function bulk(string $table): void {
         foreach ($byPrefix as $prefix => $rowsInPrefix) {
             $keys = [];
             if ($prefix !== '') {
-                foreach (b2_list_prefix($prefix, 30) as $fileRow) $keys[trim((string)($fileRow['fileName'] ?? ''), '/')] = true;
+                foreach (b2_list_prefix($prefix, 50, true) as $fileRow) $keys[trim((string)($fileRow['fileName'] ?? ''), '/')] = true;
             }
             foreach ($rowsInPrefix as $r) {
                 $checked++;
@@ -5859,6 +6460,74 @@ function bulk(string $table): void {
         $back = consume_return_path('?page=photos');
         if (!preg_match('/^\?page=photos/', $back)) $back = '?page=photos';
         flash('„Create JPG“ veikia naršyklėje — įjunkite JavaScript ir bandykite dar kartą.', 'err');
+        go($back);
+    }
+    /* --- Nuotrauku priskyrimas kitam albumui ---------------------------------
+     * Narys gali pasirinkti ne ta albuma, todel admin'ui reikia budo perkelti.
+     * B2 invariantas leidzia TIK skaityti ir rasyti NAUJUS objektus, tad cia
+     * daroma kopija i tikslinio albumo originals/, o senas objektas paliekamas
+     * gulėti (jis niekam netrukdo - DB i ji neberodo). Nieko netrinam ir
+     * nepervadinam.
+     */
+    if ($table==='photos' && $rawAction==='move_album') {
+        require_superadmin();
+        $back = consume_return_path('?page=photos');
+        if (!preg_match('/^\?page=photos/', $back)) $back = '?page=photos';
+        $targetId = (int)($_POST['target_album_id'] ?? 0);
+        $target = $targetId > 0 ? member_album_by_id($targetId) : null;
+        if (!$target) { flash('Pasirink albumą, į kurį priskirti pažymėtas nuotraukas.', 'err'); go($back); }
+        $targetPrefix = album_storage_base_prefix((string)($target['source_path'] ?? ''));
+        if ($targetPrefix === '') { flash('Albumas „'.$target['title'].'" neturi B2 kelio — pirma nustatyk Storage path.', 'err', '?page=album_edit&id='.$targetId, 'Nustatyti kelią'); go($back); }
+        b2_load_config();
+        $st = db()->prepare("SELECT p.id,p.album_id,p.b2_key,p.compatibility_b2_key,p.original_filename,a.source_path FROM photos p JOIN albums a ON a.id=p.album_id WHERE p.id IN ($ph)");
+        $st->execute($ids);
+        $photos = $st->fetchAll(PDO::FETCH_ASSOC);
+        $sourceMaps = [];
+        $targetMap = b2_prefix_file_map($targetPrefix, 30);
+        $maxSort = (int)db()->query("SELECT COALESCE(MAX(sort_order),0) FROM photos WHERE album_id=".$targetId)->fetchColumn();
+        $deadline = microtime(true) + b2_time_budget();
+        $moved = 0; $already = 0; $failed = 0; $stopped = false;
+        $keyTaken = db()->prepare("SELECT COUNT(*) FROM photos WHERE album_id=? AND b2_key=? AND id<>?");
+        $upd = db()->prepare("UPDATE photos SET album_id=?, b2_key=?, compatibility_b2_key=?, stored_filename=?, thumb_path=?, preview_path=?, web_path=?, sort_order=?, is_missing=0, synced_at=NOW(), updated_by=? WHERE id=?");
+        foreach ($photos as $r) {
+            if ((int)$r['album_id'] === $targetId) { $already++; continue; }
+            if (microtime(true) > $deadline) { $stopped = true; break; }
+            $srcPrefix = album_storage_base_prefix((string)($r['source_path'] ?? ''));
+            if ($srcPrefix === '') { $failed++; continue; }
+            if (!isset($sourceMaps[$srcPrefix])) $sourceMaps[$srcPrefix] = b2_prefix_file_map($srcPrefix, 30);
+            $srcKey = trim((string)$r['b2_key'], '/');
+            $srcFile = $sourceMaps[$srcPrefix][$srcKey] ?? null;
+            if (!$srcFile) { $failed++; continue; }
+            $name = safe_b2_name(basename($srcKey));
+            $newKey = $targetPrefix.'/originals/'.$name;
+            $n = 0;
+            while (isset($targetMap[$newKey]) || (function () use ($keyTaken, $targetId, $newKey, $r) { $keyTaken->execute([$targetId, $newKey, (int)$r['id']]); return (int)$keyTaken->fetchColumn() > 0; })()) {
+                $n++;
+                $newKey = $targetPrefix.'/originals/'.str_pad((string)$n, 4, '0', STR_PAD_LEFT).'_'.$name;
+                if ($n > 9999) break;
+            }
+            try {
+                b2_copy_file_version($srcFile, $newKey);
+                $targetMap[$newKey] = ['fileName' => $newKey];
+                $newCompat = null;
+                $srcCompat = trim((string)($r['compatibility_b2_key'] ?? ''), '/');
+                if ($srcCompat !== '' && isset($sourceMaps[$srcPrefix][$srcCompat])) {
+                    $compatName = (preg_replace('~\.[^.]+$~', '', basename($newKey)) ?: basename($newKey)).'.jpg';
+                    $newCompat = $targetPrefix.'/jpg-originals/'.$compatName;
+                    b2_copy_file_version($sourceMaps[$srcPrefix][$srcCompat], $newCompat);
+                    $targetMap[$newCompat] = ['fileName' => $newCompat];
+                }
+                $maxSort += 10;
+                $upd->execute([$targetId, $newKey, $newCompat, basename($newKey), $newCompat, $newCompat, $newCompat, $maxSort, current_admin_id() ?: null, (int)$r['id']]);
+                $moved++;
+            } catch (Throwable $e) {
+                $failed++;
+            }
+        }
+        gallery_list_cache_invalidate_album((int)$targetId);
+        audit('photo', $targetId, 'move_album', 'Nuotraukos priskirtos albumui: '.$target['title'], ['moved'=>$moved,'already'=>$already,'failed'=>$failed,'stopped'=>$stopped,'ids'=>$ids]);
+        $note = $stopped ? ' Dalis liko neperkelta (laiko limitas) — pažymėk likusias ir paleisk dar kartą.' : '';
+        flash('Priskirta albumui „'.$target['title'].'": '.$moved.' perkelta, '.$already.' jau buvo ten, '.$failed.' nepavyko. Seni B2 failai palikti vietoje (netrinami).'.$note, $failed > 0 ? 'err' : 'ok');
         go($back);
     }
     $status = $status !== '' ? normalize_visibility((string)$status) : '';
@@ -6632,6 +7301,7 @@ function takeout_import(): void {
             $created++;
         }
     }
+    gallery_list_cache_invalidate_album($albumId);
     audit('takeout',$albumId,'upload',"Takeout album uploaded to B2",['uploaded'=>$uploaded,'created'=>$created,'updated'=>$updated,'skipped'=>$skipped,'prefix'=>$prefix]);
     flash("Takeout import finished: $uploaded files uploaded to B2, $created photos created, $updated updated, $skipped skipped."); go('?page=album_edit&id='.$albumId);
 }
@@ -6755,14 +7425,6 @@ function b2_upload_data(string $data,string $key,string $mime,array &$upload): a
     if($code>=400||!is_array($j)) throw new RuntimeException('B2 upload failed for '.$key.': '.$code.' '.$body);
     return $j;
 }
-/**
- * $truncated grazinamas TRUE, jei puslapiu limitas issisemė anksciau nei failai.
- * Be sio zenklo funkcija tyliai grazindavo nepilna sarasa, ir iskvietes koda
- * negalejo atskirti "tiek failu ir yra" nuo "tiek suspejau perskaityti".
- * 2026-09-20 del to B2 Sync 9005 tvarkingu eiluciu pazymejo kaip dingusias:
- * bucket'e ~26 tukst. failu, o sinchronizacija matė tik 8 000 (numatyti 8
- * puslapiai po 1000), ir visa, ko nemate, palaike istrintu.
- */
 function clear_missing_flags(): void {
     require_superadmin(); csrf();
     $n = (int)db()->query("SELECT COUNT(*) FROM photos WHERE is_missing=1")->fetchColumn();
@@ -6772,8 +7434,21 @@ function clear_missing_flags(): void {
     go('?page=b2');
 }
 
-function b2_list_prefix(string $prefix,int $pages=8, ?bool &$truncated=null): array {
-    $truncated=false;
+/* Kiekvienas puslapis - 1000 failu. Pasiekus $pages riba sarasas NUKIRPTAS:
+ * failai uz ribos tiesiog negrazinami. 2026-09-23 B2 Sync su numatytais 8
+ * puslapiais pamate tik pirmus 8000 failu (~iki 2011 m.) ir "mark missing"
+ * pazymejo ~220 albumu kaip trukstamus, nors failai B2 buvo.
+ *
+ * Todel: b2_last_list_truncated() pasako, ar paskutinis sarasas nukirptas, o
+ * $requireComplete=true nukirptu atveju meta klaida - kvietejai, kurie is
+ * failo NEBUVIMO daro isvadas (zymi missing, trina DB eilutes), privalo ji
+ * naudoti. Geriau nieko nepadaryti nei padaryti pagal puse saraso. */
+function b2_last_list_truncated(?bool $set = null): bool {
+    static $truncated = false;
+    if ($set !== null) $truncated = $set;
+    return $truncated;
+}
+function b2_list_prefix(string $prefix,int $pages=8,bool $requireComplete=false,?callable $onPage=null): array {
     $auth=b2_auth(); $out=[]; $cursor=''; $prefix=trim($prefix,'/'); $prefix=$prefix===''?'':$prefix.'/';
     for($i=0;$i<$pages;$i++){
         $post=['bucketId'=>(string)B2_BUCKET_ID,'prefix'=>$prefix,'maxFileCount'=>1000]; if($cursor!=='') $post['startFileName']=$cursor;
@@ -6782,9 +7457,13 @@ function b2_list_prefix(string $prefix,int $pages=8, ?bool &$truncated=null): ar
         $body=curl_exec($ch); $code=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch);
         $j=json_decode((string)$body,true); if($code>=400||!is_array($j)) throw new RuntimeException('B2 list failed');
         foreach(($j['files']??[]) as $f) $out[]=$f;
+        if ($onPage) $onPage(count($out));
         $cursor=(string)($j['nextFileName']??''); if($cursor==='') break;
     }
-    if($cursor!=='') $truncated=true;
+    b2_last_list_truncated($cursor !== '');
+    if ($cursor !== '' && $requireComplete) {
+        throw new RuntimeException('B2 sąrašas nepilnas: „'.($prefix === '' ? '(šaknis)' : rtrim($prefix, '/')).'" turi daugiau nei '.($pages * 1000).' failų. Veiksmas nutrauktas — niekas nepažymėta ir neištrinta.');
+    }
     return $out;
 }
 // Jungtis laikoma atidaryta visam uzklausu srautui. Anksciau kiekvienam failui
@@ -7091,7 +7770,7 @@ function b2_detect_album_storage_prefix(int $albumId, string $targetPrefix): arr
     }
     if (!$names) return ['prefix'=>'','matches'=>0,'targetMatches'=>0];
 
-    $files = b2_list_prefix('', 60);
+    $files = b2_list_prefix('', 100);
     $counts = [];
     foreach ($files as $file) {
         $fileName = trim((string)($file['fileName'] ?? ''), '/');
@@ -7120,55 +7799,157 @@ function b2_detect_album_storage_prefix(int $albumId, string $targetPrefix): arr
     ];
 }
 function b2_album_title(string $path): string { return basename($path) ?: $path; }
+/* B2 Sync eiga: kas ~1 s irasoma i b2_sync_runs.result.progress, o B2
+ * puslapis ja skaito per ?action=b2_sync_status (procentai + likes laikas).
+ * Etapai ir ju svoriai visai eigai: sarasas, failai, missing suderinimas,
+ * albumu uzbaigimas. Svoriai pagal realu truki: "scan only" beveik visa
+ * laika skaito sarasa, "update/create" - raso kiekviena faila i DB. */
+function b2_sync_progress(int $runId, string $stage, int $done, int $total = 0, bool $force = false, ?array $init = null): void {
+    static $state = null, $lastWrite = 0.0, $lastStage = '';
+    if ($runId <= 0) return;
+    if ($init !== null) { $state = $init + ['started' => time(), 'stages' => []]; $lastWrite = 0.0; $lastStage = ''; }
+    if ($state === null) return;
+    $state['stage'] = $stage;
+    $state['stages'][$stage] = ['done' => $done, 'total' => $total];
+    $now = microtime(true);
+    if (!$force && $stage === $lastStage && $now - $lastWrite < 1.0) return;
+    $lastWrite = $now; $lastStage = $stage;
+    try {
+        db()->prepare("UPDATE b2_sync_runs SET result=? WHERE id=? AND status='running'")
+            ->execute([json_encode(['progress' => $state], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $runId]);
+    } catch (Throwable $e) { /* eiga - ne priezastis nutraukti sync */ }
+}
+function b2_sync_stage_weights(string $mode, bool $markMissing): array {
+    $write = $mode !== 'scan only';
+    $w = $write ? ['list' => 10, 'files' => 75, 'reconcile' => 5, 'albums' => 10] : ['list' => 80, 'files' => 10, 'reconcile' => 10, 'albums' => 0];
+    if (!$markMissing) $w['reconcile'] = 0;
+    return $w;
+}
+// Eigos santrauka JS'ui: procentai visai eigai ir apytikslis likes laikas.
+function b2_sync_progress_view(array $run): array {
+    $res = json_decode((string)($run['result'] ?? ''), true) ?: [];
+    $p = $res['progress'] ?? null;
+    $out = ['id' => (int)$run['id'], 'status' => (string)$run['status'], 'mode' => (string)$run['mode']];
+    if ($run['status'] !== 'running') {
+        $out['pct'] = $run['status'] === 'finished' ? 100 : null;
+        $out['result'] = $res;
+        return $out;
+    }
+    if (!is_array($p)) { $out['pct'] = 0; $out['stage'] = 'start'; return $out; }
+    $weights = b2_sync_stage_weights((string)($p['mode'] ?? 'scan only'), !empty($p['mark_missing']));
+    $sum = array_sum($weights) ?: 1; $acc = 0.0; $reached = false;
+    foreach ($weights as $stage => $w) {
+        if ($stage === $p['stage']) {
+            $st = $p['stages'][$stage] ?? ['done' => 0, 'total' => 0];
+            $total = (int)$st['total'];
+            if ($stage === 'list' && $total <= 0) $total = (int)($p['est_files'] ?? 0);
+            $frac = $total > 0 ? min(0.99, $st['done'] / $total) : 0.0;
+            $acc += $w * $frac; $reached = true; break;
+        }
+        $acc += $w;
+    }
+    if (!$reached) $acc = 0.0;
+    $pct = $acc / $sum;
+    $elapsed = max(0, time() - (int)($p['started'] ?? time()));
+    $out += [
+        'pct' => round($pct * 100, 1),
+        'stage' => (string)$p['stage'],
+        'stages' => $p['stages'],
+        'est_files' => (int)($p['est_files'] ?? 0),
+        'elapsed' => $elapsed,
+        'eta' => ($pct > 0.02 && $elapsed >= 2) ? (int)round($elapsed * (1 - $pct) / $pct) : null,
+    ];
+    return $out;
+}
+function b2_sync_status(): void {
+    require_superadmin();
+    $after = (int)($_GET['after'] ?? 0);
+    $id = (int)($_GET['id'] ?? 0);
+    $st = $id > 0
+        ? db()->prepare("SELECT id,mode,status,result,started_at,finished_at FROM b2_sync_runs WHERE id=?")
+        : db()->prepare("SELECT id,mode,status,result,started_at,finished_at FROM b2_sync_runs WHERE id>? ORDER BY id DESC LIMIT 1");
+    $st->execute([$id > 0 ? $id : $after]);
+    $run = $st->fetch(PDO::FETCH_ASSOC);
+    json_exit($run ? ['ok' => true, 'run' => b2_sync_progress_view($run)] : ['ok' => true, 'run' => null]);
+}
+/* B2 Sync: skaito B2 ir atnaujina DB eilutes.
+ *
+ * "Mark missing" (dabar - dvipusis suderinimas) 2026-09-23 sugadino ~220
+ * albumu: sarasas buvo nukirptas ties 8000 failu, o viskas uz ribos laikyta
+ * dingusiu. Dabar:
+ *  - sarasas skaitomas iki 200 000 failu ir zinoma, ar jis PILNAS;
+ *  - eilutes, kuriu failas B2 rastas, visada atstatomos (is_missing=0);
+ *  - missing zymima TIK esant pilnam sarasui, TIK jei kandidatu nedaug
+ *    (saugiklis) ir TIK patikrinus imti tiesiogiai B2;
+ *  - suderinimo rezultatas i audit/b2_sync_runs irasomas IS KARTO, kad ir
+ *    nutrukus veliau, butu matyti, kas pakeista.
+ */
 function b2_sync(string $bucket,string $prefix,string $mode,array $opts): array {
-    b2_load_config(); $bucket=$bucket ?: (defined('B2_BUCKET')?(string)B2_BUCKET:''); $dry=!empty($opts['dry_run']); $seen=[]; $scanRoots=[]; $listTruncated=false; $skippedP=0; $metaWritten=[]; $touchedAlbums=[]; $albums=0; $photos=0; $createdA=0; $createdP=0; $updatedP=0; $missingMarked=0; $consolidatedRows=0;
+    b2_load_config(); $bucket=$bucket ?: (defined('B2_BUCKET')?(string)B2_BUCKET:''); $dry=!empty($opts['dry_run']); $scanRoots=[]; $touchedAlbums=[]; $albums=0; $photos=0; $createdA=0; $createdP=0; $updatedP=0; $consolidatedRows=0;
+    $skippedP = 0;   // nepakitusios eilutes (ju optimizacija: jos neperrasomos)
+    $write = !$dry && $mode !== 'scan only';
+    $existing = [];          // VISI B2 failai (nefiltruoti) - nebuvimo sprendimams
+    $complete = true;
+    $albumIdByPath = [];     // viena DB paieska albumui, ne kiekvienam failui
+    $albumSeen = [];
+    $findAlbum = db()->prepare("SELECT id, download_enabled FROM albums WHERE source_path=? OR slug=? LIMIT 1");
+    $findPhoto = db()->prepare("SELECT id,file_size,compatibility_b2_key,is_missing FROM photos WHERE album_id=? AND b2_key=?");
+    $updPhoto = db()->prepare("UPDATE photos SET b2_bucket=?,b2_key=?,original_filename=?,file_ext=?,file_size=?,is_missing=0,synced_at=NOW() WHERE id=?");
+    $insPhoto = db()->prepare("INSERT INTO photos(b2_bucket,b2_key,original_filename,file_ext,file_size,is_downloadable,uuid,album_id,source_type,visibility,synced_at) VALUES(?,?,?,?,?,?,?,?, 'b2_sync','published',NOW())");
+    $runId = (int)($opts['run_id'] ?? 0);
+    // Sarašo dydžio iverciui - paskutinio baigto paleidimo B2 failu skaicius.
+    $estFiles = 0;
+    try {
+        $lastRes = db()->query("SELECT result FROM b2_sync_runs WHERE status='finished' AND JSON_EXTRACT(result,'$.b2_files') IS NOT NULL ORDER BY id DESC LIMIT 1")->fetchColumn();
+        $estFiles = (int)((json_decode((string)$lastRes, true) ?: [])['b2_files'] ?? 0);
+    } catch (Throwable $e) {}
+    b2_sync_progress($runId, 'list', 0, 0, true, ['mode' => $mode, 'mark_missing' => !empty($opts['mark_missing']), 'dry_run' => $dry, 'est_files' => $estFiles]);
+    // Pirma visi sarasai, tik tada failai - kad etapai eitu is eiles ir eiga
+    // butu monotoniska.
+    $listed = [];
+    $listedCount = 0;
     foreach(b2_allowed_prefixes($prefix) as $root){
         $scanRoots[] = trim((string)$root, '/');
-        // 60 puslapiu po 1000 - su atsarga visam bucket'ui (~26 tukst. failu).
-        // Numatyti 8 reiske 8 000, ir likusieji atrodydavo kaip dingę.
-        $rootTruncated=false;
-        $files=b2_list_prefix($root, 60, $rootTruncated);
-        if($rootTruncated) $listTruncated=true;
-        // Raktu aibe perziuros paieskai. Be jos kiekvienai nuotraukai tektu
-        // perbegti visa sarasa: 26 tukst. failu x 12 tukst. nuotrauku.
-        $haveKeys=[];
-        foreach($files as $hf){ $hk=trim((string)($hf['fileName']??''),'/'); if($hk!=='') $haveKeys[$hk]=true; }
+        $base = $listedCount;
+        $listed[] = b2_list_prefix($root, 200, false, function (int $n) use ($runId, $base) { b2_sync_progress($runId, 'list', $base + $n); });
+        if (b2_last_list_truncated()) $complete = false;
+        $listedCount += count(end($listed));
+    }
+    b2_sync_progress($runId, 'list', $listedCount, $listedCount, true);
+    $fileNo = 0;
+    foreach($listed as $files){
         foreach($files as $f){
-            $key=(string)($f['fileName']??''); if($key===''||str_contains($key, '/archive-originals/')||str_contains($key, '/jpg-originals/')||!takeout_media_file($key)) continue;
+            b2_sync_progress($runId, 'files', ++$fileNo, $listedCount);
+            $key=(string)($f['fileName']??'');
+            if ($key !== '') $existing[trim($key, '/')] = true;
+            if($key===''||str_contains($key, '/archive-originals/')||str_contains($key, '/jpg-originals/')||!takeout_media_file($key)) continue;
             if(function_exists('gallery_is_allowed_prefix')&&!gallery_is_allowed_prefix($key)) continue;
             $albumPath=b2_storage_album_prefix_from_key($key); if($albumPath==='') continue;
-            $seen[$key]=true; $photos++;
-            $a=db()->prepare("SELECT id FROM albums WHERE source_path=? OR slug=? LIMIT 1"); $a->execute([$albumPath,slug($albumPath)]); $albumId=(int)$a->fetchColumn();
-            if(!$albumId){ $albums++; if(!$dry&&$mode!=='scan only'){ db()->prepare("INSERT INTO albums(uuid,source_type,source_path,slug,title,visibility,created_by,updated_by) VALUES(?,?,?,?,?,'published',?,?)")->execute([uid(),'b2_sync',$albumPath,slug($albumPath),b2_album_title($albumPath),$_SESSION['admin']['id']??null,$_SESSION['admin']['id']??null]); $albumId=(int)db()->lastInsertId(); place_album_by_date($albumId); $createdA++; persist_album_metadata_json($albumId); } }
-            else $albums++;
-            // Albumo metaduomenys perrasomi KARTA albumui, ne kiekvienam failui.
-            // Anksciau 245 nuotrauku albumas ta pati JSON'a perrasydavo 245 kartus.
-            if($albumId && !$dry && $mode!=='scan only' && !isset($metaWritten[$albumId])) {
-                $metaWritten[$albumId]=true;
-                persist_album_metadata_json($albumId);
+            $photos++;
+            if (!array_key_exists($albumPath, $albumIdByPath)) {
+                $findAlbum->execute([$albumPath, slug($albumPath)]);
+                $row = $findAlbum->fetch(PDO::FETCH_ASSOC) ?: null;
+                $albumIdByPath[$albumPath] = $row ? [(int)$row['id'], (int)($row['download_enabled'] ?? 1)] : null;
             }
-            $albumDownloadEnabled=1;
-            if($albumId){ $ad=db()->prepare("SELECT download_enabled FROM albums WHERE id=? LIMIT 1"); $ad->execute([$albumId]); $albumDownloadEnabled=(int)$ad->fetchColumn() ?: 0; }
-            if($albumId&&!$dry&&$mode!=='scan only'){
+            if ($albumIdByPath[$albumPath] === null && $write) {
+                db()->prepare("INSERT INTO albums(uuid,source_type,source_path,slug,title,visibility,created_by,updated_by) VALUES(?,?,?,?,?,'published',?,?)")->execute([uid(),'b2_sync',$albumPath,slug($albumPath),b2_album_title($albumPath),$_SESSION['admin']['id']??null,$_SESSION['admin']['id']??null]);
+                $newId=(int)db()->lastInsertId(); place_album_by_date($newId); $createdA++;
+                $albumIdByPath[$albumPath] = [$newId, 1];
+            }
+            if (!isset($albumSeen[$albumPath])) { $albumSeen[$albumPath] = true; $albums++; }
+            $albumId = $albumIdByPath[$albumPath][0] ?? 0;
+            if($albumId && $write){
                 $touchedAlbums[$albumId] = $albumPath;
-                // Pasiimam ir tuos laukus, pagal kuriuos matyti, ar isvis yra ka keisti.
-                $q=db()->prepare("SELECT id,file_size,compatibility_b2_key,is_missing FROM photos WHERE album_id=? AND b2_key=?"); $q->execute([$albumId,$key]);
-                $exRow=$q->fetch(PDO::FETCH_ASSOC) ?: null; $pid=(int)($exRow['id'] ?? 0);
-                $payload=[$bucket,$key,basename($key),pathinfo($key,PATHINFO_EXTENSION),(int)($f['contentLength']??0),$pid?null:uid(),$albumId];
+                $findPhoto->execute([$albumId,$key]); $exRow=$findPhoto->fetch(PDO::FETCH_ASSOC) ?: null; $pid=(int)($exRow['id'] ?? 0);
                 if($pid){
-                    // HEIC perziura. Iki siol sinchronizacija jos NEsusiedavo, todel
-                    // albumai, kuriu JPG jau gulejo B2, amzinai rode "JPG perziura
-                    // nesukurta" - o susieti galejo tik atskiras albumo veiksmas.
+                    // HEIC perziura: jei B2 jau guli JPG, susiejam (anksciau tai darydavo tik atskiras albumo veiksmas).
                     $compatKey=null;
                     if(preg_match('~\.(heic|heif)$~i',$key)){
                         $cand=preg_replace('~/originals/([^/]+)\.[^.]+$~','/jpg-originals/$1.jpg',$key);
-                        if(is_string($cand)&&$cand!==$key&&isset($haveKeys[$cand])) $compatKey=$cand;
+                        if(is_string($cand)&&$cand!==$key&&isset($existing[trim($cand,'/')])) $compatKey=$cand;
                     }
-                    // Nepakitusios eilutes nelieciam. Iki siol kiekviena buvo
-                    // perrasoma, o kartu su ja persist_photo_metadata_json()
-                    // darydavo dar dvi uzklausas - 12 400 nuotrauku tai apie
-                    // 50 000 uzklausu ir daugiau nei 100 s, t.y. Cloudflare 524.
-                    // Perskaicius viska is naujo beveik niekas nebuna pasikeites.
+                    // Nepakitusios eilutes nelieciam: perrasant visas 12 400 buvo ~50 000
+                    // uzklausu ir >100 s (Cloudflare 524).
                     $same = $exRow !== null
                         && (int)($exRow['file_size'] ?? -1) === (int)($f['contentLength']??0)
                         && (string)($exRow['compatibility_b2_key'] ?? '') === (string)($compatKey ?? '')
@@ -7178,60 +7959,129 @@ function b2_sync(string $bucket,string $prefix,string $mode,array $opts): array 
                         db()->prepare("UPDATE photos SET b2_bucket=?,b2_key=?,compatibility_b2_key=?,converted_from_heic=1,preview_status='ready',preview_error=NULL,original_filename=?,file_ext=?,file_size=?,is_missing=0,synced_at=NOW() WHERE id=?")
                             ->execute([$bucket,$key,$compatKey,basename($key),pathinfo($key,PATHINFO_EXTENSION),(int)($f['contentLength']??0),$pid]);
                     } else {
-                        db()->prepare("UPDATE photos SET b2_bucket=?,b2_key=?,original_filename=?,file_ext=?,file_size=?,is_missing=0,synced_at=NOW() WHERE id=?")
-                            ->execute([$bucket,$key,basename($key),pathinfo($key,PATHINFO_EXTENSION),(int)($f['contentLength']??0),$pid]);
+                        $updPhoto->execute([$bucket,$key,basename($key),pathinfo($key,PATHINFO_EXTENSION),(int)($f['contentLength']??0),$pid]);
                     }
-                    persist_photo_metadata_json($pid);
-                    $updatedP++;
+                    persist_photo_metadata_json($pid); $updatedP++;
                 }
-                else { db()->prepare("INSERT INTO photos(b2_bucket,b2_key,original_filename,file_ext,file_size,is_downloadable,uuid,album_id,source_type,visibility,synced_at) VALUES(?,?,?,?,?,?,?,?, 'b2_sync','published',NOW())")->execute([$bucket,$key,basename($key),pathinfo($key,PATHINFO_EXTENSION),(int)($f['contentLength']??0),$albumDownloadEnabled,uid(),$albumId]); $pid=(int)db()->lastInsertId(); persist_photo_metadata_json($pid); $createdP++; }
+                else { $insPhoto->execute([$bucket,$key,basename($key),pathinfo($key,PATHINFO_EXTENSION),(int)($f['contentLength']??0),(int)($albumIdByPath[$albumPath][1] ?? 1),uid(),$albumId]); $pid=(int)db()->lastInsertId(); persist_photo_metadata_json($pid); $createdP++; }
             }
         }
     }
-    // "scan only" neturi nieko rasyti - anksciau sis blokas veikdavo ir tuo
-    // rezimu. O nebaigtas sarasas zymejimui netinka is principo: ko nemateme,
-    // dar nereiskia, kad to nera.
-    $missingSkipped='';
-    if(!empty($opts['mark_missing'])&&$mode==='scan only') $missingSkipped='rezimas "scan only" nieko nekeicia';
-    elseif(!empty($opts['mark_missing'])&&$listTruncated) $missingSkipped='B2 sarasas nebaigtas - zymėti dingusiu negalima';
-    if(!$dry&&!empty($opts['mark_missing'])&&$missingSkipped===''){
-        $where = "b2_key IS NOT NULL AND b2_key <> ''";
-        $params = [];
-        $roots = array_values(array_unique(array_filter($scanRoots, fn($v) => $v !== '')));
-        if ($roots) {
-            $where .= ' AND ('.implode(' OR ', array_fill(0, count($roots), 'b2_key LIKE ?')).')';
-            foreach ($roots as $root) $params[] = $root.'/%';
-        }
-        if ($seen) {
-            $where .= ' AND b2_key NOT IN ('.implode(',', array_fill(0, count($seen), '?')).')';
-            $params = [...$params, ...array_keys($seen)];
-        }
-        $stmt = db()->prepare("UPDATE photos SET is_missing=1, updated_by=? WHERE $where");
-        $stmt->execute([$_SESSION['admin']['id'] ?? null, ...$params]);
-        $missingMarked = $stmt->rowCount();
+    $rec = ['restored'=>0,'marked'=>0,'mark_candidates'=>0,'mark_skipped'=>'','rows_checked'=>0,'listing_complete'=>$complete];
+    b2_sync_progress($runId, 'files', $listedCount, $listedCount, true);
+    if(!empty($opts['mark_missing'])){
+        b2_sync_progress($runId, 'reconcile', 0, 1, true);
+        // Dry run ir "scan only" tik suskaiciuoja (nieko neraso): "scan only" pagal
+        // 2026-09-22 sprendima nieko nekeicia - rasoma tik update/create rezimais.
+        $rec = b2_reconcile_missing_flags($scanRoots, $existing, $complete, $dry || $mode === 'scan only');
+        // Irasom IS KARTO: jei veliau kas nors nutruks, pedsakas lieka.
+        audit('b2_sync', (int)($opts['run_id'] ?? 0) ?: null, 'reconcile_missing', 'B2 missing suderinimas'.(($dry || $mode === 'scan only') ? ' (tik suskaičiuota, niekas nepakeista)' : '').': '.$rec['restored'].' atstatyta, '.$rec['marked'].' pažymėta'.($rec['mark_skipped'] !== '' ? ' — '.$rec['mark_skipped'] : ''), $rec);
+        if (!empty($opts['run_id'])) db()->prepare("UPDATE b2_sync_runs SET result=? WHERE id=?")->execute([json_encode(['stage'=>'reconciled'] + $rec, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES), (int)$opts['run_id']]);
     }
-    if (!$dry && $mode !== 'scan only') {
+    if ($write) {
+        $albumNo = 0; $albumTotal = count($touchedAlbums);
         foreach ($touchedAlbums as $albumId => $albumPath) {
+            b2_sync_progress($runId, 'albums', ++$albumNo, $albumTotal);
+            persist_album_metadata_json((int)$albumId);
             $res = consolidate_album_photo_rows_to_prefix((int)$albumId, (string)$albumPath);
             $consolidatedRows += (int)($res['deleted'] ?? 0);
         }
     }
-    return ['albums'=>$albums,'photos'=>$photos,'created_albums'=>$createdA,'created_photos'=>$createdP,'updated_photos'=>$updatedP,'unchanged_photos'=>$skippedP,'missing_marked'=>$missingMarked,'missing_skipped'=>$missingSkipped,'list_truncated'=>$listTruncated,'consolidated_duplicates'=>$consolidatedRows,'dry_run'=>$dry];
+    return ['albums'=>$albums,'photos'=>$photos,'created_albums'=>$createdA,'created_photos'=>$createdP,'updated_photos'=>$updatedP,'unchanged_photos'=>$skippedP,'missing_marked'=>$rec['marked'],'missing_restored'=>$rec['restored'],'missing_candidates'=>$rec['mark_candidates'],'missing_skipped'=>$rec['mark_skipped'],'listing_complete'=>$complete,'b2_files'=>count($existing),'consolidated_duplicates'=>$consolidatedRows,'dry_run'=>$dry];
+}
+// Ar failas tikrai yra B2 (vienas b2_list_file_names kreipinys).
+function b2_file_exists(string $key): bool {
+    $key = trim($key, '/');
+    if ($key === '') return false;
+    $j = b2_api('b2_list_file_names', ['bucketId'=>(string)B2_BUCKET_ID, 'prefix'=>$key, 'startFileName'=>$key, 'maxFileCount'=>1]);
+    return trim((string)($j['files'][0]['fileName'] ?? ''), '/') === $key;
+}
+/* Dvipusis is_missing suderinimas pagal B2 sarasa ($existing = visi failu
+ * vardai po $roots). Atstatymas saugus visada - failas matytas. Zymejimas -
+ * tik pilnam sarasui, tik su saugikliu ir imties patikra B2. */
+function b2_reconcile_missing_flags(array $roots, array $existing, bool $complete, bool $dry = false): array {
+    $roots = array_values(array_unique(array_filter(array_map(fn($r) => trim((string)$r, '/'), $roots), fn($v) => $v !== '')));
+    $where = "b2_key IS NOT NULL AND b2_key <> ''"; $params = [];
+    if ($roots) {
+        $where .= ' AND ('.implode(' OR ', array_fill(0, count($roots), 'b2_key LIKE ?')).')';
+        foreach ($roots as $r) $params[] = $r.'/%';
+    }
+    $st = db()->prepare("SELECT id, b2_key, is_missing FROM photos WHERE $where");
+    $st->execute($params);
+    $toRestore = []; $toMark = []; $rows = 0;
+    while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+        $rows++;
+        $k = trim((string)$r['b2_key'], '/');
+        $has = isset($existing[$k]);
+        if ($has && (int)$r['is_missing'] === 1) $toRestore[] = (int)$r['id'];
+        elseif (!$has && (int)$r['is_missing'] !== 1) $toMark[$k] = (int)$r['id'];
+    }
+    $admin = $_SESSION['admin']['id'] ?? null;
+    foreach (($dry ? [] : array_chunk($toRestore, 500)) as $chunk) {
+        db()->prepare("UPDATE photos SET is_missing=0, synced_at=NOW(), updated_by=? WHERE id IN (".implode(',', array_fill(0, count($chunk), '?')).")")->execute([$admin, ...$chunk]);
+    }
+    $marked = 0; $skipped = '';
+    $limit = max(50, (int)ceil($rows * 0.02));
+    if ($toMark) {
+        if (!$complete) {
+            $skipped = 'B2 sąrašas nepilnas — missing nežymėta ('.count($toMark).' kandidatų)';
+        } elseif (count($toMark) > $limit) {
+            $skipped = 'per daug kandidatų ('.count($toMark).' iš '.$rows.', riba '.$limit.') — tikėtina B2 sąrašo klaida, missing nežymėta. Tikrinkite albumus per „Re-check in B2"';
+        } else {
+            // Imtis: iki 20 kandidatu tikrinam tiesiogiai. Jei bent vienas
+            // yra B2 - sarasu pasitiketi negalima, nieko nezymim.
+            $sample = array_slice(array_keys($toMark), 0, 20);
+            try {
+                $found = array_values(array_filter($sample, 'b2_file_exists'));
+            } catch (Throwable $e) {
+                $found = null;
+                $skipped = 'nepavyko patikrinti imties B2 ('.$e->getMessage().') — missing nežymėta';
+            }
+            if ($found === null) {
+                // $skipped jau nustatytas
+            } elseif ($found) {
+                $skipped = 'patikrinus B2 rasti '.count($found).' iš '.count($sample).' „trūkstamų" failų (pvz. '.$found[0].') — sąrašas nepatikimas, missing nežymėta';
+            } else {
+                foreach (($dry ? [] : array_chunk(array_values($toMark), 500)) as $chunk) {
+                    db()->prepare("UPDATE photos SET is_missing=1, updated_by=? WHERE id IN (".implode(',', array_fill(0, count($chunk), '?')).")")->execute([$admin, ...$chunk]);
+                }
+                $marked = count($toMark);
+            }
+        }
+    }
+    return ['dry_run'=>$dry, 'restored'=>count($toRestore), 'marked'=>$marked, 'mark_candidates'=>count($toMark), 'mark_skipped'=>$skipped, 'rows_checked'=>$rows, 'listing_complete'=>$complete];
 }
 function b2_log(): void {
     csrf();
     $bucket=(string)($_POST['bucket']??''); $prefix=trim((string)($_POST['prefix']??''),'/'); $mode=(string)($_POST['mode']??'scan only');
-    $opts=['dry_run'=>false,'mark_missing'=>isset($_POST['mark_missing'])];
+    $opts=['dry_run'=>isset($_POST['dry_run']),'mark_missing'=>isset($_POST['mark_missing'])];
     db()->prepare("INSERT INTO b2_sync_runs(bucket,prefix,mode,options,status,started_at,triggered_by) VALUES(?,?,?,?, 'running',NOW(),?)")->execute([$bucket,$prefix,$mode,json_encode($opts),$_SESSION['admin']['id']??null]);
     $runId=(int)db()->lastInsertId();
+    $opts['run_id'] = $runId;
+    // Pilnas sarasas + DB darbas didesniam archyvui trunka ilgiau nei
+    // numatytas PHP limitas; nutrukus pusiaukeleje b2_sync_runs liktu 'running'.
+    @set_time_limit(600);
+    ignore_user_abort(true);
+    // Fonu (JS) paleistas sync: sesija atlaisvinama, kad eigos uzklausos
+    // (?action=b2_sync_status) nelauktu sesijos uzrakto iki sync pabaigos.
+    // $_SESSION lieka skaitomas (audit() ima admin id), flash() nebenaudojam.
+    $json = wants_json_response();
+    if ($json) session_write_close();
+    audit('b2_sync',$runId,'start','B2 sync started: '.$mode.($opts['mark_missing'] ? ' + missing suderinimas' : '').($opts['dry_run'] ? ' (dry run)' : ''),['prefix'=>$prefix,'mode'=>$mode,'opts'=>$opts]);
     try{
         $result=b2_sync($bucket,$prefix,$mode,$opts);
         db()->prepare("UPDATE b2_sync_runs SET status='finished', result=?, finished_at=NOW() WHERE id=?")->execute([json_encode($result,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),$runId]);
         audit('b2_sync',$runId,'run','B2 sync finished',$result);
-        if(!empty($result['missing_skipped'])) flash('Dingusiu zymejimas praleistas: '.$result['missing_skipped'].'.', 'err');
-        flash('B2 sync finished: '.$result['albums'].' albums, '.$result['photos'].' photos synced, '.$result['missing_marked'].' missing DB rows marked, '.$result['consolidated_duplicates'].' duplicate rows consolidated.');
+        $msg = 'B2 sync finished'.($result['dry_run'] ? ' (DRY RUN — niekas nepakeista)' : '').': '.$result['albums'].' albums, '.$result['photos'].' photos ('.$result['unchanged_photos'].' nepakitę), B2 failų: '.$result['b2_files'].($result['listing_complete'] ? '' : ' (SĄRAŠAS NEPILNAS)').'.';
+        if ($opts['mark_missing']) $msg .= ' Missing: '.$result['missing_restored'].' atstatyta, '.$result['missing_marked'].' pažymėta'.($result['missing_skipped'] !== '' ? ' — '.$result['missing_skipped'] : '').'.';
+        $msg .= ' '.$result['consolidated_duplicates'].' duplicate rows consolidated.';
+        $warn = ($result['missing_skipped'] !== '' || !$result['listing_complete']);
+        if ($json) json_exit(['ok'=>true,'run_id'=>$runId,'message'=>$msg,'warn'=>$warn]);
+        flash($msg, $warn ? 'err' : 'ok');
     }catch(Throwable $e){
         db()->prepare("UPDATE b2_sync_runs SET status='failed', result=?, finished_at=NOW() WHERE id=?")->execute([json_encode(['error'=>$e->getMessage()]),$runId]);
+        audit('b2_sync',$runId,'failed','B2 sync failed: '.$e->getMessage(),['error'=>$e->getMessage()]);
+        if ($json) json_exit(['ok'=>false,'run_id'=>$runId,'error'=>'B2 sync failed: '.$e->getMessage()], 500);
         flash('B2 sync failed: '.$e->getMessage(),'err');
     }
     go('?page=b2');
@@ -7252,6 +8102,14 @@ function zip_request(): void {
     $output = safe_b2_name($albumSlug, 220).'.zip';
     db()->prepare("INSERT INTO zip_downloads(type,album_id,variant,only_published,output_filename,files_count,status,created_by) VALUES('album',?,?,?,?,?,'requested',?)")->execute([$album,$_POST['variant']??'originals',isset($_POST['only_published'])?1:0,$output,$files,$_SESSION['admin']['id']??null]); audit('zip',null,'request','ZIP request recorded'); flash('ZIP request recorded.'); go('?page=zip');
 }
+
+// /upload/index.php (nariu ikelimo irankis) ikrauna si faila kaip BIBLIOTEKA:
+// B2 klientas, EXIF skaitymas, raktu skyrimas ir photos irasai turi gyventi
+// vienoje vietoje. Kopijuoti juos i antra faila reisktu kartoti
+// simple-foto-admin klaida - dvi atsakos, kurios tyliai issiskiria.
+// Bibliotekos rezimu maršrutizatorius neturi veikti: kviecianti puse pati
+// nusprendzia, ka rodyti.
+if (defined('KLAJUNAS_ADMIN_LIB')) return;
 
 try {
     ensure_schema();
@@ -7290,6 +8148,11 @@ try {
     if ($action==='bulk_photos') { need_login(); bulk('photos'); }
     if ($action==='create_tag_inline') { need_login(); create_tag_inline(); }
     if ($action==='save_admin') { need_login(); save_admin(); }
+    if ($action==='save_member') { need_login(); save_member(); }
+    if ($action==='toggle_member_active') { need_login(); toggle_member_active(); }
+    if ($action==='toggle_member_album') { need_login(); toggle_member_album(); }
+    if ($action==='create_member_invite') { need_login(); create_member_invite(); }
+    if ($action==='revoke_member_invite') { need_login(); revoke_member_invite(); }
     if ($action==='save_settings') { need_login(); save_settings(); }
     if ($action==='b2_test') { need_login(); b2_test_connection(); }
     if ($action==='save_takeout_stage_profile') { need_login(); save_takeout_stage_profile(); }
@@ -7306,6 +8169,7 @@ try {
     if ($action==='takeout_cancel') { need_login(); takeout_cancel(); }
     if ($action==='takeout_import') { need_login(); takeout_import(); }
     if ($action==='b2_log') { need_login(); b2_log(); }
+    if ($action==='b2_sync_status') { need_login(); b2_sync_status(); }
     if ($action==='db_backup_now') { need_login(); db_backup_now(); }
     if ($action==='create_db_album_from_b2_prefix') { need_login(); create_db_album_from_b2_prefix(); }
     if ($action==='link_b2_prefix_to_album') { need_login(); link_b2_prefix_to_album(); }
@@ -7329,6 +8193,7 @@ try {
         'photos' => photos(),
         'photo_edit' => photo_edit(),
         'tags' => tags(),
+        'members' => members_page(),
         'admins' => admins(),
         'audit' => audit_page(),
         'access' => access_page(),
