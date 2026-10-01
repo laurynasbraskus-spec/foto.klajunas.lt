@@ -47,11 +47,11 @@ if ($slug !== '' || $albumId > 0) {
             [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
         );
         if ($albumId > 0) {
-            $q = $pdo->prepare("SELECT id,slug,title,subtitle,description,event_date,location_name,cover_photo_id
+            $q = $pdo->prepare("SELECT id,slug,title,subtitle,description,event_date,event_date_end,location_name,cover_photo_id
                                   FROM albums WHERE visibility='published' AND id=? LIMIT 1");
             $q->execute([$albumId]);
         } else {
-            $q = $pdo->prepare("SELECT id,slug,title,subtitle,description,event_date,location_name,cover_photo_id
+            $q = $pdo->prepare("SELECT id,slug,title,subtitle,description,event_date,event_date_end,location_name,cover_photo_id
                                   FROM albums WHERE visibility='published' AND (slug=? OR source_path=?) LIMIT 1");
             $q->execute([$slug, $slug]);
         }
@@ -59,7 +59,7 @@ if ($slug !== '' || $albumId > 0) {
         if (!$al && $albumId === 0 && $slug !== '') {
             // Pervadinto albumo senas slug'as (album_slug_aliases pildo admin'as).
             try {
-                $q = $pdo->prepare("SELECT a.id,a.slug,a.title,a.subtitle,a.description,a.event_date,a.location_name,a.cover_photo_id
+                $q = $pdo->prepare("SELECT a.id,a.slug,a.title,a.subtitle,a.description,a.event_date,a.event_date_end,a.location_name,a.cover_photo_id
                                       FROM album_slug_aliases s JOIN albums a ON a.id=s.album_id
                                      WHERE s.slug=? AND a.visibility='published' LIMIT 1");
                 $q->execute([$slug]);
@@ -78,7 +78,14 @@ if ($slug !== '' || $albumId > 0) {
                 (string)($al['location_name'] ?? ''),
                 (string)($al['subtitle'] ?? ''),
             ]);
-            $desc = trim((string)($al['description'] ?? '')) ?: (implode(' · ', $bits) ?: $desc);
+            // Kortelėje visada matosi data ir vieta; aprašymas - po jų, sutrumpintas
+            // (scraper'iai vis tiek kerpa ~200 simbolių, o ilgas tekstas nustumia datą).
+            $dateLabel = (string)($al['event_date'] ?? '');
+            if (!empty($al['event_date_end']) && $al['event_date_end'] !== $al['event_date']) $dateLabel .= ' – ' . $al['event_date_end'];
+            $head = implode(' · ', array_filter([$dateLabel, (string)($al['location_name'] ?? '')]));
+            $text = trim(preg_replace('~\s+~u', ' ', (string)($al['description'] ?? '') ?: (string)($al['subtitle'] ?? '')));
+            if (mb_strlen($text) > 220) $text = rtrim(mb_substr($text, 0, 217)) . '…';
+            $desc = implode(' — ', array_filter([$head, $text])) ?: $desc;
 
             // Viršelis: pasirinktas cover, kitaip pirma rodoma nuotrauka. JPG
             // suderinamumo raktas pirmenybėje; OG scraper'iams duodam jpeg, ne webp.
@@ -105,6 +112,7 @@ if ($slug !== '' || $albumId > 0) {
             }
             $coverRot = (int)($cr['r'] ?? 0);
             if ($cover && preg_match('~\.(jpe?g|png|webp)$~i', (string)$cover)) {
+                // img.php leidžia tik 128/420/1400 dydžius (podėlio apsauga), todėl 1400.
                 $image = $base . '/img.php?file=' . rawurlencode((string)$cover) . '&w=1400&q=83&fmt=jpeg&v=7' . (in_array($coverRot, [90, 180, 270], true) ? '&rot=' . $coverRot : '');
             }
         }
@@ -122,6 +130,18 @@ if ($albumId > 0 && !$found) $slug = '';
 $spaUrl = $slug !== '' ? $base . '/?a=' . rawurlencode($slug) . ($f >= 1 ? '&f=' . $f : '') : $base . '/';
 $canonical = $slug !== '' ? $base . '/a/' . rawurlencode($slug) : $base . '/';
 
+// Nuorodų peržiūros bot'ai (iMessage/Apple naudoja tikrą WebKit ir VYKDO
+// peradresavimą - tada kortelė imama iš SPA, be pavadinimo ir viršelio).
+// Jiems atiduodam tik OG HTML be jokio redirect'o; žmonėms - iškart 302.
+$ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+$isBot = $ua === '' || (bool)preg_match('~facebookexternalhit|facebot|twitterbot|whatsapp|telegrambot|slackbot|discordbot|linkedinbot|skypeuripreview|applebot|googlebot|bingbot|pinterest|redditbot|viber|embedly|iframely|mastodon|vkshare|snapchat|bot\b|crawler|spider|preview~i', $ua);
+if (!$isBot) {
+    header('Cache-Control: private, no-store');
+    header('Vary: User-Agent');
+    header('Location: ' . $spaUrl, true, 302);
+    exit;
+}
+header('Vary: User-Agent');
 header('Content-Type: text/html; charset=utf-8');
 header('Cache-Control: public, max-age=600, s-maxage=3600');
 ?><!DOCTYPE html>
@@ -138,11 +158,12 @@ header('Cache-Control: public, max-age=600, s-maxage=3600');
 <meta property="og:url" content="<?= og_e($canonical) ?>">
 <?php if ($image !== ''): ?>
 <meta property="og:image" content="<?= og_e($image) ?>">
+<meta property="og:image:secure_url" content="<?= og_e($image) ?>">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:alt" content="<?= og_e($title) ?>">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="<?= og_e($image) ?>">
 <?php endif; ?>
-<meta http-equiv="refresh" content="0;url=<?= og_e($spaUrl) ?>">
-<script>location.replace(<?= json_encode($spaUrl, JSON_UNESCAPED_SLASHES) ?>);</script>
 </head>
 <body>
 <p><a href="<?= og_e($spaUrl) ?>"><?= og_e($title) ?> — atidaryti galeriją</a></p>

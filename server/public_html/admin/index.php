@@ -662,6 +662,11 @@ function backfill_metadata_sidecars(): array {
 function need_login(): void {
     if (empty($_SESSION['admin'])) {
         if (wants_json_response()) json_exit(['ok' => false, 'error' => 'Login required.'], 401);
+        // Po prisijungimo grizti i prasyta puslapi (pvz. /?a=<slug>/edit nuoroda).
+        // Saugomi tik GET page/id/slug - jokiu action'u ir jokiu isoriniu adresu.
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && empty($_GET['action']) && isset($_GET['page']) && $_GET['page'] !== 'login') {
+            $_SESSION['after_login'] = '?'.http_build_query(array_intersect_key($_GET, ['page' => 1, 'id' => 1, 'slug' => 1]));
+        }
         go('?page=login');
     }
 }
@@ -742,7 +747,10 @@ function do_login(): void {
         }
         if (!$admin) throw new RuntimeException('Unauthorized Google account: '.$email);
         $_SESSION['admin'] = $admin;
-        audit('admin', (int)$_SESSION['admin']['id'], 'login', 'Admin logged in'); go('?page=dashboard');
+        audit('admin', (int)$_SESSION['admin']['id'], 'login', 'Admin logged in');
+        $next = (string)($_SESSION['after_login'] ?? '');
+        unset($_SESSION['after_login']);
+        go(preg_match('~^\?page=[a-z_]+(&[A-Za-z0-9_=%.\-]*)?$~', $next) ? $next : '?page=dashboard');
     } catch (Throwable $e) { flash($e->getMessage(), 'err'); go('?page=login'); }
 }
 function head(string $title): void {
@@ -2301,6 +2309,15 @@ function albums(): void {
 }
 
 function album_edit(): void {
+    // ?page=album_edit&slug=<slug> (is viesos /?a=<slug>/edit nuorodos) -> &id=
+    if (!(int)($_GET['id'] ?? 0) && trim((string)($_GET['slug'] ?? '')) !== '') {
+        $st = db()->prepare("SELECT id FROM albums WHERE slug=? OR TRIM(BOTH '/' FROM source_path)=? ORDER BY slug=? DESC LIMIT 1");
+        $wanted = trim((string)$_GET['slug'], "/ ");
+        $st->execute([$wanted, $wanted, $wanted]);
+        $found = (int)($st->fetchColumn() ?: 0);
+        if ($found) go('?page=album_edit&id='.$found);
+        flash('Albumas nerastas: '.(string)$_GET['slug'], 'err'); go('?page=albums');
+    }
     head(((int)($_GET['id'] ?? 0)) ? 'Edit album' : 'New album');
     $id=(int)($_GET['id'] ?? 0);
     $r=['id'=>0,'title'=>'','slug'=>'','subtitle'=>'','description'=>'','event_date'=>'','event_date_end'=>'','location_name'=>'','sport_type'=>'','author_name'=>'','copyright_text'=>'','cover_mode'=>'auto','visibility'=>'draft','sort_order'=>0,'download_enabled'=>1,'source_path'=>'','seo_title'=>'','seo_description'=>'','dbsportas_url'=>'','klajunas_url'=>'','other_url'=>'','notes_internal'=>''];

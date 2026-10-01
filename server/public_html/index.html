@@ -2,6 +2,11 @@
 <html lang="lt">
 <head>
 <meta charset="UTF-8">
+<script>
+// /?a=<albumo-slug>/edit -> tiesiai i admin albumo redagavima (admin pats
+// paprasys prisijungti ir po prisijungimo grazins atgal).
+(function(){var a=new URLSearchParams(location.search).get("a")||"";var m=a.match(/^(.+?)\/+edit\/?$/);if(m)location.replace("/admin/?page=album_edit&slug="+encodeURIComponent(m[1]));})();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>foto.klajunas.lt — albumai</title>
 <meta name="description" content="OK Klajūnas nuotraukų archyvas — orientavimosi sporto, bėgimo ir žygių renginių albumai.">
@@ -336,6 +341,7 @@
   }
   .lb-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
   .lb-left .titles { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-left .back-pill { flex-shrink: 0; }
   .lb-title { font-size: 14.5px; font-weight: 600; }
   .lb-album {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
@@ -1682,24 +1688,29 @@
     if (!topbarEl) return;
     document.documentElement.style.setProperty("--topbar-h", topbarEl.getBoundingClientRect().height + "px");
   }
-  // Perziuros antrastes plotis - is tikru kaires ir desines bloku krastu.
-  // Dezute centruota lango atzvilgiu (o atidarius info skydeli pastumta 150 px
-  // i kaire), todel imam mazesniaji is dvieju tarpu ir dvigubinam: taip ji
-  // niekada neuzlipa nei ant failo pavadinimo, nei ant mygtuku.
+  // Perziuros antrastes plotis. Albumo pavadinimas svarbesnis uz failo varda:
+  // pirma jam atiduodama vieta (riboja tik desines mygtukai - dezute centruota,
+  // tad ji simetriska), o failo vardui lieka tai, kas kaireje dar laisva, ir jis
+  // nukerpamas su "...". Anksciau buvo atvirksciai - ilgas failo vardas
+  // ("825329923_1804401968356232_..._n.jpg") suspausdavo albuma iki 160 px ir
+  // vis tiek ant jo uzlipdavo.
   function sizeLbAlbum() {
     const tag = $("lbTag");
-    if (!tag || !tag.offsetParent) return;   // iki 900 px ji paslepta
-    const bar = document.querySelector(".lb-top");
     const left = document.querySelector(".lb-left");
+    if (!tag || !left) return;
+    if (!tag.offsetParent || !tag.textContent.trim()) { left.style.maxWidth = ""; return; }   // iki 900 px ji paslepta
+    const bar = document.querySelector(".lb-top");
     const acts = document.querySelector(".lb-actions");
-    if (!bar || !left || !acts) return;
+    if (!bar || !acts) return;
     const GAP = 16;
     const box = bar.getBoundingClientRect();
     const shift = parseFloat(getComputedStyle(tag).marginLeft) || 0;
     const centre = box.left + box.width / 2 + shift;
-    const room = Math.min(centre - left.getBoundingClientRect().right,
-                          acts.getBoundingClientRect().left - centre) - GAP;
+    const room = acts.getBoundingClientRect().left - centre - GAP;
     tag.style.maxWidth = Math.max(160, room * 2) + "px";
+    const half = tag.getBoundingClientRect().width / 2;
+    const leftRoom = centre - half - GAP - left.getBoundingClientRect().left;
+    left.style.maxWidth = Math.max(90, leftRoom) + "px";
   }
   syncTopbarHeight();
   window.addEventListener("resize", () => { syncTopbarHeight(); sizeLbAlbum(); });
