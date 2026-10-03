@@ -110,6 +110,19 @@ function inbox_json(array $payload, int $code = 200): never {
     exit;
 }
 function inbox_fail(string $msg, int $code = 400): never { inbox_json(['ok'=>false, 'error'=>$msg], $code); }
+// Laiskas info@klajunas.lt, kai siunta uzbaigta. Ta pati logika kaip
+// foto.klajunas.lt admin/index.php upload_notify_mail() (sis puslapis admin'o
+// bibliotekos nekrauna). Serveris 188.245.41.88 yra klajunas.lt SPF irase.
+function inbox_notify_mail(string $subject, string $body): bool {
+    $headers = ['From: foto.klajunas.lt <noreply@klajunas.lt>', 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: 8bit'];
+    try {
+        $ok = mail('info@klajunas.lt', '=?UTF-8?B?'.base64_encode($subject).'?=', $body, implode("\r\n", $headers), '-fnoreply@klajunas.lt');
+    } catch (Throwable $e) {
+        $ok = false;
+    }
+    if (!$ok) error_log('[foto.klajunas.lt inbox] mail() nepavyko: '.$subject);
+    return $ok;
+}
 function inbox_csrf(): void {
     if (!hash_equals((string)($_SESSION['_token'] ?? ''), (string)($_POST['_token'] ?? ''))) {
         inbox_fail('Sesija pasibaigė - perkraukite puslapį.', 401);
@@ -518,10 +531,26 @@ try {
         $token = (string)($_POST['batch'] ?? '');
         $batchId = (int)($_SESSION['inbox_batches'][$token] ?? 0);
         if ($batchId <= 0) inbox_fail('Siunta nerasta.', 404);
-        inbox_db()->prepare("UPDATE inbox_batches SET status='closed' WHERE id=? AND status='open'")->execute([$batchId]);
-        $st = inbox_db()->prepare("SELECT title,files_count,bytes_total FROM inbox_batches WHERE id=? LIMIT 1");
+        $close = inbox_db()->prepare("UPDATE inbox_batches SET status='closed' WHERE id=? AND status='open'");
+        $close->execute([$batchId]);
+        $st = inbox_db()->prepare("SELECT title,uploader_name,note,event_date,files_count,bytes_total FROM inbox_batches WHERE id=? LIMIT 1");
         $st->execute([$batchId]);
         $b = $st->fetch() ?: [];
+        // Laiskas tik tam kreipiniui, kuris siunta is tikruju uzdare - pakartotinis
+        // 'done' antro laisko nesiuncia. Tuscia siunta (0 failu) - be laisko.
+        if ($close->rowCount() === 1 && (int)($b['files_count'] ?? 0) > 0) {
+            $who = trim((string)($b['uploader_name'] ?? '')) !== '' ? (string)$b['uploader_name'] : 'Nenurodytas';
+            inbox_notify_mail(
+                'Nauja siunta: „'.(string)($b['title'] ?? '').'" ('.(int)$b['files_count'].' failai, '.$who.')',
+                "upload.klajunas.lt gauta nauja siunta.\n\n"
+                .'Pavadinimas: '.(string)($b['title'] ?? '')."\n"
+                .'Renginio data: '.(string)($b['event_date'] ?? '')."\n"
+                .'Įkėlė: '.$who."\n"
+                .'Failų: '.(int)$b['files_count'].' ('.inbox_human_bytes((int)($b['bytes_total'] ?? 0)).")\n"
+                .(trim((string)($b['note'] ?? '')) !== '' ? 'Pastaba: '.(string)$b['note']."\n" : '')
+                ."\nPeržiūrėti ir perkelti į galeriją:\nhttps://foto.klajunas.lt/admin/?page=inbox&batch=".$batchId."\n"
+            );
+        }
         inbox_json([
             'ok' => true,
             'files' => (int)($b['files_count'] ?? 0),

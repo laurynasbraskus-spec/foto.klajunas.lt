@@ -395,6 +395,30 @@ function ensure_member_schema(): void {
     if (!db()->query("SHOW COLUMNS FROM albums LIKE 'accepts_member_uploads'")->fetch()) {
         db()->exec("ALTER TABLE albums ADD accepts_member_uploads TINYINT(1) NOT NULL DEFAULT 0 AFTER download_enabled");
     }
+    // Kada apie si ikelima issiustas laiskas info@ - kad pakartotinis
+    // member_upload_done nesiustu antro laisko.
+    if (!db()->query("SHOW COLUMNS FROM member_uploads LIKE 'notified_at'")->fetch()) {
+        db()->exec("ALTER TABLE member_uploads ADD notified_at DATETIME NULL AFTER bytes_stored");
+    }
+}
+
+/**
+ * Laiskas info@klajunas.lt apie nario ikelima. Siunciama per PHP mail() is
+ * hostingo serverio 188.245.41.88, kuris irasytas klajunas.lt SPF. Nesekmė
+ * tik zurnale - ikelimo ji nestabdo (failai jau B2 ir DB).
+ */
+const UPLOAD_NOTIFY_TO = 'info@klajunas.lt';
+const UPLOAD_NOTIFY_FROM = 'noreply@klajunas.lt';
+function upload_notify_mail(string $subject, string $body, ?string $replyTo = null): bool {
+    $headers = ['From: foto.klajunas.lt <'.UPLOAD_NOTIFY_FROM.'>', 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: 8bit'];
+    if ($replyTo !== null && filter_var($replyTo, FILTER_VALIDATE_EMAIL)) $headers[] = 'Reply-To: '.$replyTo;
+    try {
+        $ok = mail(UPLOAD_NOTIFY_TO, '=?UTF-8?B?'.base64_encode($subject).'?=', $body, implode("\r\n", $headers), '-f'.UPLOAD_NOTIFY_FROM);
+    } catch (Throwable $e) {
+        $ok = false;
+    }
+    if (!$ok) error_log('[upload_notify] mail() nepavyko: '.$subject);
+    return $ok;
 }
 
 /** Rolės, kurioms leidžiama kelti per /upload. Superadmin irgi - kad galėtum pats išbandyti. */
