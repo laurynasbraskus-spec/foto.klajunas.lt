@@ -31,7 +31,8 @@ if (!defined('DB_USER')) define('DB_USER', 'klajunas_adm');
 if (!defined('DB_PASS')) define('DB_PASS', '');
 const GOOGLE_CLIENT_ID = '107457534251-rqhhm5vm2ok3anb25uf5l4qcudl475ou.apps.googleusercontent.com';
 const ALLOWED_EMAILS = ['info@klajunas.lt', 'okklajunas@gmail.com'];
-const STATUSES = ['draft', 'ready', 'published', 'private', 'hidden'];
+// 'ready' panaikintas 2026-10-03 (neturejo prasmes; DB eiluciu su juo nebuvo).
+const STATUSES = ['draft', 'published', 'private', 'hidden'];
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');
@@ -161,9 +162,25 @@ function source_path_from_title(string $s): string {
 function normalize_visibility(?string $value, string $fallback='draft'): string {
     $v = strtolower(trim((string)$value));
     if ($v === 'archived') $v = 'hidden';
+    if ($v === 'ready') $v = 'draft';
     if ($v === '') $v = strtolower(trim($fallback));
     if ($v === 'archived') $v = 'hidden';
     return in_array($v, STATUSES, true) ? $v : 'draft';
+}
+// Kliento (formos/JSON) matomumas. normalize_visibility() nezinoma reiksme
+// tyliai paverstu draft (2026-10-03: 85 nuotr. su 'public' tapo nematomos),
+// todel cia: '' -> $default, alias'ai -> kanonine, nezinoma -> null (atmesti).
+const VISIBILITY_ALIASES = ['public' => 'published', 'archived' => 'hidden', 'ready' => 'draft'];
+function visibility_from_input(mixed $value, string $default='draft'): ?string {
+    if (!is_scalar($value) && $value !== null) return null;
+    $v = strtolower(trim((string)$value));
+    if ($v === '') return normalize_visibility($default);
+    $v = VISIBILITY_ALIASES[$v] ?? $v;
+    return in_array($v, STATUSES, true) ? $v : null;
+}
+function invalid_visibility_message(mixed $value): string {
+    $shown = is_scalar($value) ? trim((string)$value) : gettype($value);
+    return 'Neleistinas matomumas „'.$shown.'". Leidžiamos reikšmės: '.implode(', ', STATUSES).' (public = published). Niekas neįrašyta.';
 }
 function ensure_schema(): void {
     $sql = [
@@ -1197,6 +1214,29 @@ document.getElementById("rjCopy").addEventListener("click",function(){var txt=JS
     let activePreviewIndex=-1;
     let customOrderBackup=[];
     function syncOrder(){order.value=[...board.querySelectorAll(".photo-tile")].map(x=>x.dataset.id).join(",");}
+    // Tvarka issaugoma iskart po kiekvieno perkelimo ar rikiavimo pakeitimo -
+    // anksciau reikejo spausti "Save order", o pamirsus perkelimas dingdavo.
+    let savedOrder=null, saveTimer=null, saveSeq=0;
+    function autoSaveOrder(){
+        syncOrder();
+        if(order.value===savedOrder || order.value==="") return;
+        clearTimeout(saveTimer);
+        hint.textContent="Saugoma...";
+        saveTimer=setTimeout(async()=>{
+            const sent=order.value, seq=++saveSeq;
+            try{
+                const res=await fetch("?action=save_photo_order",{method:"POST",body:new FormData(document.getElementById("orderForm")),headers:{"Accept":"application/json","X-Requested-With":"XMLHttpRequest"},credentials:"same-origin"});
+                const data=await res.json().catch(()=>({}));
+                if(!res.ok||!data.ok) throw new Error(data.error||("HTTP "+res.status));
+                if(seq!==saveSeq) return;
+                savedOrder=sent;
+                hint.textContent=presetLabel(sortPreset.value)+" · išsaugota ✓";
+            }catch(err){
+                if(seq!==saveSeq) return;
+                hint.textContent="Neišsaugota: "+err.message+" — spausk Save order";
+            }
+        },400);
+    }
     function currentTileIds(){ return [...board.querySelectorAll(".photo-tile")].map(x=>x.dataset.id); }
     function applyTileOrder(ids){
         const tiles=new Map([...board.querySelectorAll(".photo-tile")].map(tile=>[tile.dataset.id, tile]));
@@ -1274,8 +1314,9 @@ document.getElementById("rjCopy").addEventListener("click",function(){var txt=JS
         hint.textContent=presetLabel(mode)+" · unsaved";
         if(uploadSortPreset) uploadSortPreset.value=mode;
     }
-    sortPreset.addEventListener("change",()=>sortBoard(sortPreset.value));
+    sortPreset.addEventListener("change",()=>{ sortBoard(sortPreset.value); autoSaveOrder(); });
     syncOrder();
+    savedOrder=order.value;
     syncPresetFromCurrent();
     if(["taken_asc","taken_desc","title_asc","title_desc","size_asc","size_desc"].includes(requestedSortPreset)){
         sortPreset.value=requestedSortPreset;
@@ -1333,7 +1374,7 @@ document.getElementById("rjCopy").addEventListener("click",function(){var txt=JS
     syncOrder();
     let drag=null;
     board.addEventListener("dragstart",e=>{drag=e.target.closest(".photo-tile"); if(drag){drag.classList.add("dragging"); e.dataTransfer.effectAllowed="move";}});
-    board.addEventListener("dragend",()=>{if(drag)drag.classList.remove("dragging"); drag=null; customOrderBackup=currentTileIds(); syncOrder(); sortPreset.value="custom"; if(uploadSortPreset) uploadSortPreset.value="custom"; hint.textContent="Unsaved custom order";});
+    board.addEventListener("dragend",()=>{if(drag)drag.classList.remove("dragging"); drag=null; customOrderBackup=currentTileIds(); sortPreset.value="custom"; if(uploadSortPreset) uploadSortPreset.value="custom"; autoSaveOrder();});
     board.addEventListener("dragover",e=>{e.preventDefault(); const over=e.target.closest(".photo-tile"); if(!drag||!over||drag===over)return; const r=over.getBoundingClientRect(); const after=e.clientY>r.top+r.height/2 || e.clientX>r.left+r.width/2; board.insertBefore(drag, after?over.nextSibling:over);});
     board.addEventListener("click",async e=>{
         const del=e.target.closest(".delete-photo");
@@ -5196,7 +5237,12 @@ function save_album(): void {
     }
     $oldSlug = (string)($existingRow['slug'] ?? '');
     $albumDescription = $_POST['description'] ?: null;
-    $visibility = normalize_visibility($_POST['visibility'] ?? 'draft');
+    $visibility = visibility_from_input($_POST['visibility'] ?? '');
+    if ($visibility === null) {
+        $msg = invalid_visibility_message($_POST['visibility'] ?? '');
+        if ($ajax) json_error($msg, 422);
+        flash($msg, 'err'); go($id ? '?page=album_edit&id='.$id : '?page=albums');
+    }
     $data=[$title,$slug,$_POST['subtitle'] ?: null,$albumDescription,$_POST['event_date'] ?: null,$_POST['event_date_end'] ?: null,$_POST['location_name'] ?: null,$_POST['sport_type'] ?: null,$_POST['author_name'] ?: null,$_POST['copyright_text'] ?: null,$coverPhotoId,$coverMode,$visibility,(int)($_POST['sort_order'] ?? 0),isset($_POST['download_enabled'])?1:0,$_POST['seo_title'] ?: null,$albumDescription,$_POST['dbsportas_url'] ?: null,$_POST['klajunas_url'] ?: null,$_POST['other_url'] ?: null,$_POST['notes_internal'] ?: null,$_SESSION['admin']['id'] ?? null];
     $wasNew = ($id === 0);
     if ($id) {
@@ -5495,8 +5541,10 @@ function save_photo(): void {
         $albumDownloadEnabled = (int)$q->fetchColumn() ?: 0;
     }
     $downloadable = isset($_POST['is_downloadable']) ? 1 : 0;
+    $photoVisibility = visibility_from_input($_POST['visibility'] ?? '');
+    if ($photoVisibility === null) { flash(invalid_visibility_message($_POST['visibility'] ?? ''), 'err'); go('?page=photo_edit&id='.$id); }
     db()->prepare("UPDATE photos SET album_id=?,title=?,caption=?,alt_text=?,author_name=?,copyright_text=?,credit_line=?,taken_at=?,city=?,country=?,sort_order=?,visibility=?,description=?,notes_internal=?,is_downloadable=?,is_cover_candidate=?,is_missing=?,updated_by=? WHERE id=?")
-        ->execute([$targetAlbumId,$_POST['title'] ?: null,$_POST['caption'] ?: null,$_POST['alt_text'] ?: null,$_POST['author_name'] ?: null,$_POST['copyright_text'] ?: null,$_POST['credit_line'] ?: null,$_POST['taken_at'] ?: null,$_POST['city'] ?: null,$_POST['country'] ?: null,(int)$_POST['sort_order'],normalize_visibility($_POST['visibility'] ?? 'draft'),$_POST['description'] ?: null,$_POST['notes_internal'] ?: null,$downloadable,isset($_POST['is_cover_candidate'])?1:0,isset($_POST['is_missing'])?1:0,$_SESSION['admin']['id'] ?? null,$id]);
+        ->execute([$targetAlbumId,$_POST['title'] ?: null,$_POST['caption'] ?: null,$_POST['alt_text'] ?: null,$_POST['author_name'] ?: null,$_POST['copyright_text'] ?: null,$_POST['credit_line'] ?: null,$_POST['taken_at'] ?: null,$_POST['city'] ?: null,$_POST['country'] ?: null,(int)$_POST['sort_order'],$photoVisibility,$_POST['description'] ?: null,$_POST['notes_internal'] ?: null,$downloadable,isset($_POST['is_cover_candidate'])?1:0,isset($_POST['is_missing'])?1:0,$_SESSION['admin']['id'] ?? null,$id]);
     persist_photo_metadata_json($id);
     sync_tags('photo',$id,(string)($_POST['tags'] ?? ''));
     $returnAlbumId=(int)($_POST['return_album_id'] ?? $targetAlbumId ?? 0);
@@ -5771,8 +5819,13 @@ function upload_album_photos(): void {
     if (!in_array($duplicateMode, ['skip', 'overwrite'], true)) $duplicateMode = 'skip';
     $returnSortPreset = (string)($_POST['sort_preset'] ?? '');
     if (!in_array($returnSortPreset, ['taken_asc','taken_desc','title_asc','title_desc','size_asc','size_desc','custom'], true)) $returnSortPreset = '';
-    $visibility = trim((string)($_POST['visibility'] ?? ''));
-    $visibility = $visibility !== '' ? normalize_visibility($visibility) : (((string)($album['visibility'] ?? '') === 'published') ? 'published' : 'draft');
+    // Tuscia -> pagal albuma; nezinoma (pvz. 'public' be alias'o) -> klaida, ne tylus draft.
+    $visibility = visibility_from_input($_POST['visibility'] ?? '', ((string)($album['visibility'] ?? '') === 'published') ? 'published' : 'draft');
+    if ($visibility === null) {
+        $msg = invalid_visibility_message($_POST['visibility'] ?? '');
+        if ($jsonMode) json_error($msg, 400);
+        flash($msg, 'err'); go('?page=album_edit&id='.$albumId);
+    }
     $albumDownloadEnabled = (int)($album['download_enabled'] ?? 1);
     $maxSort = (int)db()->query("SELECT COALESCE(MAX(sort_order),0) FROM photos WHERE album_id=".$albumId)->fetchColumn();
     $count = (int)db()->query("SELECT COUNT(*) FROM photos WHERE album_id=".$albumId)->fetchColumn();
@@ -5974,13 +6027,14 @@ function upload_album_photos(): void {
     audit('photo',$albumId,'album_upload','Additional album photos uploaded',['mode'=>$duplicateMode,'uploaded'=>$uploaded,'overwritten'=>$overwritten,'compatibility_uploaded'=>$compatibilityUploaded,'compatibility_missing'=>$compatibilityMissing,'compatibility_invalid'=>$compatibilityInvalid,'json_uploaded'=>$jsonUploaded,'json_backfilled'=>$jsonBackfilled,'created'=>$created,'updated'=>$updated,'skipped'=>$skipped]);
     $compatibilityNote = $compatibilityMissing > 0 ? " $compatibilityMissing HEIC originalas įkeltas, bet JPG peržiūra nesukurta." : '';
     $invalidNote = $compatibilityInvalid > 0 ? " $compatibilityInvalid sugeneruota JPG peržiūros versija netinkama, įkeltas tik originalus failas." : '';
-    $message = "Additional upload finished: $uploaded media uploads ($overwritten overwritten), $compatibilityUploaded JPG preview uploads, $jsonUploaded JSON files uploaded, $jsonBackfilled existing photos updated from JSON, $created DB photos created, $updated DB photos updated, $skipped media skipped/unsupported.$compatibilityNote$invalidNote";
+    $message = "Additional upload finished: $uploaded media uploads ($overwritten overwritten), $compatibilityUploaded JPG preview uploads, $jsonUploaded JSON files uploaded, $jsonBackfilled existing photos updated from JSON, $created DB photos created, $updated DB photos updated, $skipped media skipped/unsupported. Matomumas: $visibility.$compatibilityNote$invalidNote";
     $redirect = '?page=album_edit&id='.$albumId.($returnSortPreset !== '' ? '&sort_preset='.rawurlencode($returnSortPreset) : '');
     if ($jsonMode) {
         json_exit([
             'ok' => true,
             'message' => $message,
             'redirect' => $redirect,
+            'visibility' => $visibility,
             'stats' => [
                 'uploaded' => $uploaded,
                 'overwritten' => $overwritten,
@@ -6098,11 +6152,15 @@ function reload_album_photos(): void {
 function save_photo_order(): void {
     csrf(); $albumId=(int)($_POST['album_id'] ?? 0); $ids=array_values(array_filter(array_map('intval', explode(',', (string)($_POST['order'] ?? '')))));
     require_album_editable_by_id($albumId);
-    if(!$albumId || !$ids){ flash('No custom order to save.', 'err'); go('?page=album_edit&id='.$albumId); }
+    $jsonMode = wants_json_response();
+    if(!$albumId || !$ids){ if($jsonMode) json_error('No custom order to save.', 400); flash('No custom order to save.', 'err'); go('?page=album_edit&id='.$albumId); }
     $check=db()->prepare("SELECT id FROM photos WHERE album_id=? AND id=?");
     $sort=10; foreach($ids as $id){ $check->execute([$albumId,$id]); if(!$check->fetchColumn()) continue; db()->prepare("UPDATE photos SET sort_order=?,updated_by=? WHERE id=? AND album_id=?")->execute([$sort,$_SESSION['admin']['id']??null,$id,$albumId]); $sort+=10; }
     db()->prepare("UPDATE albums SET updated_at=NOW(),updated_by=? WHERE id=?")->execute([$_SESSION['admin']['id']??null,$albumId]);
-    audit('photo',$albumId,'reorder','Album photo order updated',['ids'=>$ids]); flash('Photo order saved.'); go('?page=album_edit&id='.$albumId);
+    gallery_list_cache_invalidate_album($albumId);
+    audit('photo',$albumId,'reorder','Album photo order updated',['ids'=>$ids]);
+    if($jsonMode) json_exit(['ok' => true, 'saved' => count($ids)]);
+    flash('Photo order saved.'); go('?page=album_edit&id='.$albumId);
 }
 function photo_quick(): void {
     csrf(); $albumId=(int)($_POST['album_id'] ?? 0); $photoId=(int)($_POST['photo_id'] ?? 0); $op=(string)($_POST['op'] ?? '');
@@ -6547,8 +6605,13 @@ function bulk(string $table): void {
         flash('Priskirta albumui „'.$target['title'].'": '.$moved.' perkelta, '.$already.' jau buvo ten, '.$failed.' nepavyko. Seni B2 failai palikti vietoje (netrinami).'.$note, $failed > 0 ? 'err' : 'ok');
         go($back);
     }
-    $status = $status !== '' ? normalize_visibility((string)$status) : '';
-    if (in_array($status, STATUSES, true)) db()->prepare("UPDATE $table SET visibility=?,updated_by=? WHERE id IN ($ph)")->execute([$status,$_SESSION['admin']['id'] ?? null,...$ids]);
+    // Anksciau bet koks nematomumo veiksmas (pvz. download_on) per normalize_visibility()
+    // tapdavo 'draft' ir nuimdavo pazymetas nuotraukas nuo viesos galerijos.
+    if (!in_array($rawAction, ['', 'download_on', 'download_off'], true)) {
+        $status = visibility_from_input($rawAction);
+        if ($status === null) { flash('Nežinomas masinis veiksmas. '.invalid_visibility_message($rawAction), 'err'); go(consume_return_path('?page='.$table)); }
+        db()->prepare("UPDATE $table SET visibility=?,updated_by=? WHERE id IN ($ph)")->execute([$status,$_SESSION['admin']['id'] ?? null,...$ids]);
+    }
     if ($table==='photos' && $rawAction==='download_on') db()->prepare("UPDATE photos SET is_downloadable=1 WHERE id IN ($ph)")->execute($ids);
     if ($table==='photos' && $rawAction==='download_off') db()->prepare("UPDATE photos SET is_downloadable=0 WHERE id IN ($ph)")->execute($ids);
     if ($table==='photos' && trim((string)($_POST['author_name'] ?? ''))!=='') db()->prepare("UPDATE photos SET author_name=? WHERE id IN ($ph)")->execute([trim((string)$_POST['author_name']),...$ids]);
@@ -7018,10 +7081,11 @@ function takeout_preview(): void {
     $files=uploaded_takeout_files();
     if(!$files){ flash('No Takeout files uploaded. Check PHP upload limits.', 'err'); go('?page=takeout'); }
     $total=array_sum(array_column($files,'size')); $limits=upload_limits();
+    if(visibility_from_input($_POST['visibility'] ?? '')===null){ flash(invalid_visibility_message($_POST['visibility'] ?? ''), 'err'); go('?page=takeout'); }
     $opts=[
         'album_title'=>posted_text('album_title'),
         'prefix'=>posted_text('prefix'),
-        'visibility'=>normalize_visibility($_POST['visibility'] ?? 'draft'),
+        'visibility'=>visibility_from_input($_POST['visibility'] ?? ''),
         'event_date'=>$_POST['event_date'] ?? '',
         'upload_json'=>!empty($_POST['upload_json']),
         'overwrite_db'=>!empty($_POST['overwrite_db']),
@@ -7052,7 +7116,7 @@ function takeout_preview_payload(): void {
     $opts=[
         'album_title'=>trim((string)($payload['album_title'] ?? '')),
         'prefix'=>trim((string)($payload['prefix'] ?? '')),
-        'visibility'=>normalize_visibility($payload['visibility'] ?? 'draft'),
+        'visibility'=>visibility_from_input($payload['visibility'] ?? '') ?? json_error(invalid_visibility_message($payload['visibility'] ?? ''), 400),
         'event_date'=>$payload['event_date'] ?? '',
         'upload_json'=>!empty($payload['upload_json']),
         'overwrite_db'=>!empty($payload['overwrite_db']),
@@ -7093,7 +7157,7 @@ function takeout_build_payload(): void {
     $opts=[
         'album_title'=>trim((string)($payload['album_title'] ?? '')),
         'prefix'=>trim((string)($payload['prefix'] ?? '')),
-        'visibility'=>normalize_visibility($payload['visibility'] ?? 'draft'),
+        'visibility'=>visibility_from_input($payload['visibility'] ?? '') ?? json_error(invalid_visibility_message($payload['visibility'] ?? ''), 400),
         'event_date'=>$payload['event_date'] ?? '',
         'upload_json'=>!empty($payload['upload_json']),
         'overwrite_db'=>!empty($payload['overwrite_db']),
@@ -7203,7 +7267,7 @@ function takeout_confirm(): void {
         $finalOpts['album_title'] = $_POST['album_title'] ?? ($plan['title'] ?? '');
         $finalOpts['event_date'] = $_POST['event_date'] ?? ($plan['event_date'] ?? '');
         $finalOpts['prefix'] = $_POST['prefix'] ?? ($plan['prefix'] ?? '');
-        $finalOpts['visibility'] = normalize_visibility($_POST['visibility'] ?? ($plan['visibility'] ?? 'draft'));
+        $finalOpts['visibility'] = visibility_from_input($_POST['visibility'] ?? '', (string)($plan['visibility'] ?? 'draft')) ?? throw new InvalidArgumentException(invalid_visibility_message($_POST['visibility'] ?? ''));
         $finalOpts['description'] = $_POST['description'] ?? ($plan['description'] ?? '');
         $initialPrefix = (string)($_POST['initial_prefix'] ?? ($plan['prefix'] ?? ''));
         $finalTitle = trim((string)$finalOpts['album_title']);
@@ -7284,7 +7348,8 @@ function takeout_import(): void {
     $title=trim((string)($_POST['album_title'] ?? '')) ?: trim((string)($albumJson['title'] ?? $folder ?: 'Takeout album'));
     $eventDate = takeout_clean_event_date($_POST['event_date'] ?? '') ?? takeout_event_date($albumJson, $sidecarsForDate, $files);
     $prefix=trim((string)($_POST['prefix'] ?? ''),'/') ?: takeout_unified_prefix($title, $eventDate);
-    $visibility=normalize_visibility($_POST['visibility'] ?? 'draft');
+    $visibility=visibility_from_input($_POST['visibility'] ?? '');
+    if($visibility===null){ flash(invalid_visibility_message($_POST['visibility'] ?? ''), 'err'); go('?page=takeout'); }
     $albumId=find_or_create_overlay_album($albumJson,0,$prefix);
     db()->prepare("UPDATE albums SET title=?, source_type='takeout_upload', source_path=?, visibility=?, event_date=COALESCE(?,event_date), synced_at=NOW(), updated_by=? WHERE id=?")->execute([$title,$prefix,$visibility,$eventDate,$_SESSION['admin']['id']??null,$albumId]);
     if($albumJson) apply_album_overlay($albumId,$albumJson);
