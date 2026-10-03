@@ -150,6 +150,32 @@ function gallery_visibility_db(): ?PDO {
 }
 
 /**
+ * Rakto stulpeliai, kuriems admin'o ensure_schema() kuria indeksus
+ * (photos_<stulpelis>_idx). Keiciant sarasa - keisti ir ten.
+ */
+const GALLERY_PHOTO_KEY_COLUMNS = ['b2_key', 'compatibility_b2_key', 'original_b2_key', 'thumb_path', 'preview_path', 'web_path'];
+
+/**
+ * photos+albums eilutes, kuriu bent vienas is $columns lygus $key.
+ *
+ * Po viena SELECT kiekvienam stulpeliui, sujungti UNION ALL - ne vienas WHERE su
+ * OR: taip kiekviena dalis naudoja savo stulpelio indeksa, nepriklausomai nuo
+ * to, ar optimizatorius sugebetu index_merge. Ta pati eilute gali grizti kelis
+ * kartus (pvz. thumb_path = compatibility_b2_key) - kvieciantiesiems tai nesvarbu.
+ * Isimtis keliauja aukstyn.
+ */
+function gallery_photo_rows_for_key(PDO $db, string $key, array $columns, string $select): array {
+    $parts = [];
+    foreach ($columns as $c) {
+        if (!in_array($c, GALLERY_PHOTO_KEY_COLUMNS, true)) throw new InvalidArgumentException('Unknown key column ' . $c);
+        $parts[] = "SELECT $select FROM photos p JOIN albums a ON a.id = p.album_id WHERE p.`$c` = ?";
+    }
+    $q = $db->prepare(implode(' UNION ALL ', $parts));
+    $q->execute(array_fill(0, count($columns), $key));
+    return $q->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
  * Kam priklauso B2 raktas ir ar jis rodomas siam ziurovui:
  *   'public' - bent viena DB nuotrauka su siuo raktu matoma
  *   'hidden' - raktas DB yra, bet nei viena jo nuotrauka nematoma
@@ -169,18 +195,9 @@ function gallery_key_access(string $key): string {
     $db = gallery_visibility_db();
     if (!$db) return 'error';
 
-    // Visi sie stulpeliai gyvoje DB yra (admin'o ensure_schema juos prideda).
-    $columns = ['b2_key', 'compatibility_b2_key', 'original_b2_key', 'thumb_path', 'preview_path', 'web_path'];
     try {
-        $where = implode(' OR ', array_map(fn($c) => "p.`$c` = ?", $columns));
-        $q = $db->prepare(
-            "SELECT a.visibility AS album_visibility, p.visibility AS photo_visibility
-               FROM photos p
-               JOIN albums a ON a.id = p.album_id
-              WHERE $where"
-        );
-        $q->execute(array_fill(0, count($columns), $key));
-        $rows = $q->fetchAll(PDO::FETCH_ASSOC);
+        $rows = gallery_photo_rows_for_key($db, $key, GALLERY_PHOTO_KEY_COLUMNS,
+            'a.visibility AS album_visibility, p.visibility AS photo_visibility');
     } catch (Throwable $e) {
         gallery_log($e);
         return 'error';
@@ -214,18 +231,9 @@ function gallery_key_download_allowed(string $key): ?bool {
     $db = gallery_visibility_db();
     if (!$db) return null;
 
-    $columns = ['b2_key', 'compatibility_b2_key', 'original_b2_key'];
     try {
-        $where = implode(' OR ', array_map(fn($c) => "p.`$c` = ?", $columns));
-        $q = $db->prepare(
-            "SELECT a.visibility AS album_visibility, p.visibility AS photo_visibility,
-                    a.download_enabled, p.is_downloadable, p.is_missing
-               FROM photos p
-               JOIN albums a ON a.id = p.album_id
-              WHERE $where"
-        );
-        $q->execute(array_fill(0, count($columns), $key));
-        $rows = $q->fetchAll(PDO::FETCH_ASSOC);
+        $rows = gallery_photo_rows_for_key($db, $key, ['b2_key', 'compatibility_b2_key', 'original_b2_key'],
+            'a.visibility AS album_visibility, p.visibility AS photo_visibility, a.download_enabled, p.is_downloadable, p.is_missing');
     } catch (Throwable $e) {
         gallery_log($e);
         return null;

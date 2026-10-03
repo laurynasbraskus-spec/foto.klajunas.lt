@@ -310,6 +310,27 @@ function photo_rot_query(array $p): array {
     $rot = ((((int)($p['rotation'] ?? 0)) % 360) + 360) % 360;
     return in_array($rot, [90, 180, 270], true) ? ['rot' => $rot] : [];
 }
+/* Viesas img.php / meta.php / download.php kiekvienam origin kreipiniui ieško
+ * rakto sešiuose photos stulpeliuose (gallery-security.php,
+ * GALLERY_PHOTO_KEY_COLUMNS). Be indeksu tai pilnas lenteles skenas, ~20 ms
+ * (matuota 2026-10-03). Priesdelis 191 simbolis: utf8mb4 tilpsta ir COMPACT
+ * eiluciu formato 767 baitu ribose, o lygybes paieskai priesdelio pakanka.
+ * Visi trukstami - vienu ALTER (viena perstatymo eiga). Nepavykus admin'as
+ * veikia toliau: indeksai tik greitis, ne teisingumas. */
+function ensure_photo_key_indexes(): void {
+    try {
+        $have = [];
+        foreach (db()->query("SHOW INDEX FROM photos")->fetchAll() as $ix) $have[(string)$ix['Key_name']] = true;
+        $add = [];
+        foreach (['b2_key', 'compatibility_b2_key', 'original_b2_key', 'thumb_path', 'preview_path', 'web_path'] as $col) {
+            $name = 'photos_' . $col . '_idx';
+            if (!isset($have[$name])) $add[] = "ADD INDEX `$name` (`$col`(191))";
+        }
+        if ($add) db()->exec('ALTER TABLE photos ' . implode(', ', $add));
+    } catch (Throwable $e) {
+        error_log('[foto.klajunas.lt] ensure_photo_key_indexes: ' . $e->getMessage());
+    }
+}
 function ensure_photo_preview_schema(): void {
     if (!db()->query("SHOW COLUMNS FROM photos LIKE 'original_format'")->fetch()) {
         db()->exec("ALTER TABLE photos ADD original_format VARCHAR(16) NULL AFTER file_ext");
@@ -335,6 +356,7 @@ function ensure_photo_preview_schema(): void {
     db()->exec("UPDATE photos SET original_format = LOWER(file_ext) WHERE (original_format IS NULL OR original_format='') AND file_ext IS NOT NULL AND file_ext<>''");
     db()->exec("UPDATE photos SET converted_from_heic = 1 WHERE converted_from_heic=0 AND LOWER(COALESCE(original_format,file_ext,'')) IN ('heic','heif') AND COALESCE(compatibility_b2_key,'')<>''");
     db()->exec("UPDATE photos SET preview_status = CASE WHEN LOWER(COALESCE(original_format,file_ext,'')) IN ('heic','heif') AND COALESCE(compatibility_b2_key,'')='' THEN 'failed' ELSE 'ready' END WHERE preview_status IS NULL OR preview_status=''");
+    ensure_photo_key_indexes();
     db()->exec("UPDATE photos SET preview_path = compatibility_b2_key, web_path = compatibility_b2_key, thumb_path = compatibility_b2_key WHERE COALESCE(compatibility_b2_key,'')<>'' AND (preview_path IS NULL OR preview_path='' OR web_path IS NULL OR web_path='' OR thumb_path IS NULL OR thumb_path='')");
 }
 /* ---------------------------------------------------------------------------
