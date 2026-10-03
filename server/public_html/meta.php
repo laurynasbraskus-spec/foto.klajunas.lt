@@ -24,10 +24,13 @@ set_error_handler(function ($severity, $message, $file, $line) {
     throw new ErrorException($message, 0, $severity, $file, $line);
 });
 
+// Ne null - nepaskelbtos nuotraukos duomenys admin'ui: viesai keseti negalima.
+$metaCacheOverride = null;
+
 function respond_json(array $data, int $code = 200): void {
     http_response_code($code);
     header('Content-Type: application/json; charset=utf-8');
-    header('Cache-Control: public, max-age=86400, stale-while-revalidate=86400');
+    header('Cache-Control: ' . ($GLOBALS['metaCacheOverride'] ?? 'public, max-age=86400, stale-while-revalidate=86400'));
     header('Vary: Accept-Encoding');
     echo json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
@@ -563,6 +566,8 @@ try {
 
     $file = safe_file((string)($_GET['file'] ?? ''));
     if ($file === '') respond_json(['ok' => false, 'error' => 'Missing file'], 400);
+    // Pries podeli ir B2: juodrascio EXIF/pavadinimas/aprasymas irgi nevieši.
+    $metaCacheOverride = gallery_enforce_file_visibility($file);
     $dbMeta = photo_db_meta($file);
 
     $metaPath = meta_cache_path((string)B2_BUCKET, $file);

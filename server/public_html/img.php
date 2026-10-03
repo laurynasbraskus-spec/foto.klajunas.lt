@@ -40,9 +40,21 @@ function respond_text(string $msg, int $code = 200): void {
     exit;
 }
 
+/**
+ * Cache-Control is gallery_enforce_file_visibility(): nepaskelbta nuotrauka
+ * admin'ui arba nezinomas matomumas (DB nepasiekiama) viesai nekesuojami.
+ * null - iprastas viesas metu kesas.
+ */
+function image_cache_override(?string $set = null): ?string {
+    static $override = null;
+    if ($set !== null) $override = $set;
+    return $override;
+}
+
 function send_image_headers(string $mime, int $maxAge = 31536000): void {
     header('Content-Type: ' . $mime);
-    header('Cache-Control: public, max-age=' . $maxAge . ', immutable');
+    $override = image_cache_override();
+    header('Cache-Control: ' . ($override ?? 'public, max-age=' . $maxAge . ', immutable'));
     header('Vary: Accept-Encoding');
 }
 
@@ -202,8 +214,8 @@ function safe_file(string $file): string {
  *
  * Rodom tik tai, ką rodo ir vieša galerija: paskelbtas albumas, paskelbta
  * nuotrauka, failas vietoje. Be šio filtro ID būtų galima persirinkti iš eilės
- * ir taip pasiekti juodraščius — kelio atveju tokios rizikos nėra, nes kelio
- * neatspėsi.
+ * ir taip pasiekti juodraščius. (Kelias irgi atspėjamas — ?file= tikrinamas
+ * per gallery_enforce_file_visibility().)
  */
 function normalize_rotation(int $rot): int {
     $rot = (($rot % 360) + 360) % 360;
@@ -224,17 +236,9 @@ function photo_rotation_by_id(int $id): int {
     }
 }
 function photo_key_by_id(int $id): string {
-    $cfg = __DIR__ . '/../../foto-db-config.php';
-    if (!is_file($cfg)) return '';
-    require_once $cfg;
-    if (!defined('GALLERY_DB_HOST') || !defined('GALLERY_DB_NAME')) return '';
+    $pdo = gallery_visibility_db();
+    if (!$pdo) return '';
     try {
-        $pdo = new PDO(
-            'mysql:host=' . GALLERY_DB_HOST . ';dbname=' . GALLERY_DB_NAME . ';charset=utf8mb4',
-            GALLERY_DB_USER,
-            GALLERY_DB_PASS,
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
-        );
         $q = $pdo->prepare(
             "SELECT COALESCE(NULLIF(p.compatibility_b2_key, ''), p.b2_key) k
                FROM photos p
@@ -853,14 +857,26 @@ try {
     // tad visi esami podelio failai lieka galioti.
     $rot = normalize_rotation((int)($_GET['rot'] ?? 0));
     $thumbPath = thumb_cache_path((string)B2_BUCKET, $cacheKey . ($rot ? '|rot=' . $rot : ''), $w, $h, $fit, $q, $fmt);
+
+    // Matomumas tikrinamas PRIES podeli: miniatiura, kartą sugeneruota kol
+    // albumas buvo paskelbtas (ar admin'ui), kitaip liktu viesa amzinai.
+    // Kaina - viena DB uzklausa origin'e; Cloudflare kesuotu kopiju ji neliecia.
+    $visStart = microtime(true);
+    $keyById = '';
+    if ($photoId > 0) {
+        $keyById = photo_key_by_id($photoId);
+        if ($keyById === '') respond_text('Not found', 404);
+    } else {
+        image_cache_override(gallery_enforce_file_visibility($file));
+    }
+    header(sprintf('Server-Timing: vis;dur=%.1f', (microtime(true) - $visStart) * 1000));
+
     if (is_file($thumbPath) && filesize($thumbPath) > 0) {
         output_file($thumbPath, output_mime($fmt));
     }
 
     // Podėlyje nėra — tik dabar prireikia tikrojo B2 kelio.
     if ($photoId > 0) {
-        $keyById = photo_key_by_id($photoId);
-        if ($keyById === '') respond_text('Not found', 404);
         $file = safe_file($keyById);
         if (!$rot) $rot = photo_rotation_by_id($photoId);
     }

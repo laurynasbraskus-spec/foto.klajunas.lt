@@ -28,7 +28,7 @@ declare(strict_types=1);
 // nueidavo tyliai i tuscia - failas likdavo senas, o issiaiskinti tai buvo
 // imanoma tik netiesiogiai, pagal atsakymo turini. Antraste tai paverčia vienu
 // kreipiniu. Keiciam kaskart, kai keiciasi failas.
-header('X-Foto-Build: 2026-10-03-a');
+header('X-Foto-Build: 2026-10-03-b');
 header('Content-Type: application/json; charset=utf-8');
 // Narsykle sena albumo sarasa gali rodyti ne ilgiau ~2 min. (60 s + 60 s fone).
 // Anksciau stale-while-revalidate=86400 leido iki paros rodyti sena versija -
@@ -242,17 +242,26 @@ function json_fail(string $msg, int $code = 500, array $extra = []): void {
     exit;
 }
 
-function manifest_resolve_public_path(string $path): string {
+/**
+ * Paskelbto albumo slug'as pagal prasyta kelia (slug, source_path, slug'o
+ * priesdelis/priesaga, basename(source_path)) arba null, jei toks kelias
+ * neatitinka jokio paskelbto albumo arba DB nepasiekiama.
+ */
+function manifest_match_public_path(string $path): ?string {
     $path = trim($path, "/ \t\n\r\0\x0B");
     if ($path === '') return '';
 
     $db = function_exists('gallery_db') ? gallery_db() : null;
-    if (!$db) return $path;
+    if (!$db) return null;
 
+    // Paskelbtas albumas tuščiu slug'u pasiekiamas tiesiai per source_path -
+    // anksciau jam buvo grazinamas pats prasytas kelias, taip ir paliekam.
+    $exactPublished = false;
     try {
         $q = $db->prepare("SELECT slug,source_path FROM albums WHERE visibility='published' AND (slug=? OR source_path=?) LIMIT 1");
         $q->execute([$path, $path]);
         $row = $q->fetch();
+        $exactPublished = is_array($row);
         if (is_array($row) && trim((string)($row['slug'] ?? ''), "/ \t\n\r\0\x0B") !== '') {
             return trim((string)$row['slug'], "/ \t\n\r\0\x0B");
         }
@@ -281,7 +290,7 @@ function manifest_resolve_public_path(string $path): string {
         gallery_log($e);
     }
 
-    return $path;
+    return $exactPublished ? $path : null;
 }
 function manifest_source_path_for_path(string $path): string {
     $path = trim($path, "/ \t\n\r\0\x0B");
@@ -413,7 +422,16 @@ if ($apiUrl === '' || $downloadUrl === '' || $authToken === '') {
 
 // ---- Input ----
 $requestedPath = trim((string)($_GET['path'] ?? ''), "/ \t\n\r\0\x0B");
-$path = manifest_resolve_public_path($requestedPath);
+// Netuscias kelias privalo atitikti PASKELBTA albuma. Anksciau neatpazintas
+// kelias buvo grazinamas nepakeistas ir toliau listinamas tiesiai is B2, tad
+// juodrascio aplankas (albums/<metai>/<data>__<vardas> - atspejamas) atiduodavo
+// visas savo nuotraukas. Tikrinam PRIES podeli, perziuru skaitliuka ir B2.
+$path = manifest_match_public_path($requestedPath);
+if ($path === null) {
+    header('Cache-Control: no-store');
+    if ($requestedPath !== '' && !gallery_db()) json_fail('Service unavailable', 503);
+    json_fail('Not found', 404, ['path' => $requestedPath]);
+}
 $storagePath = manifest_source_path_for_path($path);
 $allowedPath = $storagePath !== '' ? $storagePath : $path;
 if (!gallery_is_allowed_prefix($allowedPath)) {

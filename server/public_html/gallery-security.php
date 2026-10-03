@@ -71,6 +71,150 @@ function gallery_assert_allowed_file(string $file): void {
     }
 }
 
+/* ------------------------ Matomumas (visibility) ------------------------
+ *
+ * Iki 2026-10-03 juodrasciai buvo "paslepti" tik tuo, kad ju nebuvo viesame
+ * albumu sarase. B2 aplanko kelias albums/<metai>/<data>__<pavadinimas>
+ * atspejamas, o b2-gallery.php ?path=, img.php ?file=, meta.php ir
+ * download.php tikrino tik prefiksa "albums/" - tad juodrascio nuotraukas
+ * galejo matyti bet kas, zinantis (ar atspejes) kelia.
+ *
+ * Visos vieso matomumo taisykles - cia, vienoje vietoje. Privaciu albumu darbas
+ * (visibility='private' + prisijunges ziurovas) pleciasi butent per
+ * gallery_viewer_can_see(): kiti failai klausia tik jos.
+ */
+
+/** Ar sis matomumas rodomas visiems, be prisijungimo. */
+function gallery_visibility_is_public(string $visibility): bool {
+    return $visibility === 'published';
+}
+
+/** Ar dabartinis ziurovas gali matyti nuotrauka su tokiu albumo ir nuotraukos matomumu. */
+function gallery_viewer_can_see(string $albumVisibility, string $photoVisibility): bool {
+    return gallery_visibility_is_public($albumVisibility) && gallery_visibility_is_public($photoVisibility);
+}
+
+/**
+ * Ar uzklausa ateina is prisijungusio admin'o (ta pati PHPSESSID sesija, kaip
+ * /admin; cookie path=/). Admin'o albumo redagavimo plyteles juodrasciu
+ * miniatiuras ima per ta pati /img.php, todel be sito jos luztu.
+ *
+ * Sesija atidaroma tik skaitymui ir tik tada, kai cookie apskritai yra - viesa
+ * uzklausa be cookie sesijos nepaleidzia ir Set-Cookie negauna.
+ */
+function gallery_viewer_is_admin(): bool {
+    static $isAdmin = null;
+    if ($isAdmin !== null) return $isAdmin;
+    if (session_status() === PHP_SESSION_ACTIVE) return $isAdmin = !empty($_SESSION['admin']);
+    if (session_status() === PHP_SESSION_DISABLED || empty($_COOKIE[session_name()])) return $isAdmin = false;
+    try {
+        @session_start(['read_and_close' => true]);
+    } catch (Throwable $e) {
+        gallery_log($e);
+        return $isAdmin = false;
+    }
+    // Strict mode nezinomam ID sugeneruotu nauja ir ji issiustu - mums jo nereikia.
+    if (!headers_sent()) header_remove('Set-Cookie');
+    return $isAdmin = !empty($_SESSION['admin']);
+}
+
+/**
+ * DB jungtis matomumo patikrai. Naudoja failo gallery_db(), jei toks yra
+ * (b2-gallery.php, meta.php), kitaip jungiasi pati is ~/domains/foto-db-config.php.
+ * null - DB nepasiekiama.
+ */
+function gallery_visibility_db(): ?PDO {
+    if (function_exists('gallery_db')) return gallery_db();
+    static $pdo = false;
+    if ($pdo !== false) return $pdo;
+    $cfg = __DIR__ . '/../../foto-db-config.php';
+    if (is_file($cfg)) require_once $cfg;
+    if (!defined('GALLERY_DB_HOST') || !defined('GALLERY_DB_NAME') || !defined('GALLERY_DB_USER') || !defined('GALLERY_DB_PASS')) {
+        return $pdo = null;
+    }
+    try {
+        return $pdo = new PDO(
+            'mysql:host=' . GALLERY_DB_HOST . ';dbname=' . GALLERY_DB_NAME . ';charset=utf8mb4',
+            GALLERY_DB_USER,
+            GALLERY_DB_PASS,
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]
+        );
+    } catch (Throwable $e) {
+        gallery_log($e);
+        return $pdo = null;
+    }
+}
+
+/**
+ * Kam priklauso B2 raktas ir ar jis rodomas siam ziurovui:
+ *   'public' - bent viena DB nuotrauka su siuo raktu matoma
+ *   'hidden' - raktas DB yra, bet nei viena jo nuotrauka nematoma
+ *   'absent' - DB tokio rakto nera (senas failas be irasu - elgiamasi kaip anksciau)
+ *   'error'  - DB nepasiekiama, atsakymo nezinom
+ *
+ * "Bent viena" - nes tas pats failas gali tureti kelias eilutes (b2_sync dublikatai,
+ * du albumai viename B2 aplanke). Paskelbtos nuotraukos juodrastine kopija kitame
+ * albume neturi jos paslepti.
+ *
+ * Ieskoma visuose stulpeliuose, per kuriuos galerija ir admin'as adresuoja faila:
+ * originalas, JPG perziura (HEIC), legacy originalas ir thumb/preview/web keliai.
+ */
+function gallery_key_access(string $key): string {
+    $key = trim($key, "/ \t\n\r\0\x0B");
+    if ($key === '') return 'absent';
+    $db = gallery_visibility_db();
+    if (!$db) return 'error';
+
+    // Visi sie stulpeliai gyvoje DB yra (admin'o ensure_schema juos prideda).
+    $columns = ['b2_key', 'compatibility_b2_key', 'original_b2_key', 'thumb_path', 'preview_path', 'web_path'];
+    try {
+        $where = implode(' OR ', array_map(fn($c) => "p.`$c` = ?", $columns));
+        $q = $db->prepare(
+            "SELECT a.visibility AS album_visibility, p.visibility AS photo_visibility
+               FROM photos p
+               JOIN albums a ON a.id = p.album_id
+              WHERE $where"
+        );
+        $q->execute(array_fill(0, count($columns), $key));
+        $rows = $q->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        gallery_log($e);
+        return 'error';
+    }
+    if (!$rows) return 'absent';
+    foreach ($rows as $row) {
+        if (gallery_viewer_can_see((string)($row['album_visibility'] ?? ''), (string)($row['photo_visibility'] ?? ''))) {
+            return 'public';
+        }
+    }
+    return 'hidden';
+}
+
+/**
+ * Bendras sprendimas ?file= tipo endpoint'ams (img/meta/download).
+ * Paslepta nuotrauka -> 404 su no-store (Cloudflare jos neiskesuoja), nebent
+ * ziuri admin'as.
+ *
+ * Grazina null, kai atsakyma galima keseti viesai kaip iki siol, arba
+ * Cache-Control reiksme, kuria kvieciantysis PRIVALO naudoti: Cloudflare raktas -
+ * tik URL, tad viesai iskesuota admin'o perziura taptu vieša visiems.
+ */
+function gallery_enforce_file_visibility(string $key): ?string {
+    $access = gallery_key_access($key);
+    if ($access === 'public' || $access === 'absent') return null;
+    if ($access === 'hidden') {
+        if (!gallery_viewer_is_admin()) gallery_public_error('Not found', 404);
+        // Tik admin'o narsykleje - kad albumo redagavimas nesiųstu visu plyteliu is naujo.
+        return 'private, max-age=3600';
+    }
+    // DB nepasiekiama: rodom kaip anksciau, bet niekur nekesuojam.
+    return 'private, no-store';
+}
+
 function gallery_client_ip(): string {
     $cfIp = (string)($_SERVER['HTTP_CF_CONNECTING_IP'] ?? '');
     if ($cfIp !== '' && filter_var($cfIp, FILTER_VALIDATE_IP)) {

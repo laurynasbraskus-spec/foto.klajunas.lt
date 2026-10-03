@@ -248,6 +248,8 @@ try {
 
     $file = safe_file((string)($_GET['file'] ?? ''));
     if ($file === '') respond_text('Missing file', 400);
+    // Juodrascio originalas nesiunciamas (404 dar pries B2 kreipini).
+    $downloadCacheOverride = gallery_enforce_file_visibility($file);
 
     [$tmpPath, $contentType, $bytes] = download_b2_to_tempfile(
         $file,
@@ -265,7 +267,7 @@ try {
     header('Content-Type: ' . $contentType);
     header('Content-Disposition: attachment; filename="' . str_replace('"','', $baseName) . '"');
     // Allow CDN/browser reuse of public gallery downloads for 1 day.
-    header('Cache-Control: public, max-age=86400, s-maxage=86400');
+    header('Cache-Control: ' . ($downloadCacheOverride ?? 'public, max-age=86400, s-maxage=86400'));
     header('Content-Length: ' . (string)$bytes);
     readfile($tmpPath);
     @unlink($tmpPath);
