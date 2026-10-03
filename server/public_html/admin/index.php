@@ -178,6 +178,13 @@ function visibility_from_input(mixed $value, string $default='draft'): ?string {
     $v = VISIBILITY_ALIASES[$v] ?? $v;
     return in_array($v, STATUSES, true) ? $v : null;
 }
+// "No preview" visur reiskia ta pati: perziuros generavimas nepavyko ARBA HEIC/HEIF
+// originalas be JPG kopijos (serveris HEIC dekoduoti negali, tad galerijoje tuscia).
+const NO_PREVIEW_SQL = "(p.preview_status='failed' OR ((LOWER(p.original_filename) LIKE '%.heic' OR LOWER(p.original_filename) LIKE '%.heif') AND COALESCE(p.compatibility_b2_key,'')=''))";
+function photo_has_no_preview(array $p): bool {
+    if ((string)($p['preview_status'] ?? '') === 'failed') return true;
+    return is_heic_name((string)($p['original_filename'] ?? '')) && trim((string)($p['compatibility_b2_key'] ?? ''), '/') === '';
+}
 function invalid_visibility_message(mixed $value): string {
     $shown = is_scalar($value) ? trim((string)$value) : gettype($value);
     return 'Neleistinas matomumas „'.$shown.'". Leidžiamos reikšmės: '.implode(', ', STATUSES).' (public = published). Niekas neįrašyta.';
@@ -921,6 +928,7 @@ body.light .spill.s-published{color:#1f7a45;background:rgba(31,122,69,.1);border
 .albums-table td .mini{padding:3px 8px;font-size:11.5px}
 .albums-table td .badge{padding:2px 7px;font-size:11px}
 .albums-table td:nth-child(2),.albums-table td:nth-child(3){white-space:nowrap}
+.albums-table th:nth-child(2),.albums-table td:nth-child(2){width:1%}
 /* "Needs fixing" ir "Storage" gali tureti kelis zenklelius - leidziam lauzyti,
    bet be tarpu tarp eiluciu, kad nekiltu aukstis. */
 .albums-table td:nth-child(9),.albums-table td:nth-child(10){white-space:normal;line-height:1.35}
@@ -2151,7 +2159,7 @@ function album_fix_badges(array $r): string {
         $bits[] = '<a class="btn mini" style="border-color:var(--accent-line);color:var(--accent-ink)" href="?page=photos&album_id='.$id.'&source=member&visibility=draft" title="Narių įkeltos nuotraukos laukia peržiūros">&#128100; '.$memberPending.' laukia</a>';
     }
     if ($previewFailed > 0) {
-        $bits[] = '<a class="btn mini" href="?page=photos&album_id='.$id.'" title="Nuotraukos be JPG peržiūros">'.$previewFailed.' no preview</a>';
+        $bits[] = '<a class="btn mini" href="?page=photos&album_id='.$id.'&nopreview=1" title="Nuotraukos be JPG peržiūros">'.$previewFailed.' no preview</a>';
     }
     $coverMode = (string)($r['cover_mode'] ?? 'auto');
     if ((int)($r['cover_photo_id'] ?? 0) > 0) {
@@ -2227,7 +2235,7 @@ function albums(): void {
     // (suma per nulį eiluciu), preview_failed 0 ir cover_mode 'auto', tad be
     // sios salygos jis i "tik taisytini" filtra nepakliudavo.
     $havingFix = $needsFix ? " HAVING (photos_count = 0 OR missing_count > 0 OR preview_failed > 0 OR a.cover_mode = 'none')" : '';
-    $st = db()->prepare("SELECT a.*, COUNT(p.id) photos_count, COALESCE(SUM(p.is_missing=1),0) missing_count, COALESCE(SUM(p.preview_status='failed'),0) preview_failed, COALESCE(SUM(p.source_type='member_upload' AND p.visibility='draft'),0) member_pending FROM albums a LEFT JOIN photos p ON p.album_id=a.id $where GROUP BY a.id{$havingFix} ORDER BY {$sortMap[$sort]} LIMIT 250");
+    $st = db()->prepare("SELECT a.*, COUNT(p.id) photos_count, COALESCE(SUM(p.is_missing=1),0) missing_count, COALESCE(SUM(".NO_PREVIEW_SQL."),0) preview_failed, COALESCE(SUM(p.source_type='member_upload' AND p.visibility='draft'),0) member_pending FROM albums a LEFT JOIN photos p ON p.album_id=a.id $where GROUP BY a.id{$havingFix} ORDER BY {$sortMap[$sort]} LIMIT 250");
     $st->execute($p); $rows=$st->fetchAll();
     // Vienpusis: albumas = trinamas dublikatas TIK jei egzistuoja ILGESNIS to
     // paties kamieno albumas (šis yra priešdėlio-stub). Turi sutapti su
@@ -2291,13 +2299,21 @@ function albums(): void {
         if (!$canEdit || $lock['locked']) {
             $deleteBtn = '';   // uzrakintiems salia rodomas spynos zenklas
         } elseif ((string)$r['visibility'] !== 'draft') {
-            $deleteBtn = '<span class="badge" title="Trinti galima tik juodrasti. Atidaryk albuma, nustatyk Visibility = draft, issaugok - tada cia atsiras Delete." style="cursor:help">trinti: tik draft</span>';
+            // Pastaba rodoma po pavadinimu ($draftOnlyNote), kad Actions stulpelis liktu siauras.
+            $deleteBtn = '';
         } else {
             $deleteBtn = '<button class="mini" formmethod="post" formaction="?action=delete_album&id='.e($r['id']).'" style="border-color:var(--err-line);color:#e05b6a" onclick="return confirm(\''.e($deleteConfirm).'\')">Delete</button>';
         }
         $lockBadge = $lock['locked']
             ? '<span class="badge" title="Turinys B2 senesnis nei '.ALBUM_DELETE_LOCK_DAYS.' d. — iš admin nebetrinamas, tik rankiniu būdu B2 serveryje" style="border-color:var(--accent-line);color:var(--accent-ink)">🔒 užrakinta</span>'
             : '';
+        $draftOnlyNote = ($canEdit && !$lock['locked'] && (string)$r['visibility'] !== 'draft')
+            ? '<br><span class="badge" title="Trinti galima tik juodrasti. Atidaryk albuma, nustatyk Visibility = draft, issaugok - tada Actions stulpelyje atsiras Delete." style="cursor:help;margin-top:4px">trinti: tik draft</span>'
+            : '';
+        // Sistemos ID po eiles numeriu - nuoroda i vieša /a/id<N>.
+        $idTag = '<div class="small" style="margin-top:3px">'.((string)$r['visibility'] === 'published'
+            ? '<a class="muted" href="/a/id'.e($r['id']).'" target="_blank" rel="noopener" title="Sistemos ID · atidaryti viešą albumą" style="text-decoration:underline;text-underline-offset:2px">#'.e($r['id']).'</a>'
+            : '<span class="muted" title="Sistemos ID (albumas nepaskelbtas - viešo puslapio nėra)">#'.e($r['id']).'</span>').'</div>';
         $actions = '<div class="actions" style="margin:0;gap:4px">'.($canEdit ? '<a class="btn mini" href="?page=album_edit&id='.e($r['id']).'">Edit</a>'.$deleteBtn : '<span class="badge">read-only</span>').'</div>';
         $tagSt=db()->prepare("SELECT t.name FROM tags t JOIN album_tags at ON at.tag_id=t.id WHERE at.album_id=? ORDER BY t.name");
         $tagSt->execute([(int)$r['id']]);
@@ -2310,7 +2326,7 @@ function albums(): void {
             $tagNames ? '#'.implode(' #', $tagNames) : '',
         ], fn($v) => trim((string)$v) !== ''));
         $titleLink = '<a href="?page=photos&album_id='.e($r['id']).'"><strong>'.e($r['title']).'</strong></a>';
-        echo '<tr><td>'.($canEdit ? '<input type="checkbox" name="ids[]" value="'.e($r['id']).'">' : '<span class="muted">•</span>').'</td><td>'.$actions.'</td><td>'.$sortControls.'</td><td>'.$titleLink.($titleBits ? '<br><span class="muted">'.e(implode(' · ', $titleBits)).'</span>' : '').'</td><td>'.e($r['slug']).'</td><td>'.e($r['event_date']).'</td><td>'.e($r['photos_count']).'</td><td><span class="badge">'.e($r['visibility']).'</span></td><td class="small">'.album_fix_badges($r).($lockBadge ? '<br>'.$lockBadge : '').'</td><td class="small">'.$sortControls.'<br><span class="badge">'.e($storage['label']).'</span><br><a class="btn mini" href="?page=b2#b2-folder-'.e($r['id']).'">'.e($storage['action']).'</a></td><td class="small">'.e($r['source_type']).'<br>'.e($r['source_path']).'</td></tr>';
+        echo '<tr><td>'.($canEdit ? '<input type="checkbox" name="ids[]" value="'.e($r['id']).'">' : '<span class="muted">•</span>').'</td><td>'.$actions.'</td><td>'.$sortControls.$idTag.'</td><td>'.$titleLink.($titleBits ? '<br><span class="muted">'.e(implode(' · ', $titleBits)).'</span>' : '').$draftOnlyNote.'</td><td>'.e($r['slug']).'</td><td>'.e($r['event_date']).'</td><td>'.e($r['photos_count']).'</td><td><span class="badge">'.e($r['visibility']).'</span></td><td class="small">'.album_fix_badges($r).($lockBadge ? '<br>'.$lockBadge : '').'</td><td class="small">'.$sortControls.'<br><span class="badge">'.e($storage['label']).'</span><br><a class="btn mini" href="?page=b2#b2-folder-'.e($r['id']).'">'.e($storage['action']).'</a></td><td class="small">'.e($r['source_type']).'<br>'.e($r['source_path']).'</td></tr>';
     }
     echo '</table>';
 
@@ -2496,7 +2512,7 @@ function album_edit(): void {
 
 function photos(): void {
     head('Photos');
-    $q=trim((string)($_GET['q'] ?? '')); $vis=trim((string)($_GET['visibility'] ?? '')); if ($vis !== '') $vis = normalize_visibility($vis); $album=(int)($_GET['album_id'] ?? 0); $missing=(int)($_GET['missing'] ?? 0); $source=(string)($_GET['source'] ?? '') === 'member' ? 'member' : ''; $p=[]; $where='WHERE 1=1';
+    $q=trim((string)($_GET['q'] ?? '')); $vis=trim((string)($_GET['visibility'] ?? '')); if ($vis !== '') $vis = normalize_visibility($vis); $album=(int)($_GET['album_id'] ?? 0); $missing=(int)($_GET['missing'] ?? 0); $source=(string)($_GET['source'] ?? '') === 'member' ? 'member' : ''; $nopreview=(int)($_GET['nopreview'] ?? 0) === 1 ? 1 : 0; $p=[]; $where='WHERE 1=1';
     $sort=(string)($_GET['sort'] ?? 'order');
     $dir=strtolower((string)($_GET['dir'] ?? 'asc')) === 'desc' ? 'desc' : 'asc';
     $sortMap=[
@@ -2508,13 +2524,13 @@ function photos(): void {
         'size'=>'p.file_size '.($dir==='desc'?'DESC':'ASC').',p.sort_order ASC,p.id ASC',
     ];
     if(!isset($sortMap[$sort])) { $sort='order'; $dir='asc'; }
-    $sortLinks=function(string $key,string $label) use($q,$vis,$album,$missing,$source): string {
-        $base=['page'=>'photos','q'=>$q,'visibility'=>$vis,'album_id'=>$album ?: null,'missing'=>$missing ?: null,'source'=>$source ?: null,'sort'=>$key];
+    $sortLinks=function(string $key,string $label) use($q,$vis,$album,$missing,$source,$nopreview): string {
+        $base=['page'=>'photos','q'=>$q,'visibility'=>$vis,'album_id'=>$album ?: null,'missing'=>$missing ?: null,'nopreview'=>$nopreview ?: null,'source'=>$source ?: null,'sort'=>$key];
         $az='?'.http_build_query(array_filter($base + ['dir'=>'asc'], fn($v)=>$v!=='' && $v!==null));
         $za='?'.http_build_query(array_filter($base + ['dir'=>'desc'], fn($v)=>$v!=='' && $v!==null));
         return e($label).' <span class="sort-links"><a href="'.e($az).'" title="Ascending">↑</a> <a href="'.e($za).'" title="Descending">↓</a></span>';
     };
-    if ($vis !== '') { $where.=' AND p.visibility=?'; $p[]=$vis; } if ($album) { $where.=' AND p.album_id=?'; $p[]=$album; } if ($missing) { $where.=' AND p.is_missing=1'; } if ($source==='member') { $where.=" AND p.source_type='member_upload'"; }
+    if ($vis !== '') { $where.=' AND p.visibility=?'; $p[]=$vis; } if ($album) { $where.=' AND p.album_id=?'; $p[]=$album; } if ($missing) { $where.=' AND p.is_missing=1'; } if ($source==='member') { $where.=" AND p.source_type='member_upload'"; } if ($nopreview) { $where.=' AND '.NO_PREVIEW_SQL; }
     if (!is_superadmin()) { $where.=' AND a.created_by=?'; $p[] = current_admin_id(); }
     $where .= search_sql(['p.title','p.original_filename','p.b2_key','p.author_name','p.camera_model','p.city','p.country'], $q, $p);
     $st=db()->prepare("SELECT p.*,a.title album_title,a.created_by album_created_by FROM photos p LEFT JOIN albums a ON a.id=p.album_id $where ORDER BY {$sortMap[$sort]} LIMIT 300"); $st->execute($p); $rows=$st->fetchAll();
@@ -2536,12 +2552,13 @@ function photos(): void {
         $albumTargetOptions .= '<option value="'.e((string)$a['id']).'">'.e($targetTitle).'</option>';
     }
     $photoStatusSelect = str_replace('<select ', '<select onchange="this.form.submit()" style="width:16ch;max-width:16ch" ', status_select('visibility',$vis));
-    echo '<h1>Photos</h1><form id="photoFilterForm"><input type="hidden" name="page" value="photos"><input type="hidden" name="missing" value="'.e($missing).'"><input type="hidden" name="source" value="'.e($source).'"><input type="hidden" name="sort" value="'.e($sort).'"><input type="hidden" name="dir" value="'.e($dir).'"><div class="actions"><input style="width:320px;max-width:100%" name="q" placeholder="Search filename, title, EXIF, B2 key..." value="'.e($q).'">'.$photoStatusSelect.'<select name="album_id" onchange="this.form.submit()" style="width:'.e((string)$albumSelectWidth).'ch;max-width:100%"><option value="0">Any album</option>';
+    echo '<h1>Photos</h1><form id="photoFilterForm"><input type="hidden" name="page" value="photos"><input type="hidden" name="missing" value="'.e($missing).'"><input type="hidden" name="source" value="'.e($source).'"><input type="hidden" name="nopreview" value="'.e($nopreview ?: '').'"><input type="hidden" name="sort" value="'.e($sort).'"><input type="hidden" name="dir" value="'.e($dir).'"><div class="actions"><input style="width:320px;max-width:100%" name="q" placeholder="Search filename, title, EXIF, B2 key..." value="'.e($q).'">'.$photoStatusSelect.'<select name="album_id" onchange="this.form.submit()" style="width:'.e((string)$albumSelectWidth).'ch;max-width:100%"><option value="0">Any album</option>';
     foreach ($albums as $a) { $albumOptTitle = (string)$a['title']; if (mb_strlen($albumOptTitle, 'UTF-8') > 82) $albumOptTitle = mb_substr($albumOptTitle, 0, 81, 'UTF-8').'…'; echo '<option value="'.e($a['id']).'"'.($album===(int)$a['id']?' selected':'').' title="'.e((string)$a['title']).'">'.e($albumOptTitle).'</option>'; }
     $back='?'.($_SERVER['QUERY_STRING'] ?? 'page=photos');
     $returnKey = remember_return_path($back);
-    $memberChipHref='?'.http_build_query(array_filter(['page'=>'photos','q'=>$q,'visibility'=>$vis,'album_id'=>$album ?: null,'missing'=>$missing ?: null,'source'=>$source==='member' ? null : 'member'], fn($v)=>$v!=='' && $v!==null));
-    echo '</select><a class="btn'.($source==='member'?' primary':'').'" href="'.e($memberChipHref).'" title="Rodyti tik narių per /upload įkeltas nuotraukas">&#128100; Narių įkėlimai</a>'.(is_superadmin()?'<a class="btn" href="?action=export&type=photos">Export CSV</a>':'').'</div></form>'; if (is_superadmin()) echo '<form method="post" action="?action=create_tag_inline" class="actions"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="return_key" value="'.e($returnKey).'"><input name="name" style="width:22ch;max-width:22ch" placeholder="New tag name"><button class="primary">Create New Tag</button></form>'; echo '<form method="post" action="?action=bulk_photos" onsubmit="if(this.bulk_action.value===&quot;clean_missing&quot;)return confirm(&quot;Sutvarkyti pažymėtų nuotraukų missing įrašus? Eilutės, kurių failai NĖRA B2, bus ištrintos iš DB; kurių failai rasti — atstatytos. B2 failai neliečiami.&quot;);if(this.bulk_action.value===&quot;move_album&quot;){if(!this.target_album_id.value||this.target_album_id.value===&quot;0&quot;){alert(&quot;Pasirink albumą, į kurį priskirti.&quot;);return false;}return confirm(&quot;Priskirti pažymėtas nuotraukas kitam albumui? Failai bus NUKOPIJUOTI į to albumo originals/ aplanką; seni B2 objektai lieka vietoje ir netrinami.&quot;);}"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="return_key" value="'.e($returnKey).'"><div class="actions"><select name="bulk_action" style="width:20ch;max-width:20ch"><option value="">Bulk action</option><option value="published">Publish</option><option value="draft">Move to draft</option><option value="private">Set private</option><option value="hidden">Hide</option><option value="download_on">Downloadable on</option><option value="download_off">Downloadable off</option><option value="recheck_b2">Re-check in B2</option><option value="clean_missing">Clean missing DB rows</option><option value="create_jpg">Create JPG for other media (HEIC/video)</option><option value="rotate_cw">Pasukti ↻ 90°</option><option value="rotate_ccw">Pasukti ↺ 90°</option><option value="rotate_180">Pasukti 180°</option><option value="rotate_reset">Pasukimas: atstatyti</option><option value="move_album">Priskirti kitam albumui &#8594;</option></select><select name="target_album_id" style="width:26ch;max-width:26ch" title="Tikslinis albumas veiksmui &bdquo;Priskirti kitam albumui&ldquo;"><option value="0">&rarr; į albumą…</option>'.$albumTargetOptions.'</select><input style="max-width:180px" name="author_name" placeholder="Set author"><input style="max-width:180px" name="copyright_text" placeholder="Set copyright">'.(is_superadmin() ? '<select name="tag_id_to_add" style="width:22ch;max-width:22ch">'.$tagOptions.'</select>' : '').'<button>Apply</button></div><table><tr><th><input type="checkbox" data-master-check aria-label="Select all"></th><th><a href="?page=photos'.($album?'&album_id='.e((string)$album):'').'">Order</a></th><th>Thumb</th><th>'.$sortLinks('file','File').'</th><th>'.$sortLinks('album','Album').'</th><th>'.$sortLinks('visibility','Visibility').'</th><th>'.$sortLinks('taken','EXIF').'</th><th>'.$sortLinks('size','Size').'</th></tr>';
+    $memberChipHref='?'.http_build_query(array_filter(['page'=>'photos','q'=>$q,'visibility'=>$vis,'album_id'=>$album ?: null,'missing'=>$missing ?: null,'nopreview'=>$nopreview ?: null,'source'=>$source==='member' ? null : 'member'], fn($v)=>$v!=='' && $v!==null));
+    $noPreviewChipHref='?'.http_build_query(array_filter(['page'=>'photos','q'=>$q,'visibility'=>$vis,'album_id'=>$album ?: null,'missing'=>$missing ?: null,'source'=>$source ?: null,'nopreview'=>$nopreview ? null : 1], fn($v)=>$v!=='' && $v!==null));
+    echo '</select><a class="btn'.($source==='member'?' primary':'').'" href="'.e($memberChipHref).'" title="Rodyti tik narių per /upload įkeltas nuotraukas">&#128100; Narių įkėlimai</a><a class="btn'.($nopreview?' primary':'').'" href="'.e($noPreviewChipHref).'" title="Tik nuotraukos be JPG peržiūros (HEIC be JPG kopijos arba nepavykusi peržiūra)">&#9888; No preview</a>'.(is_superadmin()?'<a class="btn" href="?action=export&type=photos">Export CSV</a>':'').'</div></form>'; if (is_superadmin()) echo '<form method="post" action="?action=create_tag_inline" class="actions"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="return_key" value="'.e($returnKey).'"><input name="name" style="width:22ch;max-width:22ch" placeholder="New tag name"><button class="primary">Create New Tag</button></form>'; echo '<form method="post" action="?action=bulk_photos" onsubmit="if(this.bulk_action.value===&quot;clean_missing&quot;)return confirm(&quot;Sutvarkyti pažymėtų nuotraukų missing įrašus? Eilutės, kurių failai NĖRA B2, bus ištrintos iš DB; kurių failai rasti — atstatytos. B2 failai neliečiami.&quot;);if(this.bulk_action.value===&quot;move_album&quot;){if(!this.target_album_id.value||this.target_album_id.value===&quot;0&quot;){alert(&quot;Pasirink albumą, į kurį priskirti.&quot;);return false;}return confirm(&quot;Priskirti pažymėtas nuotraukas kitam albumui? Failai bus NUKOPIJUOTI į to albumo originals/ aplanką; seni B2 objektai lieka vietoje ir netrinami.&quot;);}"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="return_key" value="'.e($returnKey).'"><div class="actions"><select name="bulk_action" style="width:20ch;max-width:20ch"><option value="">Bulk action</option><option value="published">Publish</option><option value="draft">Move to draft</option><option value="private">Set private</option><option value="hidden">Hide</option><option value="download_on">Downloadable on</option><option value="download_off">Downloadable off</option><option value="recheck_b2">Re-check in B2</option><option value="clean_missing">Clean missing DB rows</option><option value="create_jpg">Create JPG for other media (HEIC/video)</option><option value="rotate_cw">Pasukti ↻ 90°</option><option value="rotate_ccw">Pasukti ↺ 90°</option><option value="rotate_180">Pasukti 180°</option><option value="rotate_reset">Pasukimas: atstatyti</option><option value="move_album">Priskirti kitam albumui &#8594;</option></select><select name="target_album_id" style="width:26ch;max-width:26ch" title="Tikslinis albumas veiksmui &bdquo;Priskirti kitam albumui&ldquo;"><option value="0">&rarr; į albumą…</option>'.$albumTargetOptions.'</select><input style="max-width:180px" name="author_name" placeholder="Set author"><input style="max-width:180px" name="copyright_text" placeholder="Set copyright">'.(is_superadmin() ? '<select name="tag_id_to_add" style="width:22ch;max-width:22ch">'.$tagOptions.'</select>' : '').'<button>Apply</button></div><table><tr><th><input type="checkbox" data-master-check aria-label="Select all"></th><th><a href="?page=photos'.($album?'&album_id='.e((string)$album):'').'">Order</a></th><th>Thumb</th><th>'.$sortLinks('file','File').'</th><th>'.$sortLinks('album','Album').'</th><th>'.$sortLinks('visibility','Visibility').'</th><th>'.$sortLinks('taken','EXIF').'</th><th>'.$sortLinks('size','Size').'</th></tr>';
     foreach ($rows as $i=>$r) {
         $size='';
         if($r['width']&&$r['height']) $size=round(($r['width']*$r['height'])/1000000).' MP<br><span class="muted small">'.e($r['width']).' x '.e($r['height']).'</span>';
@@ -2559,7 +2576,7 @@ function photos(): void {
         $thumbHtml=$thumb?'<button type="button" class="photo-list-preview-trigger" data-preview="'.e($preview).'" data-title="'.e($r['original_filename']).'" data-key="'.e($r['b2_key']).'" style="display:block;padding:0;border:0;background:transparent;cursor:zoom-in">'.$thumbImg.'</button>':$thumbImg;
         $canEdit = is_superadmin() || ((int)($r['album_created_by'] ?? 0) === current_admin_id());
         $orderControls='<div class="actions" style="margin:0;gap:4px;align-items:center"><span class="badge">'.e((string)($i+1)).'</span><button class="mini" formmethod="post" formaction="?action=move_photo_sort&id='.e($r['id']).'&dir=up" title="Move up"'.($i===0?' disabled':'').'>↑</button><button class="mini" formmethod="post" formaction="?action=move_photo_sort&id='.e($r['id']).'&dir=down" title="Move down"'.($i===count($rows)-1?' disabled':'').'>↓</button>'.($canEdit ? '<a class="btn mini" href="?page=photo_edit&id='.e($r['id']).'">Edit</a>' : '<span class="badge">read-only</span>').'</div>';
-        echo '<tr><td>'.($canEdit ? '<input type="checkbox" name="ids[]" value="'.e($r['id']).'" data-fname="'.e($r['original_filename']).'">' : '<span class="muted">•</span>').'</td><td>'.$orderControls.'</td><td>'.$thumbHtml.'</td><td><strong>'.e($r['original_filename']).'</strong><br><span class="muted small">'.e($r['b2_key']).'</span>'.(trim((string)($r['contributor_name'] ?? ''))!=='' ? '<br><span class="badge" title="Įkėlė narys per /upload">&#128100; '.e((string)$r['contributor_name']).'</span>' : '').'</td><td><a href="?page=album_edit&id='.e((string)$r['album_id']).'#albumPhotoUploadForm" title="Atidaryti albumą / įkėlimo formą" style="text-decoration:underline;text-underline-offset:3px">'.e($r['album_title']).'</a></td><td><span class="badge">'.e($r['visibility']).'</span>'.($r['is_missing']?' <span class="badge">missing</span>':(photo_is_previewable((string)$r['original_filename'])?'':' <span class="badge" title="Šio failo peržiūra negalima — tik atsisiuntimas">No preview / Download and view only · '.e(photo_kind_label((string)$r['original_filename'])).'</span>')).'</td><td>'.$exif.'</td><td>'.$size.'</td></tr>';
+        echo '<tr><td>'.($canEdit ? '<input type="checkbox" name="ids[]" value="'.e($r['id']).'" data-fname="'.e($r['original_filename']).'">' : '<span class="muted">•</span>').'</td><td>'.$orderControls.'</td><td>'.$thumbHtml.'</td><td><strong>'.e($r['original_filename']).'</strong><br><span class="muted small">'.e($r['b2_key']).'</span>'.(trim((string)($r['contributor_name'] ?? ''))!=='' ? '<br><span class="badge" title="Įkėlė narys per /upload">&#128100; '.e((string)$r['contributor_name']).'</span>' : '').'</td><td><a href="?page=album_edit&id='.e((string)$r['album_id']).'#albumPhotoUploadForm" title="Atidaryti albumą / įkėlimo formą" style="text-decoration:underline;text-underline-offset:3px">'.e($r['album_title']).'</a></td><td><span class="badge">'.e($r['visibility']).'</span>'.(photo_has_no_preview($r) ? ' <span class="badge err" title="Nėra JPG peržiūros: galerijoje ši nuotrauka nerodoma. Sukurti: pažymėk ir Bulk action → Create JPG">no preview</span>' : '').($r['is_missing']?' <span class="badge">missing</span>':(photo_is_previewable((string)$r['original_filename'])?'':' <span class="badge" title="Šio failo peržiūra negalima — tik atsisiuntimas">No preview / Download and view only · '.e(photo_kind_label((string)$r['original_filename'])).'</span>')).'</td><td>'.$exif.'</td><td>'.$size.'</td></tr>';
     }
     // Tuščias sąrašas be paaiškinimo klaidina: įkėlimo įrankiai yra album_edit,
     // ne čia. Pasakom, kodėl tuščia, ir duodam nuorodą į teisingą vietą.
@@ -2665,10 +2682,12 @@ function tags(): void {
     require_superadmin();
     head('Tags');
     $rows=db()->query("SELECT t.*, (SELECT COUNT(*) FROM photo_tags pt WHERE pt.tag_id=t.id) photos_count, (SELECT COUNT(*) FROM album_tags at WHERE at.tag_id=t.id) albums_count FROM tags t ORDER BY name LIMIT 300")->fetchAll();
-    echo '<h1>Tags</h1><form class="actions" method="post" action="?action=save_tag"><input type="hidden" name="_token" value="'.e(token()).'"><input name="name" style="max-width:260px" placeholder="New tag"><select name="type" style="max-width:160px"><option>keyword</option><option>sport</option><option>topic</option><option>person</option><option>location</option><option>style</option></select><button class="primary">Create New Tag</button></form><table><tr><th>ID</th><th>Name</th><th>Slug</th><th>Type</th><th>Photos</th><th>Number of Albums</th></tr>';
+    echo '<h1>Tags</h1><form class="actions" method="post" action="?action=save_tag"><input type="hidden" name="_token" value="'.e(token()).'"><input name="name" style="max-width:260px" placeholder="New tag"><select name="type" style="max-width:160px"><option>keyword</option><option>sport</option><option>topic</option><option>person</option><option>location</option><option>style</option></select><button class="primary">Create New Tag</button></form><table><tr><th>ID</th><th>Name</th><th>Slug</th><th>Type</th><th>Photos</th><th>Number of Albums</th><th></th></tr>';
     foreach ($rows as $r) {
         $albumLink = (int)$r['albums_count'] > 0 ? '<a class="btn mini" href="?page=albums&tag_id='.e($r['id']).'">'.e($r['albums_count']).'</a>' : '<span class="badge">0</span>';
-        echo '<tr><td>'.e($r['id']).'</td><td>'.e($r['name']).'</td><td>'.e($r['slug']).'</td><td>'.e($r['type']).'</td><td>'.e($r['photos_count']).'</td><td>'.$albumLink.'</td></tr>';
+        $confirmText = 'Ištrinti žymą „'.$r['name'].'"? Ji bus nuimta nuo '.(int)$r['albums_count'].' albumų ir '.(int)$r['photos_count'].' nuotraukų. Albumai ir nuotraukos lieka.';
+        $deleteForm = '<form method="post" action="?action=delete_tag" style="margin:0" onsubmit="return confirm(this.dataset.confirm)" data-confirm="'.e($confirmText).'"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="tag_id" value="'.e($r['id']).'"><button class="btn mini danger" style="border-color:var(--err-line)">Delete</button></form>';
+        echo '<tr><td>'.e($r['id']).'</td><td>'.e($r['name']).'</td><td>'.e($r['slug']).'</td><td>'.e($r['type']).'</td><td>'.e($r['photos_count']).'</td><td>'.$albumLink.'</td><td>'.$deleteForm.'</td></tr>';
     }
     echo '</table>'; foot('Tags');
 }
@@ -4869,7 +4888,12 @@ function inbox_page(): void {
     if ($batchId > 0) { inbox_batch_page($batchId); return; }
 
     head('Uploads');
-    $rows = db()->query("SELECT b.*, a.title album_title FROM inbox_batches b LEFT JOIN albums a ON a.id=b.album_id ORDER BY (b.status='imported'), b.created_at DESC LIMIT 200")->fetchAll();
+    // Perkeltos siuntos (status='imported') rodomos tik archyve - pagrindiniame
+    // sarase lieka tai, ka dar reikia sutvarkyti.
+    $archive = (string)($_GET['archive'] ?? '') === '1';
+    $rows = db()->query("SELECT b.*, a.title album_title FROM inbox_batches b LEFT JOIN albums a ON a.id=b.album_id WHERE b.status".($archive ? "='imported'" : "<>'imported'")." ORDER BY b.created_at DESC LIMIT 200")->fetchAll();
+    $archivedCount = (int)db()->query("SELECT COUNT(*) FROM inbox_batches WHERE status='imported'")->fetchColumn();
+    $pendingCount = (int)db()->query("SELECT COUNT(*) FROM inbox_batches WHERE status<>'imported'")->fetchColumn();
     $code = trim(setting('inbox_access_code'));
     $on = setting('inbox_enabled', '1') !== '0';
     echo '<h1>Uploads - nuotraukų įkėlimas</h1>';
@@ -4892,7 +4916,9 @@ function inbox_page(): void {
         .'<button class="'.($on ? 'btn' : 'primary').'">'.($on ? 'Išjungti įkėlimą' : 'Įjungti įkėlimą').'</button></form>'
         .'<p class="muted small" style="margin:12px 0 0">Kodą dalinkis klubo grupėje. Nariai mato tik įkėlimo formą — nei galerijos, nei kitų siuntų jie nepasiekia. Tie patys laukai yra ir <a href="?page=settings" style="text-decoration:underline">Settings</a> lange.</p></div>';
 
-    if (!$rows) { echo '<p class="muted">Kol kas nieko neįkelta.</p>'; foot('Uploads'); return; }
+    $tab = fn(bool $on, string $href, string $label) => '<a class="'.($on ? 'btn primary' : 'btn').'" href="'.$href.'">'.e($label).'</a>';
+    echo '<div class="actions" style="margin:16px 0 10px">'.$tab(!$archive, '?page=inbox', 'Laukia sutvarkymo ('.$pendingCount.')').$tab($archive, '?page=inbox&archive=1', 'Archyvas — perkelta ('.$archivedCount.')').'</div>';
+    if (!$rows) { echo '<p class="muted">'.($archive ? 'Archyvas tuščias.' : 'Nesutvarkytų siuntų nėra — viskas perkelta.').'</p>'; foot('Uploads'); return; }
     echo '<table><tr><th>Gauta</th><th>Laikinas pavadinimas</th><th>Kas įkėlė</th><th>Failai</th><th>Dydis</th><th>Būsena</th><th></th></tr>';
     foreach ($rows as $r) {
         $imported = (string)$r['status'] === 'imported';
@@ -6657,6 +6683,35 @@ function bulk(string $table): void {
 }
 
 
+// Zyma trinama tik is DB (tags + album_tags/photo_tags rysiai). B2 ir metadata
+// JSON zymu neturi, tad B2 Sync jos nesugrazins. Audite lieka albumu/nuotrauku
+// ID - prireikus rysius galima atkurti rankomis.
+function delete_tag(): void {
+    require_superadmin();
+    csrf();
+    $id = (int)($_POST['tag_id'] ?? 0);
+    $st = db()->prepare("SELECT id,name FROM tags WHERE id=? LIMIT 1");
+    $st->execute([$id]);
+    $tag = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    if (!$tag) { flash('Žyma nerasta.', 'err'); go('?page=tags'); }
+    $a = db()->prepare("SELECT album_id FROM album_tags WHERE tag_id=?"); $a->execute([$id]); $albumIds = array_map('intval', $a->fetchAll(PDO::FETCH_COLUMN));
+    $p = db()->prepare("SELECT photo_id FROM photo_tags WHERE tag_id=?"); $p->execute([$id]); $photoIds = array_map('intval', $p->fetchAll(PDO::FETCH_COLUMN));
+    $db = db();
+    $db->beginTransaction();
+    try {
+        $db->prepare("DELETE FROM album_tags WHERE tag_id=?")->execute([$id]);
+        $db->prepare("DELETE FROM photo_tags WHERE tag_id=?")->execute([$id]);
+        $db->prepare("DELETE FROM tags WHERE id=?")->execute([$id]);
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        flash('Žymos ištrinti nepavyko: '.$e->getMessage(), 'err'); go('?page=tags');
+    }
+    audit('tag', $id, 'delete', 'Tag deleted: '.$tag['name'], ['album_ids' => $albumIds, 'photo_ids' => $photoIds]);
+    flash('Žyma „'.$tag['name'].'" ištrinta (nuimta nuo '.count($albumIds).' albumų ir '.count($photoIds).' nuotraukų).');
+    go('?page=tags');
+}
+
 function create_tag_inline(): void {
     require_superadmin();
     csrf();
@@ -8253,6 +8308,7 @@ try {
     if ($action==='bulk_albums') { need_login(); bulk('albums'); }
     if ($action==='bulk_photos') { need_login(); bulk('photos'); }
     if ($action==='create_tag_inline') { need_login(); create_tag_inline(); }
+    if ($action==='delete_tag') { need_login(); delete_tag(); }
     if ($action==='save_admin') { need_login(); save_admin(); }
     if ($action==='save_member') { need_login(); save_member(); }
     if ($action==='toggle_member_active') { need_login(); toggle_member_active(); }
