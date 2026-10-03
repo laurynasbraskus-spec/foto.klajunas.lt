@@ -250,6 +250,12 @@ try {
     if ($file === '') respond_text('Missing file', 400);
     // Juodrascio originalas nesiunciamas (404 dar pries B2 kreipini).
     $downloadCacheOverride = gallery_enforce_file_visibility($file);
+    // Albumui ar nuotraukai isjungtas atsisiuntimas -> 403, irgi pries B2.
+    // Admin'ui leidziama, bet niekada ne viesu kesu (Cloudflare raktas - tik URL).
+    if (gallery_key_download_allowed($file) === false) {
+        if (!gallery_viewer_is_admin()) gallery_public_error('Download disabled', 403);
+        $downloadCacheOverride = 'private, no-store';
+    }
 
     [$tmpPath, $contentType, $bytes] = download_b2_to_tempfile(
         $file,

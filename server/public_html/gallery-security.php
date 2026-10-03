@@ -195,6 +195,54 @@ function gallery_key_access(string $key): string {
 }
 
 /**
+ * Ar originala galima atsisiusti per download.php:
+ *   true  - bent viena DB nuotrauka su siuo raktu matoma ir leidzia atsisiuntima
+ *           (albums.download_enabled=1, photos.is_downloadable=1, is_missing=0)
+ *   false - raktas DB yra, bet ne viena jo eilute atsisiuntimo neleidzia
+ *   null  - DB tokio rakto nera arba DB nepasiekiama (elgiamasi kaip anksciau)
+ *
+ * Iki 2026-10-03 sias taisykles tikrino tik b2-gallery.php (slepe downloadUrl),
+ * o pats download.php atiduodavo bet kuri originala pagal ?file=. Raktas matomas
+ * img.php miniatiuros adrese, tad isjungtas atsisiuntimas buvo tik kosmetinis.
+ *
+ * Ieskoma tik stulpeliuose, kuriuos galerija deda i downloadUrl: originalas,
+ * JPG perziura (HEIC) ir legacy originalas - thumb/preview keliai ne atsisiuntimai.
+ */
+function gallery_key_download_allowed(string $key): ?bool {
+    $key = trim($key, "/ \t\n\r\0\x0B");
+    if ($key === '') return null;
+    $db = gallery_visibility_db();
+    if (!$db) return null;
+
+    $columns = ['b2_key', 'compatibility_b2_key', 'original_b2_key'];
+    try {
+        $where = implode(' OR ', array_map(fn($c) => "p.`$c` = ?", $columns));
+        $q = $db->prepare(
+            "SELECT a.visibility AS album_visibility, p.visibility AS photo_visibility,
+                    a.download_enabled, p.is_downloadable, p.is_missing
+               FROM photos p
+               JOIN albums a ON a.id = p.album_id
+              WHERE $where"
+        );
+        $q->execute(array_fill(0, count($columns), $key));
+        $rows = $q->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        gallery_log($e);
+        return null;
+    }
+    if (!$rows) return null;
+    foreach ($rows as $row) {
+        if ((int)($row['download_enabled'] ?? 0) === 1
+            && (int)($row['is_downloadable'] ?? 0) === 1
+            && (int)($row['is_missing'] ?? 0) === 0
+            && gallery_viewer_can_see((string)($row['album_visibility'] ?? ''), (string)($row['photo_visibility'] ?? ''))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * Bendras sprendimas ?file= tipo endpoint'ams (img/meta/download).
  * Paslepta nuotrauka -> 404 su no-store (Cloudflare jos neiskesuoja), nebent
  * ziuri admin'as.
