@@ -28,9 +28,12 @@ declare(strict_types=1);
 // nueidavo tyliai i tuscia - failas likdavo senas, o issiaiskinti tai buvo
 // imanoma tik netiesiogiai, pagal atsakymo turini. Antraste tai paverčia vienu
 // kreipiniu. Keiciam kaskart, kai keiciasi failas.
-header('X-Foto-Build: 2026-09-03-c');
+header('X-Foto-Build: 2026-10-03-a');
 header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: public, max-age=120, s-maxage=600, stale-while-revalidate=86400');
+// Narsykle sena albumo sarasa gali rodyti ne ilgiau ~2 min. (60 s + 60 s fone).
+// Anksciau stale-while-revalidate=86400 leido iki paros rodyti sena versija -
+// po ikelimo naujos nuotraukos galerijoje pasirodydavo tik antru atidarymu.
+header('Cache-Control: public, max-age=60, s-maxage=600, stale-while-revalidate=60');
 require_once __DIR__ . '/gallery-security.php';
 gallery_security_headers('json');
 gallery_require_get();
