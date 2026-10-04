@@ -91,7 +91,102 @@ function gallery_visibility_is_public(string $visibility): bool {
 
 /** Ar dabartinis ziurovas gali matyti nuotrauka su tokiu albumo ir nuotraukos matomumu. */
 function gallery_viewer_can_see(string $albumVisibility, string $photoVisibility): bool {
+    if (gallery_visible_to_everyone($albumVisibility, $photoVisibility)) return true;
+    // Privatus albumas: jo paskelbtos nuotraukos - tik leistiems ziurovams.
+    return $albumVisibility === 'private'
+        && gallery_visibility_is_public($photoVisibility)
+        && gallery_viewer_can_see_private();
+}
+
+/** Ar nuotrauka rodoma visiems be prisijungimo (tik tada ja galima keseti viesai). */
+function gallery_visible_to_everyone(string $albumVisibility, string $photoVisibility): bool {
     return gallery_visibility_is_public($albumVisibility) && gallery_visibility_is_public($photoVisibility);
+}
+
+/* ------------------------ Privatus albumas ------------------------
+ *
+ * visibility='private': albumas matomas sarase su spyna, nuotraukos - tik
+ * prisijungusiems. Kas "prisijunges", nusprendzia Settings:
+ *   private_album_viewers = 'admins'  - tik adminai (numatyta)
+ *                           'members' - adminai + el. pastai is private_viewer_emails
+ * Prisijungimas - /login/ (Google). Jis deda $_SESSION['viewer'], kuris NEDUODA
+ * jokios admin'o prieigos (admin'as remiasi tik $_SESSION['admin']).
+ *
+ * Privacios nuotraukos atsakymai VISADA 'private, no-store': Cloudflare raktas yra
+ * tik URL, tad viesai iskesuota nario perziura taptu vieša visiems.
+ */
+
+/** Sesijos turinys tik skaitymui. Be cookie sesija neatidaroma ir Set-Cookie nesiunciamas. */
+function gallery_session(): array {
+    static $data = null;
+    if ($data !== null) return $data;
+    if (session_status() === PHP_SESSION_ACTIVE) return $data = (array)$_SESSION;
+    if (session_status() === PHP_SESSION_DISABLED || empty($_COOKIE[session_name()])) return $data = [];
+    try {
+        @session_start(['read_and_close' => true]);
+    } catch (Throwable $e) {
+        gallery_log($e);
+        return $data = [];
+    }
+    // Strict mode nezinomam ID sugeneruotu nauja ir ji issiustu - mums jo nereikia.
+    if (!headers_sent()) header_remove('Set-Cookie');
+    return $data = (array)($_SESSION ?? []);
+}
+
+/** settings lentele (reiksme saugoma JSON), kaip admin'o setting(). */
+function gallery_setting(string $key, string $default = ''): string {
+    static $cache = [];
+    if (array_key_exists($key, $cache)) return $cache[$key];
+    $db = gallery_visibility_db();
+    if (!$db) return $cache[$key] = $default;
+    try {
+        $q = $db->prepare('SELECT `value` FROM settings WHERE `key`=? LIMIT 1');
+        $q->execute([$key]);
+        $v = $q->fetchColumn();
+    } catch (Throwable $e) {
+        gallery_log($e);
+        return $cache[$key] = $default;
+    }
+    if ($v === false || $v === null) return $cache[$key] = $default;
+    $j = json_decode((string)$v, true);
+    return $cache[$key] = is_scalar($j) ? (string)$j : $default;
+}
+
+/** 'admins' arba 'members' (Settings -> Privatūs albumai). */
+function gallery_private_viewers_mode(): string {
+    $m = gallery_setting('private_album_viewers', 'admins');
+    return in_array($m, ['admins', 'members'], true) ? $m : 'admins';
+}
+
+/** Nariu el. pastai privatiems albumams (Settings, po viena eiluteje arba per kableli). */
+function gallery_private_viewer_emails(): array {
+    $out = [];
+    foreach (preg_split('/[\s,;]+/', strtolower(gallery_setting('private_viewer_emails', ''))) ?: [] as $e) {
+        if ($e !== '' && filter_var($e, FILTER_VALIDATE_EMAIL)) $out[$e] = true;
+    }
+    return array_keys($out);
+}
+
+/** Prisijunges per /login/ ziurovas arba null. */
+function gallery_viewer(): ?array {
+    $v = gallery_session()['viewer'] ?? null;
+    return (is_array($v) && (string)($v['email'] ?? '') !== '') ? $v : null;
+}
+
+/**
+ * Ar dabartinis ziurovas mato privaciu albumu nuotraukas. Nariu sarasas
+ * tikrinamas kiekviena karta - pasalintas is saraso netenka prieigos iskart,
+ * nelaukiant sesijos pabaigos.
+ */
+function gallery_viewer_can_see_private(): bool {
+    static $can = null;
+    if ($can !== null) return $can;
+    if (gallery_viewer_is_admin()) return $can = true;
+    $v = gallery_viewer();
+    if (!$v) return $can = false;
+    if (!empty($v['is_admin'])) return $can = true;
+    return $can = gallery_private_viewers_mode() === 'members'
+        && in_array(strtolower((string)$v['email']), gallery_private_viewer_emails(), true);
 }
 
 /**
@@ -103,19 +198,7 @@ function gallery_viewer_can_see(string $albumVisibility, string $photoVisibility
  * uzklausa be cookie sesijos nepaleidzia ir Set-Cookie negauna.
  */
 function gallery_viewer_is_admin(): bool {
-    static $isAdmin = null;
-    if ($isAdmin !== null) return $isAdmin;
-    if (session_status() === PHP_SESSION_ACTIVE) return $isAdmin = !empty($_SESSION['admin']);
-    if (session_status() === PHP_SESSION_DISABLED || empty($_COOKIE[session_name()])) return $isAdmin = false;
-    try {
-        @session_start(['read_and_close' => true]);
-    } catch (Throwable $e) {
-        gallery_log($e);
-        return $isAdmin = false;
-    }
-    // Strict mode nezinomam ID sugeneruotu nauja ir ji issiustu - mums jo nereikia.
-    if (!headers_sent()) header_remove('Set-Cookie');
-    return $isAdmin = !empty($_SESSION['admin']);
+    return !empty(gallery_session()['admin']);
 }
 
 /**
@@ -178,6 +261,7 @@ function gallery_photo_rows_for_key(PDO $db, string $key, array $columns, string
 /**
  * Kam priklauso B2 raktas ir ar jis rodomas siam ziurovui:
  *   'public' - bent viena DB nuotrauka su siuo raktu matoma
+ *   'private' - matoma tik siam ziurovui (privatus albumas) - kesuoti viesai NEGALIMA
  *   'hidden' - raktas DB yra, bet nei viena jo nuotrauka nematoma
  *   'absent' - DB tokio rakto nera (senas failas be irasu - elgiamasi kaip anksciau)
  *   'error'  - DB nepasiekiama, atsakymo nezinom
@@ -203,12 +287,15 @@ function gallery_key_access(string $key): string {
         return 'error';
     }
     if (!$rows) return 'absent';
+    $best = 'hidden';
     foreach ($rows as $row) {
-        if (gallery_viewer_can_see((string)($row['album_visibility'] ?? ''), (string)($row['photo_visibility'] ?? ''))) {
-            return 'public';
-        }
+        $av = (string)($row['album_visibility'] ?? '');
+        $pv = (string)($row['photo_visibility'] ?? '');
+        if (gallery_visible_to_everyone($av, $pv)) return 'public';
+        // 'private' - matoma TIK siam ziurovui (privatus albumas); kesuoti viesai negalima.
+        if (gallery_viewer_can_see($av, $pv)) $best = 'private';
     }
-    return 'hidden';
+    return $best;
 }
 
 /**
@@ -262,6 +349,7 @@ function gallery_key_download_allowed(string $key): ?bool {
 function gallery_enforce_file_visibility(string $key): ?string {
     $access = gallery_key_access($key);
     if ($access === 'public' || $access === 'absent') return null;
+    if ($access === 'private') return 'private, no-store';
     if ($access === 'hidden') {
         if (!gallery_viewer_is_admin()) gallery_public_error('Not found', 404);
         // Tik admin'o narsykleje - kad albumo redagavimas nesiųstu visu plyteliu is naujo.

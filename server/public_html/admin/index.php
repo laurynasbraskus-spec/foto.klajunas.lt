@@ -2426,6 +2426,11 @@ function album_edit(): void {
     $systemFields = ['title'=>'Title','slug'=>'Slug','event_date'=>'Event date','event_date_end'=>'Event date end'];
     foreach ($systemFields as $n=>$l) { $idAttr = $n === 'title' ? ' id="albumTitleInput"' : ($n === 'slug' ? ' id="albumSlugInput"' : ''); $class = ($n === 'title' || $n === 'slug') ? ' class="field-full"' : ''; echo '<div'.$class.'><label>'.e($l).'</label><input'.$idAttr.' name="'.e($n).'" value="'.e($r[$n] ?? '').'"></div>'; }
     echo '<div><label>Visibility</label>'.status_select('visibility',$r['visibility']).'</div><div><label>Sort order</label><input type="number" name="sort_order" value="'.e($r['sort_order']).'"></div>';
+    if ((string)($r['visibility'] ?? '') === 'private') {
+        // Nuolatine pastaba, ne flash: albuma i private galima perjungti ir per
+        // automatini irasyma, kuris jokio pranesimo neparodo.
+        echo '<div class="small" style="grid-column:1/-1;padding:10px 12px;border:1px solid var(--accent-line);border-radius:10px;background:var(--panel2)">&#128274; <strong>Privatus albumas.</strong> Galerijoje rodomas su spyna, nuotraukos — tik prisijungusiems per /login/ (kas mato — <a href="?page=settings" style="text-decoration:underline">Settings</a>). Jei albumas anksčiau buvo paskelbtas, jo nuotraukų kopijos Cloudflare talpykloje gali likti pasiekiamos tiems, kas turi tikslų adresą, kol jų neišvalysi (Cloudflare → Caching → Purge).</div>';
+    }
     $coverMode = in_array((string)($r['cover_mode'] ?? 'auto'), ['auto','manual','none'], true) ? (string)$r['cover_mode'] : 'auto';
     if (!empty($r['cover_photo_id']) && $coverMode === 'auto') $coverMode = 'manual';
     echo '<div><label>Cover photo</label><select name="cover_photo_id"><option value="__auto__"'.($coverMode==='auto'?' selected':'').'>Auto</option><option value="__none__"'.($coverMode==='none'?' selected':'').'>None</option>';
@@ -3889,6 +3894,12 @@ function settings_page(): void {
     $takeoutTuning = takeout_stage_upload_tuning();
     echo '<h1>Settings</h1><form method="post" action="?action=save_settings"><input type="hidden" name="_token" value="'.e(token()).'"><div class="formgrid">';
     foreach($fields as $k=>$l) echo '<div><label>'.e($l).'</label><input name="'.e($k).'" value="'.e(setting($k)).'"></div>';
+    // Privatus albumas: kas mato nuotraukas. Skaito live/gallery-security.php
+    // (gallery_private_viewers_mode / gallery_private_viewer_emails) ir /login/.
+    $pvMode = setting('private_album_viewers', 'admins') === 'members' ? 'members' : 'admins';
+    echo '<div style="grid-column:1/-1;margin-top:6px"><h2 style="margin:0">&#128274; Privatūs albumai</h2><p class="muted small" style="margin:6px 0 0">Albumas su Visibility = <strong>private</strong> galerijoje matomas visiems su spyna (be viršelio), o jo nuotraukos — tik prisijungusiems per <a href="/login/" target="_blank" rel="noopener" style="text-decoration:underline">foto.klajunas.lt/login/</a> (Google). Prisijungimas galerijoje neduoda prieigos prie admin\'o.</p></div>';
+    echo '<div><label>Privačių albumų nuotraukas mato</label><select name="private_album_viewers"><option value="admins"'.($pvMode==='admins'?' selected':'').'>Tik adminai</option><option value="members"'.($pvMode==='members'?' selected':'').'>Adminai + nariai (Google prisijungimas galerijoje)</option></select></div>';
+    echo '<div><label>Narių el. paštai <span class="muted">· po vieną eilutėje; galioja tik „Adminai + nariai“</span></label><textarea name="private_viewer_emails" rows="4" placeholder="vardas.pavarde@gmail.com" autocomplete="off">'.e(setting('private_viewer_emails')).'</textarea></div>';
     b2_load_config();
     $b2Eff = function(string $c): string { return defined($c) ? (string)constant($c) : ''; };
     $b2Src = function(string $key): string { return trim(setting($key)) !== '' ? 'DB override' : 'b2-config.php'; };
@@ -5296,7 +5307,7 @@ function save_album(): void {
     }
     $existingDownloadEnabled = null;
     if ($id) {
-        $q = db()->prepare("SELECT download_enabled,slug FROM albums WHERE id=? LIMIT 1");
+        $q = db()->prepare("SELECT download_enabled,slug,visibility FROM albums WHERE id=? LIMIT 1");
         $q->execute([$id]);
         $existingRow = $q->fetch(PDO::FETCH_ASSOC) ?: [];
         $existingDownloadEnabled = (int)($existingRow['download_enabled'] ?? 1);
@@ -5336,7 +5347,11 @@ function save_album(): void {
         // albuma atskirai.
         json_exit(['ok' => true, 'id' => $id, 'created' => $wasNew, 'title' => $title]);
     }
-    flash('Album saved.'); go(consume_return_path('?page=albums'));
+    // Viesas -> privatus: Cloudflare jau gali tureti viesas nuotrauku kopijas (iki
+    // metu pagal URL). Kodas ju nepasieks - tai gali padaryti tik Cloudflare purge.
+    $madePrivate = (string)($existingRow['visibility'] ?? '') === 'published' && $visibility === 'private';
+    flash('Album saved.'.($madePrivate ? ' Albumas tapo privatus. Jo nuotraukos anksčiau buvo viešos — jų kopijos Cloudflare talpykloje gali likti pasiekiamos tiems, kas turi tikslų adresą, kol jos nebus išvalytos (Cloudflare → Caching → Purge).' : ''), $madePrivate ? 'err' : 'ok');
+    go(consume_return_path('?page=albums'));
 }
 
 function save_storage_path(): void {
@@ -6756,6 +6771,17 @@ function save_settings(): void {
     if (array_key_exists('b2_api_app_key', $_POST) && $_POST['b2_api_app_key'] === '') unset($_POST['b2_api_app_key']);
     $b2Changed = false;
     foreach ($b2Keys as $bk) if (array_key_exists($bk, $_POST) && (string)$_POST[$bk] !== setting($bk)) $b2Changed = true;
+    $settingsNote = '';
+    if (array_key_exists('private_album_viewers', $_POST) && !in_array((string)$_POST['private_album_viewers'], ['admins','members'], true)) $_POST['private_album_viewers'] = 'admins';
+    if (array_key_exists('private_viewer_emails', $_POST)) {
+        $good = []; $bad = [];
+        foreach (preg_split('/[\s,;]+/', strtolower((string)$_POST['private_viewer_emails'])) ?: [] as $em) {
+            if ($em === '') continue;
+            if (filter_var($em, FILTER_VALIDATE_EMAIL)) $good[$em] = true; else $bad[] = $em;
+        }
+        $_POST['private_viewer_emails'] = implode("\n", array_keys($good));
+        if ($bad) $settingsNote = ' Neteisingi el. paštai praleisti: '.implode(', ', $bad).'.';
+    }
     foreach($_POST as $k=>$v){ if($k==='_token') continue; db()->prepare("INSERT INTO settings(`group`,`key`,`value`,type) VALUES('general',?,?, 'string') ON DUPLICATE KEY UPDATE value=VALUES(value)")->execute([$k,json_encode((string)$v,JSON_UNESCAPED_UNICODE)]); }
     if ($b2Changed) {
         b2_load_config();
@@ -6763,7 +6789,7 @@ function save_settings(): void {
         @unlink($cache);
         audit('settings', null, 'b2_api_update', 'B2 API settings changed, auth cache cleared');
     }
-    audit('settings',null,'update','Settings updated'); flash('Settings saved.'.($b2Changed ? ' B2 raktai atnaujinti, auth cache išvalytas.' : '')); go('?page=settings');
+    audit('settings',null,'update','Settings updated'); flash('Settings saved.'.($b2Changed ? ' B2 raktai atnaujinti, auth cache išvalytas.' : '').$settingsNote, $settingsNote !== '' ? 'err' : 'ok'); go('?page=settings');
 }
 function b2_test_connection(): void {
     require_superadmin();

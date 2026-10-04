@@ -1,4 +1,4 @@
-const VERSION = 'foto-cache-v2';
+const VERSION = 'foto-cache-v3';
 const API_CACHE = `${VERSION}-api`;
 const IMAGE_CACHE = `${VERSION}-images`;
 const STATIC_CACHE = `${VERSION}-static`;
@@ -45,11 +45,19 @@ function isStaticAsset(url) {
     url.pathname.endsWith('/site.webmanifest');
 }
 
+// Privataus albumo atsakymai ir nuotraukos ateina su 'private' / 'no-store'.
+// Ju i irenginio talpykla nededam: kitaip po atsijungimo (ar bendrame
+// kompiuteryje) jie liktu matomi.
+function storable(response) {
+  const cc = (response.headers.get('Cache-Control') || '').toLowerCase();
+  return response.ok && !cc.includes('no-store') && !cc.includes('private');
+}
+
 async function networkFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
   try {
     const response = await fetch(request);
-    if (response.ok) {
+    if (storable(response)) {
       await cache.put(request, response.clone());
     }
     return response;
@@ -66,7 +74,7 @@ async function cacheFirst(request, cacheName) {
   if (cached) return cached;
 
   const response = await fetch(request);
-  if (response.ok) {
+  if (storable(response)) {
     await cache.put(request, response.clone());
   }
   return response;

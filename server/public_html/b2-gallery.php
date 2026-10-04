@@ -28,7 +28,7 @@ declare(strict_types=1);
 // nueidavo tyliai i tuscia - failas likdavo senas, o issiaiskinti tai buvo
 // imanoma tik netiesiogiai, pagal atsakymo turini. Antraste tai paverčia vienu
 // kreipiniu. Keiciam kaskart, kai keiciasi failas.
-header('X-Foto-Build: 2026-10-03-b');
+header('X-Foto-Build: 2026-10-04-a');
 header('Content-Type: application/json; charset=utf-8');
 // Narsykle sena albumo sarasa gali rodyti ne ilgiau ~2 min. (60 s + 60 s fone).
 // Anksciau stale-while-revalidate=86400 leido iki paros rodyti sena versija -
@@ -221,8 +221,7 @@ if (!function_exists('gallery_download_allowed_for_file')) {
             if (!is_array($row)) return true;
 
             return (int)($row['download_enabled'] ?? 0) === 1
-                && (string)($row['album_visibility'] ?? '') === 'published'
-                && (string)($row['photo_visibility'] ?? '') === 'published'
+                && gallery_viewer_can_see((string)($row['album_visibility'] ?? ''), (string)($row['photo_visibility'] ?? ''))
                 && (int)($row['is_downloadable'] ?? 0) === 1
                 && (int)($row['is_missing'] ?? 0) === 0;
         } catch (Throwable $e) {
@@ -292,6 +291,35 @@ function manifest_match_public_path(string $path): ?string {
 
     return $exactPublished ? $path : null;
 }
+/**
+ * Albumu matomumai, kuriuos si uzklausa gali atidaryti. Privatus prisideda TIK
+ * kai pagrindinis srautas patikrino ziurova (gallery_viewer_can_see_private()).
+ */
+function manifest_album_visibility_sql(): string {
+    return !empty($GLOBALS['manifestAllowPrivate']) ? "'published','private'" : "'published'";
+}
+
+/**
+ * Privatus albumas pagal tiksly slug'a arba source_path. Spejami priesdeliai /
+ * priesagos (kaip paskelbtiems) cia samoningai neieskomi.
+ */
+function manifest_match_private_album(string $path): ?array {
+    $path = trim($path, "/ \t\n\r\0\x0B");
+    $db = function_exists('gallery_db') ? gallery_db() : null;
+    if ($path === '' || !$db) return null;
+    try {
+        $q = $db->prepare("SELECT id,title,slug,source_path,event_date,event_date_end,location_name FROM albums WHERE visibility='private' AND (slug=? OR source_path=?) LIMIT 1");
+        $q->execute([$path, $path]);
+        $row = $q->fetch();
+    } catch (Throwable $e) {
+        gallery_log($e);
+        return null;
+    }
+    if (!is_array($row)) return null;
+    $albumPath = trim((string)($row['slug'] ?: $row['source_path'] ?? ''), "/ \t\n\r\0\x0B");
+    return $albumPath === '' ? null : $row + ['path' => $albumPath];
+}
+
 function manifest_source_path_for_path(string $path): string {
     $path = trim($path, "/ \t\n\r\0\x0B");
     if ($path === '') return '';
@@ -300,7 +328,7 @@ function manifest_source_path_for_path(string $path): string {
     if (!$db) return $path;
 
     try {
-        $q = $db->prepare("SELECT source_path FROM albums WHERE visibility='published' AND (slug=? OR source_path=?) LIMIT 1");
+        $q = $db->prepare("SELECT source_path FROM albums WHERE visibility IN (".manifest_album_visibility_sql().") AND (slug=? OR source_path=?) LIMIT 1");
         $q->execute([$path, $path]);
         $source = trim((string)($q->fetchColumn() ?: ''), "/ \t\n\r\0\x0B");
         return $source !== '' ? $source : $path;
@@ -427,6 +455,37 @@ $requestedPath = trim((string)($_GET['path'] ?? ''), "/ \t\n\r\0\x0B");
 // juodrascio aplankas (albums/<metai>/<data>__<vardas> - atspejamas) atiduodavo
 // visas savo nuotraukas. Tikrinam PRIES podeli, perziuru skaitliuka ir B2.
 $path = manifest_match_public_path($requestedPath);
+// Privatus albumas: sarase matomas visiems (su spyna), turinys - tik leistam
+// ziurovui. Atsakymas visada 'private, no-store' ir niekada i bendra podeli:
+// jis priklauso nuo sesijos, o Cloudflare ir podelio raktas - tik URL.
+$privateAlbum = $path === null ? manifest_match_private_album($requestedPath) : null;
+if ($privateAlbum !== null) {
+    header('Cache-Control: private, no-store');
+    if (!gallery_viewer_can_see_private()) {
+        $mode = gallery_private_viewers_mode();
+        echo json_encode([
+            'ok' => true,
+            'path' => $privateAlbum['path'],
+            'private' => true,
+            'locked' => true,
+            'albumTitle' => (string)$privateAlbum['title'],
+            'albumMeta' => [
+                'id' => (int)$privateAlbum['id'],
+                'eventDate' => (string)($privateAlbum['event_date'] ?? ''),
+                'eventPlace' => (string)($privateAlbum['location_name'] ?? ''),
+            ],
+            'login' => [
+                'mode' => $mode,
+                'url' => '/login/?return=' . rawurlencode('/a/id' . (int)$privateAlbum['id']),
+                'signedInAs' => (string)(gallery_viewer()['email'] ?? ''),
+            ],
+            'items' => [], 'folders' => [], 'photos' => [], 'totalPhotos' => 0, 'nextCursor' => null,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $GLOBALS['manifestAllowPrivate'] = true;
+    $path = $privateAlbum['path'];
+}
 if ($path === null) {
     header('Cache-Control: no-store');
     if ($requestedPath !== '' && !gallery_db()) json_fail('Service unavailable', 503);
@@ -468,6 +527,7 @@ $listCacheKey = json_encode([
     'views' => gallery_album_views_version(),
     'manifestVersion' => manifest_state_version($path),
 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+if ($privateAlbum !== null) $listCacheKey = null;
 if (is_string($listCacheKey)) {
     // Sakniniam sarasui 30 min. Sena vertė buvo 5 min., bet TTL cia ir taip
     // retai nulemia: rakte yra manifestVersion (albumu ir nuotrauku laukai is DB)
@@ -561,10 +621,10 @@ function manifest_album_rows(): array {
     if (!$db) return [];
     try {
         $urlCols = gallery_db_column_exists($db, 'albums', 'dbsportas_url') ? 'dbsportas_url,klajunas_url,other_url' : "NULL AS dbsportas_url,NULL AS klajunas_url,NULL AS other_url";
-        $albums = $db->query("SELECT id,title,subtitle,description,source_path,slug,cover_photo_id,cover_mode,event_date,event_date_end,location_name,author_name,copyright_text,sort_order,$urlCols FROM albums WHERE visibility='published' ORDER BY COALESCE(event_date,'0000-00-00') DESC,sort_order ASC,id DESC")->fetchAll();
+        $albums = $db->query("SELECT id,visibility,title,subtitle,description,source_path,slug,cover_photo_id,cover_mode,event_date,event_date_end,location_name,author_name,copyright_text,sort_order,$urlCols FROM albums WHERE visibility IN ('published','private') ORDER BY COALESCE(event_date,'0000-00-00') DESC,sort_order ASC,id DESC")->fetchAll();
     } catch (Throwable $e) {
         try {
-            $albums = $db->query("SELECT id,title,source_path,slug,cover_photo_id,'auto' AS cover_mode FROM albums WHERE visibility='published' ORDER BY id DESC")->fetchAll();
+            $albums = $db->query("SELECT id,visibility,title,source_path,slug,cover_photo_id,'auto' AS cover_mode FROM albums WHERE visibility IN ('published','private') ORDER BY id DESC")->fetchAll();
         } catch (Throwable $fallback) {
             gallery_log($fallback);
             return [];
@@ -664,6 +724,10 @@ function manifest_album_rows(): array {
         }
         $coverRow = ($coverMode === 'manual' && $coverId > 0) ? ($manualRows[$coverId] ?? null) : ($coverRows[$albumId] ?? null);
         $coverRot = ($cover !== '' && is_array($coverRow)) ? (int)($coverRow['rotation'] ?? 0) : 0;
+        // Privataus albumo virselis - irgi nuotrauka is jo, tad sarase jo nera
+        // (sakninis sarasas vienodas visiems ir kesuojamas). Rodoma spyna.
+        $isPrivate = (string)($album['visibility'] ?? '') === 'private';
+        if ($isPrivate) { $cover = ''; $coverRot = 0; }
         $out[] = [
             'type' => 'folder',
             // Albumo ID keliauja i prieki tam, kad dalinimosi nuoroda butu
@@ -689,6 +753,7 @@ function manifest_album_rows(): array {
             'dbsportasUrl' => trim((string)($album['dbsportas_url'] ?? '')),
             'klajunasUrl' => trim((string)($album['klajunas_url'] ?? '')),
             'otherUrl' => trim((string)($album['other_url'] ?? '')),
+            'private' => $isPrivate,
         ];
     }
     return $out;
@@ -697,7 +762,7 @@ function manifest_album_title_for_path(string $path): string {
     $db = function_exists('gallery_db') ? gallery_db() : null;
     if (!$db || $path === '') return '';
     try {
-        $q = $db->prepare("SELECT title FROM albums WHERE visibility='published' AND (slug=? OR source_path=?) LIMIT 1");
+        $q = $db->prepare("SELECT title FROM albums WHERE visibility IN (".manifest_album_visibility_sql().") AND (slug=? OR source_path=?) LIMIT 1");
         $q->execute([$path, $path]);
         return (string)($q->fetchColumn() ?: '');
     } catch (Throwable $e) {
@@ -780,11 +845,11 @@ function manifest_state_version(string $path): string {
                     '-',
                     COALESCE(SUM(CRC32(CONCAT(p.id, ':', p.sort_order, ':', p.b2_key, ':', COALESCE(p.photo_views, ''), ':', p.is_missing, ':', p.visibility))), 0),
                     '-',
-                    (SELECT COALESCE(SUM(CRC32(CONCAT_WS(':', a2.id, a2.title, COALESCE(a2.subtitle,''), COALESCE(a2.description,''), COALESCE(a2.event_date,''), COALESCE(a2.event_date_end,''), COALESCE(a2.location_name,''), a2.sort_order, COALESCE(a2.cover_photo_id,0), COALESCE(a2.cover_mode,''), COALESCE(a2.author_name,''), COALESCE(a2.copyright_text,''), COALESCE(a2.dbsportas_url,''), COALESCE(a2.klajunas_url,''), COALESCE(a2.other_url,'')))), 0) FROM albums a2 WHERE a2.visibility='published')
+                    (SELECT COALESCE(SUM(CRC32(CONCAT_WS(':', a2.id, a2.title, COALESCE(a2.subtitle,''), COALESCE(a2.description,''), COALESCE(a2.event_date,''), COALESCE(a2.event_date_end,''), COALESCE(a2.location_name,''), a2.sort_order, COALESCE(a2.cover_photo_id,0), COALESCE(a2.cover_mode,''), COALESCE(a2.author_name,''), COALESCE(a2.copyright_text,''), COALESCE(a2.dbsportas_url,''), COALESCE(a2.klajunas_url,''), COALESCE(a2.other_url,'')))), 0) FROM albums a2 WHERE a2.visibility IN ('published','private'))
                  ) AS v
                  FROM albums a
                  LEFT JOIN photos p ON p.album_id = a.id
-                 WHERE a.visibility='published'"
+                 WHERE a.visibility IN ('published','private')"
             );
             return (string)($q->fetchColumn() ?: '0');
         }
@@ -802,7 +867,7 @@ function manifest_state_version(string $path): string {
              ) AS v
              FROM albums a
              LEFT JOIN photos p ON p.album_id = a.id
-             WHERE a.visibility='published' AND (a.slug=? OR a.source_path=?)"
+             WHERE a.visibility IN (".manifest_album_visibility_sql().") AND (a.slug=? OR a.source_path=?)"
         );
         $q->execute([$path, $path]);
         return (string)($q->fetchColumn() ?: '0');
@@ -818,7 +883,7 @@ function manifest_photos_for_path(string $path): array {
         $compatSelect = gallery_db_column_exists($db, 'photos', 'compatibility_b2_key') ? 'p.compatibility_b2_key' : 'NULL AS compatibility_b2_key';
         $originalB2Select = gallery_db_column_exists($db, 'photos', 'original_b2_key') ? 'p.original_b2_key' : 'NULL AS original_b2_key';
         $rotSelect = gallery_db_column_exists($db, 'photos', 'rotation') ? 'p.rotation' : '0 AS rotation';
-        $q = $db->prepare("SELECT p.b2_key fileName,p.b2_key,$compatSelect,$originalB2Select,$rotSelect,p.stored_filename,p.original_filename,p.file_size contentLength,p.title,p.description,p.photo_views,p.taken_at,p.width,p.height,p.metadata_json,p.camera_make,p.camera_model,p.lens_model,p.focal_length,p.aperture,p.shutter_speed,p.iso_value,a.source_path,a.event_date,a.event_date_end,a.location_name, a.download_enabled, a.visibility AS album_visibility, p.visibility AS photo_visibility, p.is_downloadable, p.is_missing FROM photos p JOIN albums a ON a.id=p.album_id WHERE a.visibility='published' AND p.visibility='published' AND p.is_missing=0 AND (a.slug=? OR a.source_path=?) ORDER BY p.sort_order ASC,p.id ASC");
+        $q = $db->prepare("SELECT p.b2_key fileName,p.b2_key,$compatSelect,$originalB2Select,$rotSelect,p.stored_filename,p.original_filename,p.file_size contentLength,p.title,p.description,p.photo_views,p.taken_at,p.width,p.height,p.metadata_json,p.camera_make,p.camera_model,p.lens_model,p.focal_length,p.aperture,p.shutter_speed,p.iso_value,a.source_path,a.event_date,a.event_date_end,a.location_name, a.download_enabled, a.visibility AS album_visibility, p.visibility AS photo_visibility, p.is_downloadable, p.is_missing FROM photos p JOIN albums a ON a.id=p.album_id WHERE a.visibility IN (".manifest_album_visibility_sql().") AND p.visibility='published' AND p.is_missing=0 AND (a.slug=? OR a.source_path=?) ORDER BY p.sort_order ASC,p.id ASC");
         $q->execute([$path, $path]);
         $rows = $q->fetchAll();
         foreach ($rows as &$row) {
@@ -1170,8 +1235,7 @@ if ($path === '') {
             $downloadAllowed = true;
             if (array_key_exists('download_enabled', $photo) || array_key_exists('is_downloadable', $photo) || array_key_exists('album_visibility', $photo) || array_key_exists('photo_visibility', $photo) || array_key_exists('is_missing', $photo)) {
                 $downloadAllowed = (int)($photo['download_enabled'] ?? 0) === 1
-                    && (string)($photo['album_visibility'] ?? '') === 'published'
-                    && (string)($photo['photo_visibility'] ?? '') === 'published'
+                    && gallery_viewer_can_see((string)($photo['album_visibility'] ?? ''), (string)($photo['photo_visibility'] ?? ''))
                     && (int)($photo['is_downloadable'] ?? 0) === 1
                     && (int)($photo['is_missing'] ?? 0) === 0;
             }
@@ -1221,6 +1285,7 @@ foreach ($folders as $fo) {
         'imageViewCount' => (int)($albumPhotoViewTotals[$fo['path']] ?? 0),
     ];
     $it['viewCount'] = max($it['siteViewCount'], $it['imageViewCount']);
+    if (!empty($fo['private'])) $it['private'] = true;
     foreach (['subtitle','description','eventPlace','eventDate','eventDateEnd','eventDateLabel','tags','authorName','copyrightText','sortOrder','dbsportasUrl','klajunasUrl','otherUrl'] as $albumField) {
         if (isset($fo[$albumField]) && $fo[$albumField] !== '' && $fo[$albumField] !== []) $it[$albumField] = $fo[$albumField];
     }
@@ -1295,6 +1360,8 @@ $response = json_encode([
     'photos'  => array_values(array_map(fn($x) => $x['fileName'], $photos)), // compat
     'totalPhotos' => count($photos),
     'nextCursor' => $nextCursor,
+    'private' => $privateAlbum !== null,
+    'viewer' => $privateAlbum !== null ? (string)(gallery_viewer()['email'] ?? '') : '',
 ], JSON_UNESCAPED_SLASHES);
 if (!is_string($response)) {
     json_fail('Internal server error', 500);

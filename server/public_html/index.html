@@ -262,6 +262,22 @@
     top: auto; left: auto; bottom: 9px; right: 10px;
     text-transform: capitalize;
   }
+  /* Privatus albumas: spyna vietoj virselio (virselis irgi butu jo nuotrauka). */
+  .badge-private { right: auto; left: 10px; }
+  .lock-cover {
+    display: grid; place-items: center; height: 100%; text-align: center;
+    color: var(--ink-soft); font-size: 13px; line-height: 1.5;
+    background: repeating-linear-gradient(135deg, transparent 0 12px, var(--line) 12px 13px);
+  }
+  .lock-cover b { font-size: 26px; font-weight: 400; }
+  .private-panel {
+    max-width: 460px; margin: 10px auto 0; padding: 22px 20px; text-align: center;
+    border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel);
+  }
+  .private-panel h3 { margin: 0 0 6px; color: var(--ink); font-size: 17px; }
+  .private-panel .pill { display: inline-block; margin-top: 14px; text-decoration: none; color: var(--ink); }
+  .private-bar { font-size: 13px; color: var(--ink-soft); margin: -4px 0 14px; }
+  .private-bar a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
   .card-meta { padding: 11px 13px 12px; }
   .card-meta .title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.35; }
   .card-meta .sub {
@@ -955,8 +971,10 @@
       card.className = "card";
       card.type = "button";
       card.style.animationDelay = Math.min(i * 30, 400) + "ms";
-      card.setAttribute("aria-label", "Atidaryti albumą " + al.name);
-      const cover = al.coverThumbUrl
+      card.setAttribute("aria-label", "Atidaryti albumą " + al.name + (al.private ? " (privatus)" : ""));
+      const cover = al.private
+        ? `<div class="lock-cover"><div><b aria-hidden="true">&#128274;</b><br>Privatus albumas</div></div>`
+        : al.coverThumbUrl
         ? `<img loading="lazy" src="${esc(al.coverThumbUrl)}" alt="">`
         : `<div class="empty-cover" style="display:grid;place-items:center;height:100%;color:var(--ink-faint);font-size:13px">be viršelio</div>`;
       const my = monthYear(al.eventDate);
@@ -968,7 +986,7 @@
           ).join("")}${tags.length > 3 ? `<span class="tag-mini more">+${tags.length - 3}</span>` : ""}</div>`
         : "";
       card.innerHTML =
-        `<div class="thumb">${cover}<span class="badge">${al.count || 0}</span>${my ? `<span class="badge badge-date">${esc(my)}</span>` : ""}</div>
+        `<div class="thumb">${cover}${al.private ? `<span class="badge badge-private">&#128274; Privatus</span>` : ""}<span class="badge">${al.count || 0}</span>${my ? `<span class="badge badge-date">${esc(my)}</span>` : ""}</div>
          <div class="card-meta">
            <div class="title">${esc(al.name)}</div>
            <div class="sub">${albumMetaLine(al)}</div>
@@ -1009,6 +1027,8 @@
     window.scrollTo(0, 0);
     $("albumTitle").textContent = al.name;
     renderAlbumSub(al);
+    const oldBar = $("privateBar");
+    if (oldBar) oldBar.remove();
     photos = [];
     visible = [];
     renderedCount = 0;
@@ -1027,6 +1047,7 @@
     if (al.viewCount) bits.push(`<span class="d">·</span><span>${fmtN(al.viewCount)} views</span>`);
     if (al.authorName) bits.push(`<span class="d">·</span><span>Foto: ${esc(al.authorName)}</span>`);
     if (al.copyrightText) bits.push(`<span class="d">·</span><span>${esc(al.copyrightText)}</span>`);
+    if (al.private) bits.push(`<span class="tag">&#128274; Privatus</span>`);
     (al.tags || []).forEach(t => bits.push(`<span class="tag">${esc(t)}</span>`));
     $("albumSub").innerHTML = bits.join(" ");
   }
@@ -1043,6 +1064,8 @@
       const params = { path: currentAlbum.path, limit: 200 };
       if (nextCursor) params.cursor = nextCursor;
       const d = await api(params);
+      if (d.locked) { showLocked(d); return; }
+      if (d.private && !params.cursor) showPrivateBar(d.viewer || "");
       photos.push(...(d.items || []).filter(i => i.type === "photo"));
       nextCursor = d.nextCursor || "";
       applyPhotoFilter(false);
@@ -1054,6 +1077,35 @@
       loadingPhotos = false;
     }
     note(nextCursor ? "Slinkite žemyn — bus užkrauta daugiau" : "");
+  }
+
+  // Privatus albumas be teisės: vietoj nuotraukų - kas jas mato ir prisijungimas.
+  function showLocked(d) {
+    const lg = d.login || {};
+    const who = lg.mode === "members" ? "prisijungę klubo nariai ir administratoriai" : "tik administratoriai";
+    const url = lg.url || "/login/";
+    const emp = $("empty");
+    emp.innerHTML = `<div class="private-panel"><h3>&#128274; Privatus albumas</h3><div>Šio albumo nuotraukas mato ${who}.</div>`
+      + (lg.signedInAs
+          ? `<div style="margin-top:8px">Prisijungta kaip <strong>${esc(lg.signedInAs)}</strong> — ši paskyra prieigos neturi.</div><a class="pill" href="${esc(url)}">Keisti paskyrą</a>`
+          : `<a class="pill" href="${esc(url)}">Prisijungti</a>`)
+      + `</div>`;
+    emp.style.display = "block";
+    nextCursor = "";
+    note("");
+  }
+
+  function showPrivateBar(email) {
+    let bar = $("privateBar");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "privateBar";
+      bar.className = "private-bar";
+      $("albumSub").after(bar);
+    }
+    const ret = encodeURIComponent(currentAlbum && currentAlbum.id ? "/a/id" + currentAlbum.id : "/");
+    bar.innerHTML = "&#128274; Privatus albumas"
+      + (email ? ` · prisijungta: ${esc(email)} · <a href="/login/?return=${ret}">Atsijungti</a>` : " · matai kaip administratorius");
   }
 
   function note(text) {

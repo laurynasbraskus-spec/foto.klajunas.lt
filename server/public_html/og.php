@@ -121,6 +121,21 @@ if ($slug !== '' || $albumId > 0) {
     }
 }
 
+// Privatus albumas: žmogų vedam į patį albumą (ten spyna arba nuotraukos,
+// jei prisijungęs), bot'ui - bendra kortelė be pavadinimo ir viršelio.
+$privateSlug = '';
+if (!$found && ($albumId > 0 || $slug !== '') && isset($pdo)) {
+    try {
+        $q = $albumId > 0
+            ? $pdo->prepare("SELECT slug FROM albums WHERE visibility='private' AND id=? LIMIT 1")
+            : $pdo->prepare("SELECT slug FROM albums WHERE visibility='private' AND slug=? LIMIT 1");
+        $q->execute([$albumId > 0 ? $albumId : $slug]);
+        $privateSlug = trim((string)($q->fetchColumn() ?: ''), "/ \t\n\r\0\x0B");
+    } catch (Throwable $e) {
+        $privateSlug = '';
+    }
+}
+
 // ID nerastas (albumas ištrintas ar paslėptas) — vedam į albumų sąrašą, o ne
 // į "?a=id580", kur SPA parodytų tuščią langą.
 if ($albumId > 0 && !$found) $slug = '';
@@ -136,6 +151,7 @@ $canonical = $slug !== '' ? $base . '/a/' . rawurlencode($slug) : $base . '/';
 $ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
 $isBot = $ua === '' || (bool)preg_match('~facebookexternalhit|facebot|twitterbot|whatsapp|telegrambot|slackbot|discordbot|linkedinbot|skypeuripreview|applebot|googlebot|bingbot|pinterest|redditbot|viber|embedly|iframely|mastodon|vkshare|snapchat|bot\b|crawler|spider|preview~i', $ua);
 if (!$isBot) {
+    if ($privateSlug !== '') $spaUrl = $base . '/?a=' . rawurlencode($privateSlug);
     header('Cache-Control: private, no-store');
     header('Vary: User-Agent');
     header('Location: ' . $spaUrl, true, 302);
