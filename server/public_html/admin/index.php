@@ -30,6 +30,9 @@ if (!defined('DB_NAME')) define('DB_NAME', 'klajunas_foto');
 if (!defined('DB_USER')) define('DB_USER', 'klajunas_adm');
 if (!defined('DB_PASS')) define('DB_PASS', '');
 const GOOGLE_CLIENT_ID = '107457534251-rqhhm5vm2ok3anb25uf5l4qcudl475ou.apps.googleusercontent.com';
+// Google prisijungimas be issokancio lango (ux_mode=redirect). Sis adresas turi
+// buti tiksliai irasytas Google Cloud OAuth kliento "Authorized redirect URIs".
+const GOOGLE_LOGIN_REDIRECT_URI = 'https://foto.klajunas.lt/admin/?action=google_login_redirect';
 const ALLOWED_EMAILS = ['info@klajunas.lt', 'okklajunas@gmail.com'];
 // 'ready' panaikintas 2026-10-03 (neturejo prasmes; DB eiluciu su juo nebuvo).
 const STATUSES = ['draft', 'published', 'private', 'hidden'];
@@ -797,8 +800,25 @@ function google_payload(string $jwt): array {
 }
 function do_login(): void {
     csrf();
+    login_with_google_credential(trim((string)($_POST['credential'] ?? '')));
+}
+// Redirect rezimas: Google pati POST'ina credential i GOOGLE_LOGIN_REDIRECT_URI.
+// Sesijos slapukas (SameSite=Lax) tarpsvetaininiame POST neateina, tad musu
+// _token cia patikrinti negalima - vietoj jo Google rekomenduojamas
+// double-submit: g_csrf_token slapukas turi sutapti su formos lauku.
+// (Iki 2026-10-06 buvo tik issokantis langas; integruota narsykle ji blokuoja.)
+function do_login_redirect(): void {
+    $cookie = (string)($_COOKIE['g_csrf_token'] ?? '');
+    $posted = (string)($_POST['g_csrf_token'] ?? '');
+    if ($cookie === '' || $posted === '' || !hash_equals($cookie, $posted)) {
+        flash('Google prisijungimas nepavyko (CSRF patikra). Bandykite dar kartą.', 'err');
+        go('?page=login');
+    }
+    login_with_google_credential(trim((string)($_POST['credential'] ?? '')));
+}
+function login_with_google_credential(string $credential): void {
     try {
-        $p = google_payload(trim((string)($_POST['credential'] ?? '')));
+        $p = google_payload($credential);
         $email = strtolower((string)($p['email'] ?? ''));
         $role = '';
         $q = db()->prepare("SELECT * FROM admins WHERE email=? AND is_active=1 LIMIT 1");
@@ -816,10 +836,11 @@ function do_login(): void {
             $admin = $q->fetch(PDO::FETCH_ASSOC) ?: null;
         }
         if (!$admin) throw new RuntimeException('Unauthorized Google account: '.$email);
-        $_SESSION['admin'] = $admin;
-        audit('admin', (int)$_SESSION['admin']['id'], 'login', 'Admin logged in');
         $next = (string)($_SESSION['after_login'] ?? '');
         unset($_SESSION['after_login']);
+        session_regenerate_id(true);
+        $_SESSION['admin'] = $admin;
+        audit('admin', (int)$_SESSION['admin']['id'], 'login', 'Admin logged in');
         go(preg_match('~^\?page=[a-z_]+(&[A-Za-z0-9_=%.\-]*)?$~', $next) ? $next : '?page=dashboard');
     } catch (Throwable $e) { flash($e->getMessage(), 'err'); go('?page=login'); }
 }
@@ -1135,12 +1156,7 @@ function preflight(){var d={ua:navigator.userAgent,crossOriginIsolated:!!self.cr
 function setSt(tr,txt,color){var c=tr.querySelector(".rj-st");c.dataset.live="";c.textContent=txt;c.style.color=color||"";}
 function refreshTile(id,key){var tile=document.querySelector(".photo-tile[data-id=\""+id+"\"]");if(!tile)return;var url="/img.php?file="+encodeURIComponent(key)+"&w=420&h=280&fit=cover&q=76&fmt=webp&r="+Date.now();var img=tile.querySelector("img");if(img){img.src=url;}else{var nt=tile.querySelector(".no-thumb");if(nt){var ni=document.createElement("img");ni.loading="lazy";ni.src=url;nt.replaceWith(ni);}}}
 async function sendLog(done,fail){try{var fd=new FormData();fd.append("_token",TOKEN);fd.append("log",JSON.stringify({album_id:AID,done:done,fail:fail,items:LOG}));await fetch("?action=save_recreate_log",{method:"POST",body:fd,credentials:"same-origin"});}catch(e){}}
-btn.addEventListener("click",async function(){if(!LIST.length){alert("Nėra HEIC failų be JPG peržiūros.");return;}btn.disabled=true;panel.style.display="block";body.innerHTML="";LOG=[];var PF=preflight();LOG.push({preflight:PF});sum.textContent="Aplinka: wasm="+PF.wasm+" · worker="+PF.blobWorker+" · SAB="+PF.sharedArrayBuffer+" · isolated="+PF.crossOriginIsolated;var done=0,fail=0;
-for(var i=0;i<LIST.length;i++){var it=LIST[i];var tr=document.createElement("tr");tr.innerHTML="<td>"+(i+1)+"</td><td>"+it.name+"</td><td class=\"rj-st\">Laukia</td><td class=\"rj-er muted small\" style=\"white-space:pre-wrap\"></td>";body.appendChild(tr);
-var rec={id:it.id,name:it.name,steps:[]};LOG.push(rec);var t0=Date.now();
-var live=function(txt){var st=tr.querySelector(".rj-st");st.dataset.live=txt;st.textContent=txt;st.style.color="var(--accent-ink)";};
-var tick=setInterval(function(){var st=tr.querySelector(".rj-st");if(st&&st.dataset.live)st.textContent=st.dataset.live+" ("+Math.round((Date.now()-t0)/1000)+"s)";},1000);
-try{
+async function convertOne(it,rec,live){
 live("1/3 siunčiamas originalas");
 var r=await wt(fetch("?action=photo_heic_blob&id="+encodeURIComponent(it.id),{credentials:"same-origin"}),60000,"atsisiuntimas");
 if(!r.ok)throw new Error("originalo atsisiuntimas HTTP "+r.status);
@@ -1152,9 +1168,18 @@ live("3/3 JPG keliamas į B2");
 var fd=new FormData();fd.append("_token",TOKEN);fd.append("photo_id",it.id);fd.append("jpg",jpg,it.name.replace(/\.[^.]+$/,"")+".jpg");
 var up=await wt(fetch("?action=save_recreated_jpg",{method:"POST",body:fd,headers:{Accept:"application/json"},credentials:"same-origin"}),120000,"įkėlimas");
 var jd=await up.json();if(!jd||!jd.ok)throw new Error((jd&&jd.error)||"įkėlimas nepavyko");
-rec.steps.push("uploaded "+jd.jpgKey);rec.ok=true;done++;
+rec.steps.push("uploaded "+jd.jpgKey);rec.ok=true;return jd.jpgKey;}
+// Vienos nuotraukos konversija paspaudus „JPG preview missing" žymę plytelėje.
+window.rjConvertOne=async function(id,name,live){var rec={id:id,name:name,steps:[],single:true};LOG=[rec];try{var k=await convertOne({id:id,name:name},rec,live);refreshTile(id,k);await sendLog(1,0);return k;}catch(err){rec.ok=false;rec.error=em(err);await sendLog(0,1);throw new Error(em(err));}};
+btn.addEventListener("click",async function(){if(!LIST.length){alert("Nėra HEIC failų be JPG peržiūros.");return;}btn.disabled=true;panel.style.display="block";body.innerHTML="";LOG=[];var PF=preflight();LOG.push({preflight:PF});sum.textContent="Aplinka: wasm="+PF.wasm+" · worker="+PF.blobWorker+" · SAB="+PF.sharedArrayBuffer+" · isolated="+PF.crossOriginIsolated;var done=0,fail=0;
+for(var i=0;i<LIST.length;i++){var it=LIST[i];var tr=document.createElement("tr");tr.innerHTML="<td>"+(i+1)+"</td><td>"+it.name+"</td><td class=\"rj-st\">Laukia</td><td class=\"rj-er muted small\" style=\"white-space:pre-wrap\"></td>";body.appendChild(tr);
+var rec={id:it.id,name:it.name,steps:[]};LOG.push(rec);var t0=Date.now();
+var live=function(txt){var st=tr.querySelector(".rj-st");st.dataset.live=txt;st.textContent=txt;st.style.color="var(--accent-ink)";};
+var tick=setInterval(function(){var st=tr.querySelector(".rj-st");if(st&&st.dataset.live)st.textContent=st.dataset.live+" ("+Math.round((Date.now()-t0)/1000)+"s)";},1000);
+try{
+var jpgKey=await convertOne(it,rec,live);done++;
 setSt(tr,"✓ atlikta ("+Math.round((Date.now()-t0)/1000)+"s)","var(--accent-ink)");
-refreshTile(it.id,jd.jpgKey);
+refreshTile(it.id,jpgKey);
 }catch(err){fail++;rec.ok=false;rec.error=em(err);setSt(tr,"✗ klaida","#e05252");tr.querySelector(".rj-er").textContent=em(err);}
 finally{clearInterval(tick);}
 sum.textContent="Vykdoma: "+done+" ✓, "+fail+" ✗ iš "+LIST.length;}
@@ -1228,7 +1253,7 @@ document.getElementById("rjCopy").addEventListener("click",function(){var txt=JS
         $previewIndex = count($previewItems) - 1;
         echo '<article class="photo-tile" draggable="true" tabindex="0" role="button" aria-label="Preview '.e($p['original_filename']).'" data-id="'.e($p['id']).'" data-preview-index="'.e($previewIndex).'">'.($isCover?'<span class="cover-flag">Cover</span>':'');
         echo $img?'<img loading="lazy" src="'.e($img).'" alt="'.e($p['original_filename']).'">':'<div class="no-thumb">No thumbnail</div>';
-        echo '<div class="photo-tile-body"><div class="photo-title">'.e($p['original_filename']).'</div><div class="muted small">taken '.e($taken ?: 'n/a').'</div><div class="muted small">sort '.e($p['sort_order']).' · '.e($p['visibility']).'</div><div class="muted small">'.($existsInB2 ? '<span class="badge">B2 ok</span>' : '<span class="badge err">missing in B2</span>').((int)($p['is_missing'] ?? 0) ? ' <span class="badge">DB missing</span>' : '').($missingCompatibility ? ' <span class="badge">JPG preview missing</span>' : '').($existsInB2 && !photo_is_previewable((string)$p['original_filename']) ? ' <span class="badge" title="Šio failo peržiūra negalima — tik atsisiuntimas">No preview / Download and view only · '.e(photo_kind_label((string)$p['original_filename'])).'</span>' : '').'</div><div class="photo-tools">';
+        echo '<div class="photo-tile-body"><div class="photo-title">'.e($p['original_filename']).'</div><div class="muted small">taken '.e($taken ?: 'n/a').'</div><div class="muted small">sort '.e($p['sort_order']).' · '.e($p['visibility']).'</div><div class="muted small">'.($existsInB2 ? '<span class="badge">B2 ok</span>' : '<span class="badge err">missing in B2</span>').((int)($p['is_missing'] ?? 0) ? ' <span class="badge">DB missing</span>' : '').($missingCompatibility ? ' <button type="button" class="badge make-jpg" data-name="'.e((string)($p['original_filename'] ?? $p['b2_key'] ?? '')).'" title="JPG peržiūros nėra. Spauskite — ji bus sukurta naršyklėje ir įkelta į B2. Originalas neliečiamas." style="cursor:pointer;font:inherit;font-size:12px;padding:3px 8px;background:transparent;color:var(--accent-ink);border-color:var(--accent-line)">Sukurti JPG</button>' : '').($existsInB2 && !photo_is_previewable((string)$p['original_filename']) ? ' <span class="badge" title="Šio failo peržiūra negalima — tik atsisiuntimas">No preview / Download and view only · '.e(photo_kind_label((string)$p['original_filename'])).'</span>' : '').'</div><div class="photo-tools">';
         echo '<button class="mini quick '.($isCover?'pill-on':'').'" type="button" data-op="cover">Cover</button>';
         echo '<button class="mini quick" type="button" data-op="hide">Hidden</button>';
         $rotNow = (int)($p['rotation'] ?? 0);
@@ -1443,6 +1468,16 @@ document.getElementById("rjCopy").addEventListener("click",function(){var txt=JS
             const res=await fetch("?action=delete_album_photo",{method:"POST",body:fd,credentials:"same-origin"});
             if(res.ok) location.reload();
             else { alert(await res.text()); del.disabled=false; }
+            return;
+        }
+        const mj=e.target.closest(".make-jpg");
+        if(mj){
+            e.preventDefault(); e.stopPropagation();
+            const tile=mj.closest(".photo-tile"); if(!tile||mj.disabled) return;
+            if(typeof window.rjConvertOne!=="function"){ alert("Konverteris nepasiekiamas — perkraukite puslapį."); return; }
+            mj.disabled=true; mj.style.cursor="progress";
+            try{ await window.rjConvertOne(tile.dataset.id, mj.dataset.name||"", t=>{mj.textContent=t;}); mj.textContent="✓ JPG sukurtas"; mj.style.cursor="default"; }
+            catch(err){ mj.disabled=false; mj.style.cursor="pointer"; mj.style.color="#e05252"; mj.textContent="✗ nepavyko — bandyti dar"; mj.title=(err&&err.message)||String(err); }
             return;
         }
         const b=e.target.closest(".quick"); if(b){const tile=b.closest(".photo-tile"); const fd=new FormData(); fd.append("_token","'.e(token()).'"); fd.append("album_id","'.e($albumId).'"); fd.append("photo_id",tile.dataset.id); fd.append("op",b.dataset.op); const res=await fetch("?action=photo_quick",{method:"POST",body:fd}); if(res.ok) location.reload(); return;}
@@ -1819,12 +1854,20 @@ document.getElementById("rjCopy").addEventListener("click",function(){var txt=JS
 function login_page(): void {
     head('Login');
     echo '<div class="login"><section class="card"><img class="logo" src="/admin/logo.png" alt="Klajunas" onerror="this.style.display=\'none\'"><h1>Admin access</h1><p class="muted">Google login is limited to active accounts in Admins.</p><p class="small muted">Initial superadmins are seeded from the server allowlist.</p>
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <div id="g_id_onload" data-client_id="'.e(GOOGLE_CLIENT_ID).'" data-callback="handleGoogleCredential" data-auto_prompt="false"></div>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>';
+    if ((string)($_GET['ux'] ?? '') === 'redirect') {
+        // Be issokancio lango: Google grazina narsykle su POST i GOOGLE_LOGIN_REDIRECT_URI.
+        echo '<div id="g_id_onload" data-client_id="'.e(GOOGLE_CLIENT_ID).'" data-ux_mode="redirect" data-login_uri="'.e(GOOGLE_LOGIN_REDIRECT_URI).'" data-auto_prompt="false"></div>
+    <div class="g_id_signin" data-type="standard" data-size="large" data-theme="filled_black" data-text="signin_with" data-shape="rectangular" data-logo_alignment="left"></div>
+    <p class="small muted" style="margin-top:12px"><a href="?page=login" style="text-decoration:underline">&larr; Įprastas prisijungimas</a></p>';
+    } else {
+        echo '<div id="g_id_onload" data-client_id="'.e(GOOGLE_CLIENT_ID).'" data-callback="handleGoogleCredential" data-auto_prompt="false"></div>
     <div class="g_id_signin" data-type="standard" data-size="large" data-theme="filled_black" data-text="signin_with" data-shape="rectangular" data-logo_alignment="left"></div>
     <form id="googleCredentialForm" method="post" action="?action=google_login"><input type="hidden" name="_token" value="'.e(token()).'"><input id="googleCredential" type="hidden" name="credential"></form>
     <script>function handleGoogleCredential(r){document.getElementById("googleCredential").value=r.credential;document.getElementById("googleCredentialForm").submit();}</script>
-    </section></div>';
+    <p class="small muted" style="margin-top:12px">Naršyklė blokuoja iššokantį langą? <a href="?page=login&amp;ux=redirect" style="text-decoration:underline">Prisijungti be iššokančio lango</a></p>';
+    }
+    echo '</section></div>';
     foot('Login');
 }
 
@@ -2416,10 +2459,15 @@ function album_edit(): void {
         if ($found) go('?page=album_edit&id='.$found);
         flash('Albumas nerastas: '.(string)$_GET['slug'], 'err'); go('?page=albums');
     }
-    head(((int)($_GET['id'] ?? 0)) ? 'Edit album' : 'New album');
     $id=(int)($_GET['id'] ?? 0);
     $r=['id'=>0,'title'=>'','slug'=>'','subtitle'=>'','description'=>'','event_date'=>'','event_date_end'=>'','location_name'=>'','sport_type'=>'','author_name'=>'','copyright_text'=>'','cover_mode'=>'auto','visibility'=>'draft','sort_order'=>0,'download_enabled'=>1,'source_path'=>'','seo_title'=>'','seo_description'=>'','dbsportas_url'=>'','klajunas_url'=>'','other_url'=>'','notes_internal'=>''];
-    if ($id) { $st=db()->prepare("SELECT * FROM albums WHERE id=?"); $st->execute([$id]); $r=$st->fetch() ?: $r; if (!album_editable_by_current_user($r)) { http_response_code(403); exit('Forbidden'); } }
+    if ($id) {
+        // Paieska pries head(): istrintam albumui - atgal i sarasa, ne tuscia forma.
+        $st=db()->prepare("SELECT * FROM albums WHERE id=?"); $st->execute([$id]); $found=$st->fetch();
+        if (!$found) { flash('Albumas #'.$id.' nerastas (gal ištrintas).', 'err'); go('?page=albums'); }
+        $r=$found; if (!album_editable_by_current_user($r)) { http_response_code(403); exit('Forbidden'); }
+    }
+    head($id ? 'Edit album' : 'New album');
     echo '<h1>'.($id?'Edit album':'New album').'</h1><form id="albumEditForm" method="post" action="?action=save_album"><input type="hidden" name="_token" value="'.e(token()).'"><input type="hidden" name="id" value="'.e($id).'">';
     echo '<div class="card" style="padding:18px;margin-bottom:18px"><h2>Album fields</h2><div class="album-fields-grid">';
     echo '<section class="album-field-panel"><h3>System fields</h3><div class="formgrid">';
@@ -2623,10 +2671,11 @@ form.addEventListener("submit",async function(e){if(sel.value!=="create_jpg")ret
 }
 
 function photo_edit(): void {
-    head('Edit photo');
+    // Paieska ir teisiu patikra pries head(): po isvesties go() nebegali siusti Location.
     $id=(int)($_GET['id'] ?? 0); $st=db()->prepare("SELECT * FROM photos WHERE id=?"); $st->execute([$id]); $r=$st->fetch();
-    if (!$r) { flash('Photo not found.', 'err'); go('?page=photos'); }
+    if (!$r) { flash('Nuotrauka #'.$id.' nerasta (gal ištrinta).', 'err'); go('?page=photos'); }
     if (!is_superadmin()) require_photo_editable_by_id($id);
+    head('Edit photo');
     $albumSt=db()->prepare("SELECT * FROM albums WHERE id=? LIMIT 1"); $albumSt->execute([(int)$r['album_id']]); $album=$albumSt->fetch() ?: [];
     if (is_superadmin()) { $albums=db()->query("SELECT id,title FROM albums ORDER BY sort_order,event_date DESC,id DESC")->fetchAll(); } else { $albumStList=db()->prepare("SELECT id,title FROM albums WHERE created_by=? ORDER BY sort_order,event_date DESC,id DESC"); $albumStList->execute([current_admin_id()]); $albums=$albumStList->fetchAll(); }
     $returnAlbumId=(int)($_GET['album_id'] ?? $r['album_id']);
@@ -8322,6 +8371,7 @@ try {
     }
     $action=$_GET['action'] ?? '';
     if ($action==='google_login') do_login();
+    if ($action==='google_login_redirect' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') do_login_redirect();
     if ($action==='logout') { session_destroy(); go('?page=login'); }
     if ($action==='export') export_csv((string)($_GET['type'] ?? 'albums'));
     if ($action==='export_overlay') {

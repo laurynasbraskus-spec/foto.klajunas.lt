@@ -96,10 +96,12 @@ function prune_stale_locks(string $dir, int $maxAgeSeconds): void {
 }
 
 function output_extension(string $fmt): string {
+    if ($fmt === 'gif') return 'gif';
     return $fmt === 'webp' ? 'webp' : 'jpg';
 }
 
 function output_mime(string $fmt): string {
+    if ($fmt === 'gif') return 'image/gif';
     return $fmt === 'webp' ? 'image/webp' : 'image/jpeg';
 }
 
@@ -856,6 +858,13 @@ try {
     // ?rot= - rankinis pasukimas (0/90/180/270). Iena i podelio rakta tik kai ne 0,
     // tad visi esami podelio failai lieka galioti.
     $rot = normalize_rotation((int)($_GET['rot'] ?? 0));
+
+    // ?anim=1 - GIF animacijai (Google Photos MOTION.gif) atiduodamas originalus
+    // failas, ne perkoduotas pirmas kadras. Tik ?file= (galerija naudoja ji) ir
+    // tik nepasuktam GIF; dydis/kokybe tada nereiksmingi - vienas podelio failas.
+    $anim = $photoId <= 0 && (string)($_GET['anim'] ?? '') === '1' && !$rot && preg_match('~\.gif$~i', $file);
+    if ($anim) { $w = 0; $h = 0; $fit = 'contain'; $q = 0; $fmt = 'gif'; }
+
     $thumbPath = thumb_cache_path((string)B2_BUCKET, $cacheKey . ($rot ? '|rot=' . $rot : ''), $w, $h, $fit, $q, $fmt);
 
     // Matomumas tikrinamas PRIES podeli: miniatiura, kartą sugeneruota kol
@@ -924,8 +933,17 @@ try {
 
     // Resize/re-encode to cached derivative
     $tmpThumb = $thumbPath . '.tmp.' . bin2hex(random_bytes(4));
-    image_resize_to_image($tmpSrc, $tmpThumb, $w, $h, $fit, $q, $fmt, $rot);
-    @unlink($tmpSrc);
+    if ($anim) {
+        // Originalus GIF be perkodavimo: tik patikrinam, kad tai tikrai GIF.
+        // set_error_handler cia kiekviena perspejima pavercia isimtimi (net su @),
+        // todel unlink tik jei failas dar liko - po rename() jo nebera.
+        $sig = (string)file_get_contents($tmpSrc, false, null, 0, 6);
+        if ($sig === 'GIF87a' || $sig === 'GIF89a') rename($tmpSrc, $tmpThumb);
+        if (is_file($tmpSrc)) unlink($tmpSrc);
+    } else {
+        image_resize_to_image($tmpSrc, $tmpThumb, $w, $h, $fit, $q, $fmt, $rot);
+        @unlink($tmpSrc);
+    }
 
     if (!is_file($tmpThumb) || filesize($tmpThumb) <= 0) {
         @unlink($tmpThumb);

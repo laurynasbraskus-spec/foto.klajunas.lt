@@ -28,7 +28,7 @@ declare(strict_types=1);
 // nueidavo tyliai i tuscia - failas likdavo senas, o issiaiskinti tai buvo
 // imanoma tik netiesiogiai, pagal atsakymo turini. Antraste tai paverčia vienu
 // kreipiniu. Keiciam kaskart, kai keiciasi failas.
-header('X-Foto-Build: 2026-10-04-a');
+header('X-Foto-Build: 2026-10-04-c');
 header('Content-Type: application/json; charset=utf-8');
 // Narsykle sena albumo sarasa gali rodyti ne ilgiau ~2 min. (60 s + 60 s fone).
 // Anksciau stale-while-revalidate=86400 leido iki paros rodyti sena versija -
@@ -517,7 +517,9 @@ $listCacheKey = json_encode([
     // 15: atsakyme atsirado albumo 'id' (pastoviai /a/id<N> nuorodai).
     // Versija keliama kaskart, kai keiciasi atsakymo forma - kitaip seni
     // irasai podelyje dar 5 min. atiduotu atsakyma be naujo lauko.
-    'v' => 16,
+    // 17: albumo nuotraukos, kuriu b2_key ne po albums.source_path, nebedingsta.
+    // 18: GIF nuotraukos rodomos albume ir skaiciuojamos sarase.
+    'v' => 18,
     'path' => $path,
     'storagePath' => $storagePath,
     'limit' => $limit,
@@ -552,7 +554,13 @@ function rot_param(int $rot): string {
 function thumb_url(string $fileName, int $w = 420, int $rot = 0): string {
     return 'img.php?file=' . rawurlencode($fileName) . '&w=' . $w . '&q=76&fmt=webp&v=7' . rot_param($rot);
 }
+// GIF perziurai - originali animacija (img.php ?anim=1), ne statinis webp kadras.
+// Pasuktam GIF lieka statine perziura: animacijos img.php nesuka.
+function is_gif(string $fileName): bool {
+    return (bool)preg_match('~\.gif$~i', $fileName);
+}
 function view_url(string $fileName, int $rot = 0): string {
+    if (is_gif($fileName) && rot_param($rot) === '') return 'img.php?file=' . rawurlencode($fileName) . '&anim=1&v=7';
     return 'img.php?file=' . rawurlencode($fileName) . '&w=1400&q=83&fmt=webp&v=7' . rot_param($rot);
 }
 function photo_download_allowed(string $fileName): bool {
@@ -566,7 +574,7 @@ function meta_url(string $fileName): string {
     return 'meta.php?file=' . rawurlencode($fileName) . '&v=3';
 }
 function is_image(string $fileName): bool {
-    return (bool)preg_match('~\.(jpe?g|png|webp|heic|heif)$~i', $fileName);
+    return (bool)preg_match('~\.(jpe?g|png|webp|gif|heic|heif)$~i', $fileName);
 }
 function is_derived_or_legacy_asset_path(string $fileName): bool {
     return str_contains($fileName, '/jpg-originals/') || str_contains($fileName, '/archive-originals/');
@@ -597,6 +605,39 @@ function manifest_db_display_file_name(array $row): string {
 function manifest_db_legacy_original_file_name(array $row): string {
     $legacyOriginal = trim((string)($row['original_b2_key'] ?? ''), "/ \t\n\r\0\x0B");
     return $legacyOriginal !== '' ? $legacyOriginal : manifest_db_original_file_name($row);
+}
+// albums.source_path ir photos.b2_key gali issiskirti: #13 (2026-10-04) turejo
+// source_path .../2017-08-12__Daugiadienes-Telse-2017, o visu 14 nuotrauku
+// b2_key gulejo .../2017-08-12_15__Daugiadienes-Telse-2017/originals/. Tada
+// manifest_db_original_file_name() sudeda neegzistuojanti source_path/originals/
+// kelia, ir nuotraukos albume dingsta, o virselis sakniniame sarase grazina 404.
+// Siuos pagalbininkus naudojam tik tokiam neatitikimui - suderintiems albumams
+// niekas nesikeicia.
+function manifest_b2_key_outside_source(array $row): string {
+    $source = trim((string)($row['source_path'] ?? ''), "/ \t\n\r\0\x0B");
+    $key = trim((string)($row['b2_key'] ?? ''), "/ \t\n\r\0\x0B");
+    if ($source === '' || $key === '' || str_starts_with($key, $source.'/')) return '';
+    // Legacy eilutes su original_b2_key turi savo logika (b2_key ten - perziura).
+    if (trim((string)($row['original_b2_key'] ?? ''), "/ \t\n\r\0\x0B") !== '') return '';
+    return $key;
+}
+function manifest_b2_key_album_root(string $key): string {
+    $key = trim($key, "/ \t\n\r\0\x0B");
+    foreach (['/originals/', '/jpg-originals/', '/archive-originals/'] as $marker) {
+        $pos = strpos($key, $marker);
+        if ($pos !== false && $pos > 0) return substr($key, 0, $pos);
+    }
+    $dir = dirname($key);
+    return ($dir === '.' || $dir === '/') ? '' : $dir;
+}
+// Sakniniame sarase B2 failu saraso nera, tad tikrinti, kuris kelias egzistuoja,
+// negalim. Kai b2_key ne po source_path, tikim DB rakto (ji naudoja ir img.php
+// matomumo patikra), o ne is source_path sudeto kelio.
+function manifest_db_cover_file_name(array $row): string {
+    $compat = trim((string)($row['compatibility_b2_key'] ?? ''), "/ \t\n\r\0\x0B");
+    $key = manifest_b2_key_outside_source($row);
+    if ($compat === '' && $key !== '' && is_displayable_original_path($key) && !preg_match('~\.(heic|heif)$~i', $key)) return $key;
+    return manifest_db_display_file_name($row);
 }
 function manifest_album_tags(int $albumId): array {
     $db = function_exists('gallery_db') ? gallery_db() : null;
@@ -649,9 +690,10 @@ function manifest_album_rows(): array {
 
         // Kiekis ir virselis privalo sutapti su tuo, ka naudotojas mato albuma
         // atidares. Albumo viduje rodomos tik is_image() plėtiniu nuotraukos,
-        // todel .mov, .mp4 ir .gif cia neskaiciuojami: kitaip #540 sakniniame
-        // sarase rodytu 105, o viduje butu 52.
-        $imgExt = "SUBSTRING_INDEX(LOWER(p.b2_key),'.',-1) IN ('jpg','jpeg','png','webp','heic','heif')";
+        // todel .mov ir .mp4 cia neskaiciuojami: kitaip #540 sakniniame
+        // sarase rodytu 105, o viduje butu 52. .gif skaiciuojamas nuo 2026-10-04,
+        // nes is_image() ji jau rodo.
+        $imgExt = "SUBSTRING_INDEX(LOWER(p.b2_key),'.',-1) IN ('jpg','jpeg','png','webp','gif','heic','heif')";
 
         try {
             // COUNT(DISTINCT b2_key), o ne COUNT(*): b2_sync kartais ideda antra
@@ -718,9 +760,9 @@ function manifest_album_rows(): array {
             $cover = '';
         } elseif ($coverMode === 'manual' && $coverId > 0) {
             $row = $manualRows[$coverId] ?? null;
-            $cover = ($row && (int)$row['album_id'] === $albumId) ? manifest_db_display_file_name($row) : '';
+            $cover = ($row && (int)$row['album_id'] === $albumId) ? manifest_db_cover_file_name($row) : '';
         } else {
-            $cover = isset($coverRows[$albumId]) ? manifest_db_display_file_name($coverRows[$albumId]) : '';
+            $cover = isset($coverRows[$albumId]) ? manifest_db_cover_file_name($coverRows[$albumId]) : '';
         }
         $coverRow = ($coverMode === 'manual' && $coverId > 0) ? ($manualRows[$coverId] ?? null) : ($coverRows[$albumId] ?? null);
         $coverRot = ($cover !== '' && is_array($coverRow)) ? (int)($coverRow['rotation'] ?? 0) : 0;
@@ -1055,6 +1097,25 @@ function b2_write_list_cache(string $dir, string $file, array $files): string {
     return 'ok';
 }
 
+/**
+ * Papildomas (ne albumo source_path) B2 aplankas - tas pats podelis ir tas pats
+ * failo vardas kaip pagrindiniam sarasui, tad admin'o gallery_list_cache_invalidate
+ * ji isvalo, kai tas aplankas yra kurio nors albumo source_path.
+ */
+function b2_cached_file_list(string $apiUrl, string $authToken, string $dir, string $prefix, int $ttl): array {
+    $file = $dir . '/' . hash('sha256', (string)B2_BUCKET_ID . '|' . $prefix) . '.json';
+    $age = is_file($file) ? max(0, time() - (int)@filemtime($file)) : PHP_INT_MAX;
+    if ($age < $ttl) {
+        $cached = @json_decode((string)@file_get_contents($file), true);
+        if (is_array($cached) && $cached) return $cached;
+    }
+    if (is_file($file)) @touch($file);
+    $files = b2_fetch_file_list($apiUrl, $authToken, $prefix);
+    $write = b2_write_list_cache($dir, $file, $files);
+    if ($write !== 'ok') gallery_log('b2_filelist (papildomas) irasyti nepavyko: ' . $write . ' -> ' . $file);
+    return $files;
+}
+
 // Vienas TTL, bet ilgas. Skaitymas is B2 kainuoja apie 12 s (25 tūkst. irasu
 // trimis kreipiniais), tad ji verta kartoti kuo reciau. Atidejimo po atsakymo
 // cia NEBERA: 2026-09-01 paaiskejo, kad fastcgi_finish_request sioje sistemoje
@@ -1207,7 +1268,31 @@ if ($path === '') {
             'contentLength' => isset($file['contentLength']) ? (int)$file['contentLength'] : 0,
         ];
     }
-        $manifestPhotos = manifest_photos_for_path($path);
+    $manifestPhotos = manifest_photos_for_path($path);
+    // Nuotraukos, kuriu b2_key guli ne po albumo source_path ir kuriu is jo
+    // sudetas kelias B2 nerastas: perskaitom ir ju aplanka (riboti 3 - tai
+    // duomenu klaida, ne iprastas atvejis; kiekvienas aplankas - B2 kreipinys).
+    $extraRoots = [];
+    foreach ($manifestPhotos as $photo) {
+        $key = manifest_b2_key_outside_source($photo);
+        if ($key === '' || isset($seenB2Keys[(string)($photo['originalFileName'] ?? '')])) continue;
+        $root = manifest_b2_key_album_root($key);
+        // Ne trumpesnis uz albums/<metai>/<aplankas>: kitaip vienas blogas raktas
+        // priverstu vardyti visa metu ar viso bucket'o aplanka.
+        if ($root === '' || substr_count($root, '/') < 2 || !gallery_is_allowed_prefix($root)) continue;
+        if ($prefix !== '' && str_starts_with($prefix, $root . '/')) continue;
+        $extraRoots[$root] = true;
+        if (count($extraRoots) >= 3) break;
+    }
+    foreach (array_keys($extraRoots) as $root) {
+        foreach (b2_cached_file_list($apiUrl, $authToken, $listCacheDir, $root . '/', $listCacheTtl) as $file) {
+            $fileName = (string)($file['fileName'] ?? '');
+            if ($fileName === '' || isset($seenB2Keys[$fileName])) continue;
+            $seenB2Keys[$fileName] = true;
+            $seenB2Info[$fileName] = $file;
+        }
+    }
+    if ($extraRoots) header('X-Foto-Extra-Prefixes: ' . count($extraRoots));
     if ($manifestPhotos) {
         $folders = [];
         $photos = [];
@@ -1225,6 +1310,13 @@ if ($path === '') {
             // false, o naudotojas matydavo juoda plytele vietoj sazinigo
             // pranesimo. HEIC kaip rodomas failas netinka niekada.
             if ($displayFileName !== '' && preg_match('~\.(heic|heif)$~i', $displayFileName)) $displayFileName = '';
+            // source_path ir b2_key neatitikimas (#13): is source_path sudeto
+            // kelio B2 nera, o DB raktas yra - rodom ji.
+            $rawKey = manifest_b2_key_outside_source($photo);
+            if ($rawKey !== '' && $rawKey !== $originalFileName && !isset($seenB2Keys[$originalFileName]) && isset($seenB2Keys[$rawKey])) {
+                $originalFileName = $rawKey;
+                if ($displayFileName === '' && is_displayable_original_path($rawKey) && !preg_match('~\.(heic|heif)$~i', $rawKey)) $displayFileName = $rawKey;
+            }
             if ($originalFileName === '' || !is_image($originalFileName)) continue;
             if (!isset($seenB2Keys[$originalFileName])) continue;
             // b2_sync kartais ideda antra eilute tam paciam B2 failui, ir tada

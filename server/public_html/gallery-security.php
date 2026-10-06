@@ -66,7 +66,9 @@ function gallery_assert_allowed_file(string $file): void {
         gallery_public_error('Not found', 404);
     }
 
-    if (!preg_match('~\.(jpe?g|png|webp|heic|heif)$~i', $file)) {
+    // GIF leidziamas nuo 2026-10-04: Google Photos animacijos (MOTION.gif)
+    // rodomos galerijoje - miniatiura pirmas kadras, perziura originali animacija.
+    if (!preg_match('~\.(jpe?g|png|webp|gif|heic|heif)$~i', $file)) {
         gallery_public_error('Unsupported file type', 415);
     }
 }
