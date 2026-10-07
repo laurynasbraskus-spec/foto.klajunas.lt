@@ -1860,7 +1860,7 @@ document.getElementById("rjCopy").addEventListener("click",function(){var txt=JS
                 setUploadProgress("Įkėlimas baigtas: "+donePhotos+" / "+totalPhotos+" nuotraukų. Perkraunama...",donePhotos,totalPhotos,skipNote);
                 // Praleisti per dideli failai turi likti matomi ir po perkrovimo,
                 // kitaip vartotojas nepastebetu, kad ju truksta.
-                if(tooBig.length){
+                if(skipped.length){
                     try{ sessionStorage.setItem("uploadSkipped",skipNote); }catch(_){}
                 }
                 location.href=redirectUrl;
