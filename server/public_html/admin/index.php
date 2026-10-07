@@ -285,9 +285,57 @@ function ensure_schema(): void {
         // Older MySQL variants may not support JSON functions identically; leave existing data untouched.
     }
     ensure_member_schema();
+    ensure_site_views_schema();
     $st = db()->prepare("INSERT INTO admins(email,name,role,is_active) VALUES(?,?,'superadmin',1) ON DUPLICATE KEY UPDATE role='superadmin', is_active=1");
     $st->execute(['info@klajunas.lt','OK Klajunas']);
     $st->execute(['okklajunas@gmail.com','OK Klajunas Gmail']);
+}
+/* Svetaines perziuru skaitliukai DB (2026-10-07): albums.site_views - albumo
+ * apsilankymai (pirmas atidarymas per diena narsyklei, kaip failinis
+ * gallery_record_album_view), photos.site_views - nuotraukos atidarymai
+ * galerijoje. photo_views lieka istorinis Google Photos skaicius. DB tam, kad
+ * metadata JSON eksportas turetu visus perziuru duomenis. */
+function ensure_site_views_schema(): void {
+    foreach (['albums', 'photos'] as $t) {
+        if (!db()->query("SHOW COLUMNS FROM $t LIKE 'site_views'")->fetch()) {
+            db()->exec("ALTER TABLE $t ADD site_views INT UNSIGNED NOT NULL DEFAULT 0");
+        }
+    }
+    if (setting('album_site_views_migrated', '') !== '') return;
+    // Vienkartinis perkelimas: iki siol apsilankymai buvo tik faile (cache/album_views/albums.json).
+    b2_load_config();
+    if (!function_exists('gallery_album_views_totals')) return;
+    $file = gallery_album_views_totals();
+    $moved = 0;
+    $up = db()->prepare("UPDATE albums SET site_views=GREATEST(site_views,?), updated_at=updated_at WHERE id=?");
+    foreach (db()->query("SELECT id, slug, source_path FROM albums")->fetchAll(PDO::FETCH_ASSOC) as $a) {
+        $keys = array_unique(array_filter([trim((string)$a['slug'], '/'), trim((string)$a['source_path'], '/')]));
+        $total = 0;
+        foreach ($keys as $k) $total += (int)($file[$k] ?? 0);
+        if ($total > 0) { $up->execute([$total, (int)$a['id']]); $moved++; }
+    }
+    set_setting('album_site_views_migrated', date('c'), 'system');
+    audit('system', null, 'site_views_migrate', 'Albumų apsilankymai perkelti iš failo į DB', ['albums' => $moved]);
+}
+/* Perziuru laukai metadata JSON eksportui: imageViews - istorinis Google Photos
+ * skaicius (Takeout prasme), siteViews - svetaines, totalViews - abu kartu. */
+function photo_views_export_fields(array $photo): array {
+    $google = ($photo['photo_views'] ?? null);
+    $site = (int)($photo['site_views'] ?? 0);
+    $out = ['siteViews' => $site, 'totalViews' => (int)$google + $site];
+    if ($google !== null && $google !== '') $out['imageViews'] = (string)$google;
+    return $out;
+}
+function album_views_export_fields(array $album): array {
+    $out = ['siteViews' => (int)($album['site_views'] ?? 0)];
+    if (!empty($album['id'])) {
+        try {
+            $st = db()->prepare("SELECT COALESCE(SUM(COALESCE(photo_views,0)+site_views),0) FROM photos WHERE album_id=? AND is_missing=0");
+            $st->execute([(int)$album['id']]);
+            $out['photoViewsTotal'] = (int)$st->fetchColumn();
+        } catch (Throwable $e) { /* stulpelio dar nera - be sumos */ }
+    }
+    return $out;
 }
 function audit(string $type, ?int $id, string $action, string $summary, ?array $values=null): void {
     db()->prepare("INSERT INTO audit_logs(admin_id,entity_type,entity_id,action,summary,new_values,ip_address,user_agent,created_at) VALUES(?,?,?,?,?,?,?,?,NOW())")
@@ -627,6 +675,7 @@ function album_metadata_payload(array $album, ?array $existing = null): array {
     if (!empty($album['other_url'])) $meta['otherUrl'] = (string)$album['other_url'];
     if (!empty($album['source_path'])) $meta['sourcePath'] = (string)$album['source_path'];
     if (!empty($album['slug'])) $meta['slug'] = (string)$album['slug'];
+    if (array_key_exists('site_views', $album)) $meta = album_views_export_fields($album) + $meta;
     return $meta;
 }
 function photo_metadata_payload(array $photo, ?array $existing = null): array {
@@ -659,6 +708,7 @@ function photo_metadata_payload(array $photo, ?array $existing = null): array {
     if ($views !== null && $views !== '') {
         $meta['imageViews'] = (string)$views;
     }
+    if (array_key_exists('site_views', $photo)) $meta = photo_views_export_fields(['photo_views' => $views] + $photo) + $meta;
     if (!empty($photo['author_name'])) $meta['authorName'] = (string)$photo['author_name'];
     if (!empty($photo['copyright_text'])) $meta['copyrightText'] = (string)$photo['copyright_text'];
     if (!empty($photo['credit_line'])) $meta['creditLine'] = (string)$photo['credit_line'];
@@ -2834,7 +2884,8 @@ function photo_edit(): void {
         ['Preview path', $r['preview_path'] ?? 'n/a'],
         ['Web path', $r['web_path'] ?? 'n/a'],
         ['File size', $r['file_size'] ? human_bytes((int)$r['file_size']) : 'n/a'],
-        ['Views', $r['photo_views'] ?? $jsonViews ?? 'n/a'],
+        ['Views (Google Photos)', $r['photo_views'] ?? $jsonViews ?? 'n/a'],
+        ['Views (svetainė)', (string)(int)($r['site_views'] ?? 0)],
         ['Dimensions', ($r['width'] && $r['height']) ? ($r['width'].' × '.$r['height']) : 'n/a'],
         ['Taken at', $defaults['taken_at'] ?: 'n/a'],
         ['JSON taken', $jsonTaken ? (is_array($jsonTaken) ? json_encode($jsonTaken) : (string)$jsonTaken) : 'n/a'],
@@ -5845,6 +5896,16 @@ function save_storage_path(): void {
         flash('Confirm the B2 storage move, then submit again.', 'err');
         go($backUrl);
     }
+    // Albume nera nuotrauku eiluciu - nera ka perkelti: keiciamas tik DB kelias.
+    // (Perkelimas cia pasiimtu seno aplanko .album-netrinti.json / metadata.json,
+    // kurie gali priklausyti kitam albumui.)
+    if (album_db_photo_count($id) === 0) {
+        db()->prepare("UPDATE albums SET source_path=?, lock_marker_at=NULL, updated_by=? WHERE id=?")
+            ->execute([trim($newSourcePath, '/'), $_SESSION['admin']['id'] ?? null, $id]);
+        audit('album', $id, 'update', 'B2 kelias pakeistas tik DB (albume nuotraukų nėra): '.$oldSourcePath.' → '.$newSourcePath, ['old_source_path'=>$oldSourcePath, 'new_source_path'=>$newSourcePath]);
+        flash('B2 kelias pakeistas tik DB: albume nuotraukų nėra, B2 nieko neperkelta.');
+        go($backUrl);
+    }
     $guess = album_storage_base_prefix(album_photo_prefix_guess($id));
     $renameSourcePath = $oldSourcePath;
     if ($detectedMoveNeeded) {
@@ -8790,18 +8851,18 @@ function export_overlay_json(int $albumId): void {
     need_login(); ensure_overlay_schema();
     $a=db()->prepare("SELECT * FROM albums WHERE id=?"); $a->execute([$albumId]); $album=$a->fetch(); if(!$album){ http_response_code(404); exit('Album not found'); }
     $ps=db()->prepare("SELECT * FROM photos WHERE album_id=? ORDER BY sort_order,taken_at,id"); $ps->execute([$albumId]);
-    $out=['metadata.json'=>json_decode((string)($album['metadata_json'] ?? ''),true) ?: ['title'=>$album['title'],'description'=>$album['description'],'access'=>$album['visibility']==='published'?'public':$album['visibility'],'date'=>$album['event_date']?['timestamp'=>(string)strtotime($album['event_date'].' 00:00:00 UTC'),'formatted'=>$album['event_date']]:null], 'photos'=>[]];
+    $out=['metadata.json'=>overlay_album_json($album), 'photos'=>[]];
     foreach($ps as $p){
-        $j=json_decode((string)($p['metadata_json'] ?? ''),true) ?: [];
-        $out['photos'][$p['original_filename'].'.supplemental-metadata.json']=$j ?: ['title'=>$p['original_filename'],'description'=>$p['description'] ?? '', 'photoTakenTime'=>$p['taken_at']?['timestamp'=>(string)strtotime($p['taken_at'].' UTC'),'formatted'=>$p['taken_at']]:null, 'geoData'=>['latitude'=>(float)$p['latitude'],'longitude'=>(float)$p['longitude'],'altitude'=>0]];
+        $out['photos'][$p['original_filename'].'.supplemental-metadata.json']=overlay_photo_json($p);
     }
     header('Content-Type: application/json; charset=utf-8'); header('Content-Disposition: attachment; filename="'.slug($album['title']).'-overlay.json"');
     echo json_encode($out, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT); exit;
 }
+// Eksportas: saugotas metadata_json + visada sviezi perziuru skaitliukai.
 function overlay_album_json(array $album): array {
     $j=json_decode((string)($album['metadata_json'] ?? ''),true);
-    if(is_array($j)) return $j;
-    return [
+    if(is_array($j)) return album_views_export_fields($album) + $j;
+    return album_views_export_fields($album) + [
         'title'=>$album['title'],
         'description'=>$album['description'] ?? '',
         'access'=>$album['visibility']==='published'?'public':$album['visibility'],
@@ -8810,7 +8871,7 @@ function overlay_album_json(array $album): array {
 }
 function overlay_photo_json(array $p): array {
     $j=json_decode((string)($p['metadata_json'] ?? ''),true);
-    if(is_array($j)) return $j;
+    if(is_array($j)) return photo_views_export_fields(['photo_views' => $p['photo_views'] ?? ($j['imageViews'] ?? null)] + $p) + $j;
     $out = [
         'title'=>$p['original_filename'],
         'description'=>$p['description'] ?? '',
@@ -8823,8 +8884,7 @@ function overlay_photo_json(array $p): array {
             'longitudeSpan'=>0,
         ],
     ];
-    if (!empty($p['photo_views'])) $out['imageViews'] = (string)$p['photo_views'];
-    return $out;
+    return photo_views_export_fields($p) + $out;
 }
 function export_overlay_zip(int $albumId): void {
     need_login(); ensure_overlay_schema();

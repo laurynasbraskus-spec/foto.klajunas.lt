@@ -21,7 +21,7 @@
     --bg: #fdfdfc;
     --ink: #1a1a1a;
     --ink-soft: #6b6b6b;
-    --ink-faint: #9a9a94;
+    --ink-faint: #71716b;
     --line: #e8e8e2;
     --line-strong: #cfcfc8;
     --card-bg: #f7f7f4;
@@ -946,7 +946,7 @@
       title_asc: (a, b) => a.name.localeCompare(b.name, "lt") || tie(a, b),
       title_desc: (a, b) => b.name.localeCompare(a.name, "lt") || tie(a, b),
       photos_desc: (a, b) => (b.count || 0) - (a.count || 0) || tie(a, b),
-      views_desc: (a, b) => (b.viewCount || 0) - (a.viewCount || 0) || tie(a, b)
+      views_desc: (a, b) => (b.siteViewCount || 0) - (a.siteViewCount || 0) || tie(a, b)
     }[$("sort").value];
     return list.sort(cmp);
   }
@@ -954,11 +954,19 @@
   /* Metaeilutė kaip administravimo tinklelyje: atskiri elementai su tarpais,
      o ne sujungti taškais. Vietovė gauna savo ženklą, todėl akis ją randa
      iškart, nesvarbu kokio ilgio prieš tai einanti data. Grąžina HTML. */
+  // Lietuviška daugiskaita: 1 apsilankymas, 2–9 apsilankymai, 10–20 ir x0 apsilankymų.
+  function visitsWord(n) {
+    const t = n % 100, u = n % 10;
+    if (u === 1 && t !== 11) return "apsilankymas";
+    if (u >= 2 && u <= 9 && (t < 12 || t > 19)) return "apsilankymai";
+    return "apsilankymų";
+  }
+
   function albumMetaLine(al) {
     const bits = [];
     if (dateLabel(al)) bits.push(`<span>${esc(dateLabel(al))}</span>`);
     if (al.eventPlace) bits.push(`<span class="place">◈ ${esc(al.eventPlace)}</span>`);
-    if (al.viewCount) bits.push(`<span>${fmtN(al.viewCount)} views</span>`);
+    if (al.siteViewCount) bits.push(`<span>${fmtN(al.siteViewCount)} ${visitsWord(al.siteViewCount)}</span>`);
     return bits.join("");
   }
 
@@ -1044,7 +1052,10 @@
     if (dateLabel(al)) bits.push(`<span>${esc(dateLabel(al))}</span>`);
     if (al.eventPlace) bits.push(`<span class="d">·</span><span>${esc(al.eventPlace)}</span>`);
     bits.push(`<span class="d">·</span><span id="subCount">${al.count || 0} nuotr.</span>`);
-    if (al.viewCount) bits.push(`<span class="d">·</span><span>${fmtN(al.viewCount)} views</span>`);
+    // „19 apsilankymų, viso peržiūrų: 7 512" – peržiūros = visų albumo nuotraukų suma (Google Photos + svetainė).
+    const totalViews = al.imageViewCount ? `viso peržiūrų: ${fmtN(al.imageViewCount)}` : "";
+    if (al.siteViewCount) bits.push(`<span class="d">·</span><span>${fmtN(al.siteViewCount)} ${visitsWord(al.siteViewCount)}${totalViews ? ", " + totalViews : ""}</span>`);
+    else if (totalViews) bits.push(`<span class="d">·</span><span>${totalViews}</span>`);
     if (al.authorName) bits.push(`<span class="d">·</span><span>Foto: ${esc(al.authorName)}</span>`);
     if (al.copyrightText) bits.push(`<span class="d">·</span><span>${esc(al.copyrightText)}</span>`);
     if (al.private) bits.push(`<span class="tag">&#128274; Privatus</span>`);
@@ -1481,9 +1492,25 @@
     window.addEventListener("resize", () => { if (zScale > 1.01) zoomApply(); });
   })();
 
+  // Svetainės peržiūrų skaitiklis (photos.site_views): ta pati nuotrauka
+  // skaičiuojama vieną kartą per naršyklės sesiją; privačiuose albumuose – ne.
+  function recordPhotoView(p) {
+    if (!p || !p.path || (currentAlbum && currentAlbum.private)) return;
+    let seen = {};
+    try { seen = JSON.parse(sessionStorage.getItem("fotoSeen") || "{}") || {}; } catch (e) {}
+    if (seen[p.path]) return;
+    seen[p.path] = 1;
+    try { sessionStorage.setItem("fotoSeen", JSON.stringify(seen)); } catch (e) {}
+    const url = API + "?action=photo_view", body = new URLSearchParams({ file: p.path });
+    try {
+      if (!(navigator.sendBeacon && navigator.sendBeacon(url, body))) fetch(url, { method: "POST", body, keepalive: true }).catch(() => {});
+    } catch (e) {}
+  }
+
   function updateLb() {
     const p = visible[lbIndex];
     if (!p) return closeLb();
+    recordPhotoView(p);
     const lbIssue = previewIssue(p);
     if (lbIssue) {
       const dlHtml = (p.downloadAllowed && p.downloadUrl)

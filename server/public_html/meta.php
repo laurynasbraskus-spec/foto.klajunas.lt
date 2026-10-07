@@ -213,6 +213,8 @@ function photo_db_meta(string $file): array {
         $json = !empty($row['metadata_json']) ? json_decode((string)$row['metadata_json'], true) : null;
         if (!is_array($json)) $json = null;
         $views = $row['photo_views'] ?? takeout_views($json);
+        // Peržiūros = istorinės (Google Photos) + svetainės (photos.site_views).
+        if (!empty($row['site_views'])) $views = (is_numeric($views) ? (int)$views : 0) + (int)$row['site_views'];
         $out = [
             'exif' => exif_from_photo_row($row, $json),
             'image' => image_from_photo_row($row),

@@ -36,7 +36,8 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: public, max-age=60, s-maxage=600, stale-while-revalidate=60');
 require_once __DIR__ . '/gallery-security.php';
 gallery_security_headers('json');
-gallery_require_get();
+// POST leidziamas tik nuotraukos perziuros skaitliukui (?action=photo_view).
+if (($_GET['action'] ?? '') !== 'photo_view') gallery_require_get();
 
 const HEIC_MISSING_DISPLAY_MESSAGE = 'HEIC originalas įkeltas, bet JPG peržiūra nesukurta.';
 
@@ -448,6 +449,31 @@ if ($apiUrl === '' || $downloadUrl === '' || $authToken === '') {
     json_fail('B2 authorize returned incomplete data', 500);
 }
 
+// ---- Nuotraukos perziuru skaitliukas (svetaine) ----
+// POST ?action=photo_view, file=<b2_key>, kai galerijoje atidaroma nuotrauka.
+// Skaiciuojama photos.site_views tik paskelbtoms nuotraukoms paskelbtuose
+// albumuose (privaciu neskaiciuojam); tos pacios sesijos pakartotinius
+// atidarymus atmeta narsykle (sessionStorage), robotai neskaiciuojami.
+// updated_at=updated_at - perziura nera turinio pakeitimas.
+if (($_GET['action'] ?? '') === 'photo_view') {
+    header('Cache-Control: no-store');
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_fail('Method not allowed', 405);
+    $viewKey = trim((string)($_POST['file'] ?? ''), "/ \t\n\r\0\x0B");
+    $viewUa = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+    $viewOk = false;
+    $viewDb = gallery_db();
+    if ($viewKey !== '' && strlen($viewKey) <= 500 && $viewDb && !preg_match('~bot|crawl|spider|slurp|preview|facebookexternalhit|curl|wget~i', $viewUa)
+        && gallery_db_column_exists($viewDb, 'photos', 'site_views')) {
+        try {
+            $st = $viewDb->prepare("UPDATE photos p JOIN albums a ON a.id=p.album_id SET p.site_views=p.site_views+1, p.updated_at=p.updated_at WHERE p.b2_key=? AND p.visibility='published' AND p.is_missing=0 AND a.visibility='published'");
+            $st->execute([$viewKey]);
+            $viewOk = $st->rowCount() > 0;
+        } catch (Throwable $e) { gallery_log($e); }
+    }
+    echo json_encode(['ok' => $viewOk]);
+    exit;
+}
+
 // ---- Input ----
 $requestedPath = trim((string)($_GET['path'] ?? ''), "/ \t\n\r\0\x0B");
 // Netuscias kelias privalo atitikti PASKELBTA albuma. Anksciau neatpazintas
@@ -510,7 +536,7 @@ if ($path !== '' && $cursor === '') {
     // visitor — the same per-day cookie dedup the view counter uses. Otherwise
     // the SPA's re-fetch on browser Back/Forward would inflate the Access log.
     $firstViewToday = gallery_record_album_view($path);
-    if ($firstViewToday) gallery_log_access($path);
+    if ($firstViewToday) { gallery_log_access($path); manifest_record_album_view_db($path); }
 }
 
 $listCacheKey = json_encode([
@@ -519,7 +545,8 @@ $listCacheKey = json_encode([
     // irasai podelyje dar 5 min. atiduotu atsakyma be naujo lauko.
     // 17: albumo nuotraukos, kuriu b2_key ne po albums.source_path, nebedingsta.
     // 18: GIF nuotraukos rodomos albume ir skaiciuojamos sarase.
-    'v' => 18,
+    // 19: viewCount = tik apsilankymai; nuotrauku perziuros + svetaines perziuros.
+    'v' => 19,
     'path' => $path,
     'storagePath' => $storagePath,
     'limit' => $limit,
@@ -751,7 +778,8 @@ function manifest_album_rows(): array {
     foreach ($albums as $album) {
         $albumId = (int)$album['id'];
         $path = trim((string)($album['slug'] ?: $album['source_path'] ?? ''), "/ 	
- ");
+
+ ");
         if ($path === '') continue;
         $count = $counts[$albumId] ?? 0;
         $coverMode = (string)($album['cover_mode'] ?? 'auto');
@@ -825,12 +853,36 @@ function manifest_album_meta_for_path(string $path): ?array {
     }
     return null;
 }
+/* Albumo apsilankymai DB (albums.site_views) - tas pats ivykis, kaip failinis
+ * skaitliukas (pirmas albumo atidarymas per diena siai narsyklei). DB - kad
+ * patektu i metadata JSON eksporta. */
+function manifest_record_album_view_db(string $path): void {
+    $db = function_exists('gallery_db') ? gallery_db() : null;
+    if (!$db || $path === '' || !gallery_db_column_exists($db, 'albums', 'site_views')) return;
+    try {
+        $db->prepare("UPDATE albums SET site_views=site_views+1, updated_at=updated_at WHERE slug=? OR TRIM(BOTH '/' FROM source_path)=? ORDER BY id LIMIT 1")->execute([$path, $path]);
+    } catch (Throwable $e) { gallery_log($e); }
+}
+function manifest_album_site_view_totals(): array {
+    $db = function_exists('gallery_db') ? gallery_db() : null;
+    if (!$db || !gallery_db_column_exists($db, 'albums', 'site_views')) return [];
+    $out = [];
+    try {
+        foreach ($db->query("SELECT slug,source_path,site_views FROM albums WHERE site_views>0")->fetchAll() as $row) {
+            foreach (array_unique([trim((string)$row['slug'], '/'), trim((string)$row['source_path'], '/')]) as $k) {
+                if ($k !== '') $out[$k] = ($out[$k] ?? 0) + (int)$row['site_views'];
+            }
+        }
+    } catch (Throwable $e) { gallery_log($e); }
+    return $out;
+}
 function manifest_album_photo_view_totals(): array {
     $db = function_exists('gallery_db') ? gallery_db() : null;
     if (!$db) return [];
+    $siteSel = gallery_db_column_exists($db, 'photos', 'site_views') ? 'p.site_views' : '0 AS site_views';
     try {
         $rows = $db->query(
-            "SELECT a.slug,a.source_path,p.photo_views,p.metadata_json
+            "SELECT a.slug,a.source_path,p.photo_views,$siteSel,p.metadata_json
              FROM albums a
              JOIN photos p ON p.album_id=a.id
              WHERE a.visibility='published'
@@ -849,8 +901,8 @@ function manifest_album_photo_view_totals(): array {
             $metadata = json_decode((string)$row['metadata_json'], true);
             if (is_array($metadata)) $views = $metadata['imageViews'] ?? ($metadata['photoViews'] ?? null);
         }
-        if ($views === null || $views === '' || !is_numeric($views)) continue;
-        $value = (int)$views;
+        $value = (($views !== null && $views !== '' && is_numeric($views)) ? (int)$views : 0) + (int)($row['site_views'] ?? 0);
+        if ($value <= 0) continue;
         foreach (['slug','source_path'] as $key) {
             $path = trim((string)($row[$key] ?? ''), "/ \t\n\r\0\x0B");
             if ($path === '') continue;
@@ -925,7 +977,8 @@ function manifest_photos_for_path(string $path): array {
         $compatSelect = gallery_db_column_exists($db, 'photos', 'compatibility_b2_key') ? 'p.compatibility_b2_key' : 'NULL AS compatibility_b2_key';
         $originalB2Select = gallery_db_column_exists($db, 'photos', 'original_b2_key') ? 'p.original_b2_key' : 'NULL AS original_b2_key';
         $rotSelect = gallery_db_column_exists($db, 'photos', 'rotation') ? 'p.rotation' : '0 AS rotation';
-        $q = $db->prepare("SELECT p.b2_key fileName,p.b2_key,$compatSelect,$originalB2Select,$rotSelect,p.stored_filename,p.original_filename,p.file_size contentLength,p.title,p.description,p.photo_views,p.taken_at,p.width,p.height,p.metadata_json,p.camera_make,p.camera_model,p.lens_model,p.focal_length,p.aperture,p.shutter_speed,p.iso_value,a.source_path,a.event_date,a.event_date_end,a.location_name, a.download_enabled, a.visibility AS album_visibility, p.visibility AS photo_visibility, p.is_downloadable, p.is_missing FROM photos p JOIN albums a ON a.id=p.album_id WHERE a.visibility IN (".manifest_album_visibility_sql().") AND p.visibility='published' AND p.is_missing=0 AND (a.slug=? OR a.source_path=?) ORDER BY p.sort_order ASC,p.id ASC");
+        $siteViewsSelect = gallery_db_column_exists($db, 'photos', 'site_views') ? 'p.site_views' : '0 AS site_views';
+        $q = $db->prepare("SELECT p.b2_key fileName,p.b2_key,$compatSelect,$originalB2Select,$rotSelect,$siteViewsSelect,p.stored_filename,p.original_filename,p.file_size contentLength,p.title,p.description,p.photo_views,p.taken_at,p.width,p.height,p.metadata_json,p.camera_make,p.camera_model,p.lens_model,p.focal_length,p.aperture,p.shutter_speed,p.iso_value,a.source_path,a.event_date,a.event_date_end,a.location_name, a.download_enabled, a.visibility AS album_visibility, p.visibility AS photo_visibility, p.is_downloadable, p.is_missing FROM photos p JOIN albums a ON a.id=p.album_id WHERE a.visibility IN (".manifest_album_visibility_sql().") AND p.visibility='published' AND p.is_missing=0 AND (a.slug=? OR a.source_path=?) ORDER BY p.sort_order ASC,p.id ASC");
         $q->execute([$path, $path]);
         $rows = $q->fetchAll();
         foreach ($rows as &$row) {
@@ -977,6 +1030,8 @@ function manifest_photo_meta(array $photo, int $contentLength): array {
         if (is_array($decoded)) $metadata = $decoded;
     }
     $views = $photo['photo_views'] ?? ($metadata['imageViews'] ?? ($metadata['photoViews'] ?? null));
+    // Peržiūros = istorinės (Google Photos) + svetainės.
+    if (!empty($photo['site_views'])) $views = (is_numeric($views) ? (int)$views : 0) + (int)$photo['site_views'];
     $title = trim((string)($photo['title'] ?? ''));
     if ($title === '') $title = basename((string)($photo['fileName'] ?? $photo['original_filename'] ?? ''));
     $image = ['bytes' => $contentLength];
@@ -1020,7 +1075,10 @@ function manifest_photo_meta(array $photo, int $contentLength): array {
     return $out;
 }
 
+// Apsilankymai: DB (eksportui) ir failinis skaitliukas skaiciuoja ta pati ivyki;
+// imama didesne - pereinamuoju laikotarpiu DB dar gali buti nemigruota.
 $albumViewTotals = gallery_album_views_totals();
+foreach (manifest_album_site_view_totals() as $k => $v) $albumViewTotals[$k] = max($v, (int)($albumViewTotals[$k] ?? 0));
 $albumPhotoViewTotals = manifest_album_photo_view_totals();
 
 // ---- Fetch page ----
@@ -1359,7 +1417,8 @@ if (is_array($albumMeta)) {
     $albumMeta['count'] = count($photos);
     $albumMeta['siteViewCount'] = (int)($albumViewTotals[$path] ?? 0);
     $albumMeta['imageViewCount'] = (int)($albumPhotoViewTotals[$path] ?? 0);
-    $albumMeta['viewCount'] = max($albumMeta['siteViewCount'], $albumMeta['imageViewCount']);
+    // Albumo kortele rodo tik apsilankymus; nuotrauku perziuru suma - atskirai (imageViewCount).
+    $albumMeta['viewCount'] = $albumMeta['siteViewCount'];
 }
 
 foreach ($folders as $fo) {
@@ -1376,7 +1435,7 @@ foreach ($folders as $fo) {
         'siteViewCount' => (int)($albumViewTotals[$fo['path']] ?? 0),
         'imageViewCount' => (int)($albumPhotoViewTotals[$fo['path']] ?? 0),
     ];
-    $it['viewCount'] = max($it['siteViewCount'], $it['imageViewCount']);
+    $it['viewCount'] = $it['siteViewCount'];
     if (!empty($fo['private'])) $it['private'] = true;
     foreach (['subtitle','description','eventPlace','eventDate','eventDateEnd','eventDateLabel','tags','authorName','copyrightText','sortOrder','dbsportasUrl','klajunasUrl','otherUrl'] as $albumField) {
         if (isset($fo[$albumField]) && $fo[$albumField] !== '' && $fo[$albumField] !== []) $it[$albumField] = $fo[$albumField];
