@@ -1819,6 +1819,7 @@ document.getElementById("rjCopy").addEventListener("click",function(){var txt=JS
             }
             uploadButton.disabled=true;
             setUploadProgress("Pradedamas įkėlimas...",0,files.length,skipNoteOf(skipped));
+            let skipNote=skipNoteOf(skipped);
             try{
                 const rawItems=await uploadItems(files);
                 // 2) Po HEIC konversijos elementas = originalas + JPG kopija. 10 MB
@@ -1829,7 +1830,7 @@ document.getElementById("rjCopy").addEventListener("click",function(){var txt=JS
                     if(total>maxBytes){ skipped.push((it.original&&it.original.name||"?")+" ("+mb(total)+" MB su JPG kopija)"); return false; }
                     return true;
                 });
-                const skipNote=skipNoteOf(skipped);
+                skipNote=skipNoteOf(skipped);
                 if(!items.length){ uploadButton.disabled=false; setUploadProgress("Nėra ką įkelti",0,0,skipNote); return; }
                 const batches=uploadBatches(items);
                 const totalPhotos=items.length;
@@ -1860,7 +1861,7 @@ document.getElementById("rjCopy").addEventListener("click",function(){var txt=JS
                 setUploadProgress("Įkėlimas baigtas: "+donePhotos+" / "+totalPhotos+" nuotraukų. Perkraunama...",donePhotos,totalPhotos,skipNote);
                 // Praleisti per dideli failai turi likti matomi ir po perkrovimo,
                 // kitaip vartotojas nepastebetu, kad ju truksta.
-                if(tooBig.length){
+                if(skipped.length){
                     try{ sessionStorage.setItem("uploadSkipped",skipNote); }catch(_){}
                 }
                 location.href=redirectUrl;
