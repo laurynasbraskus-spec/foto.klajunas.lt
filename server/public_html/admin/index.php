@@ -931,6 +931,9 @@ function head(string $title): void {
 .card>p{margin:0 0 12px}
 .card>p:last-child{margin-bottom:0}
 .card+.card{margin-top:14px}
+/* Tinklelyje (.grid) tarpus jau duoda gap; be sito kiekviena kortele, isskyrus
+   pirma, gaudavo +14px is virsaus, o pirma isitempdavo – nevienodas aukstis. */
+.grid>.card+.card{margin-top:0}
 .card table{margin-top:2px}
 .actions{margin:10px 0}
 .actions:first-child{margin-top:0}
