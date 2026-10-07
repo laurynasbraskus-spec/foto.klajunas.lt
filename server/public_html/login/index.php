@@ -89,17 +89,17 @@ $who = $mode === 'members' ? 'administratoriai ir klubo nariai, kurių el. pašt
 <title>Prisijungimas · foto.klajunas.lt</title>
 <link rel="icon" href="/favicon.ico">
 <style>
-:root{color-scheme:dark;--bg:#0b0e12;--panel:#151a20;--line:rgba(255,255,255,.1);--text:#e8eef6;--muted:#a7b3c2;--accent:#ffb74a;--err:#ff8a8a}
-@media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#f6f5f2;--panel:#fff;--line:rgba(0,0,0,.1);--text:#1b1f24;--muted:#5d6670;--accent:#b8640b;--err:#b3261e}}
+:root{color-scheme:dark;--bg:#0b0e12;--panel:#151a20;--line:rgba(255,255,255,.09);--ink:#e8eef6;--ink-soft:#a7b3c2;--amber-ink:#ffc46b;--err-ink:#ff8a8a}
+@media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#fdfdfc;--panel:#fff;--line:#e8e8e2;--ink:#1a1a1a;--ink-soft:#6b6b6b;--amber-ink:#8a5a10;--err-ink:#b3261e}}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
 main{width:100%;max-width:420px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px}
 h1{font-size:20px;margin:0 0 6px}
-p{margin:0 0 14px;color:var(--muted)}
-.err{color:var(--err)}
+p{margin:0 0 14px;color:var(--ink-soft)}
+.err{color:var(--err-ink)}
 .g{display:flex;justify-content:center;margin:18px 0 6px;min-height:44px}
-a{color:var(--accent)}
-button{font:inherit;padding:8px 16px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--text);cursor:pointer}
+a{color:var(--amber-ink)}
+button{font:inherit;padding:8px 16px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
 .row{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 </style>
 </head>
