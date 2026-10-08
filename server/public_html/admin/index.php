@@ -1217,11 +1217,15 @@ function album_photo_board(int $albumId, ?int $coverPhotoId): void {
     $heicNeedJpg = [];
     foreach ($rows as $rp) {
         $rn = (string)($rp['original_filename'] ?? $rp['b2_key'] ?? '');
+        if ((int)($rp['is_missing'] ?? 0) === 1) continue;
         if (is_heic_name($rn) && (trim((string)($rp['compatibility_b2_key'] ?? ''), '/') === '' || (string)($rp['preview_status'] ?? '') !== 'ready')) {
             $heicNeedJpg[] = ['id' => (int)$rp['id'], 'name' => $rn];
+        } elseif (preg_match('~\.(mp4|mov|m4v|webm)$~i', $rn) && trim((string)($rp['compatibility_b2_key'] ?? ''), '/') === '') {
+            // Video be kadro (narių įkėlimas, B2 Sync, Takeout) - kadras per video.php srautą.
+            $heicNeedJpg[] = ['id' => (int)$rp['id'], 'name' => $rn, 'video' => 1, 'key' => trim((string)($rp['b2_key'] ?? ''), '/')];
         }
     }
-    echo '<div class="actions" style="align-items:center"><button type="button" class="btn" id="recreateJpgBtn">Recreate JPG previews ('.count($heicNeedJpg).')</button><span class="muted small">HEIC/HEIF be JPG: konvertuojama naršyklėje, JPG keliamas į B2, būsena — lentelėje. Originalai neliečiami.</span></div>';
+    echo '<div class="actions" style="align-items:center"><button type="button" class="btn" id="recreateJpgBtn">Recreate JPG previews ('.count($heicNeedJpg).')</button><span class="muted small">HEIC/HEIF ir video be JPG: konvertuojama naršyklėje (video – kadras), JPG keliamas į B2, būsena – lentelėje. Atidarius albumą paleidžiama automatiškai. Originalai neliečiami.</span></div>';
     echo '<div id="rjPanel" class="card" style="display:none;margin:10px 0"><div class="actions" style="margin:0 0 8px 0"><strong id="rjSum">—</strong><button type="button" class="mini" id="rjCopy">Kopijuoti ataskaitą</button></div><table style="font-size:13px"><tr><th style="width:34px">#</th><th>Failas</th><th style="width:230px">Būsena</th><th>Klaida</th></tr><tbody id="rjBody"></tbody></table></div>';
     echo '<script>(function(){var LIST='.json_encode($heicNeedJpg, JSON_UNESCAPED_UNICODE).';var TOKEN='.json_encode((string)token()).';var AID='.json_encode((string)$albumId).';
 var btn=document.getElementById("recreateJpgBtn"),panel=document.getElementById("rjPanel"),body=document.getElementById("rjBody"),sum=document.getElementById("rjSum");if(!btn)return;
@@ -1241,7 +1245,9 @@ function preflight(){var d={ua:navigator.userAgent,crossOriginIsolated:!!self.cr
 function setSt(tr,txt,color){var c=tr.querySelector(".rj-st");c.dataset.live="";c.textContent=txt;c.style.color=color||"";}
 function refreshTile(id,key){var tile=document.querySelector(".photo-tile[data-id=\""+id+"\"]");if(!tile)return;var url="/img.php?file="+encodeURIComponent(key)+"&w=420&h=280&fit=cover&q=76&fmt=webp&r="+Date.now();var img=tile.querySelector("img");if(img){img.src=url;}else{var nt=tile.querySelector(".no-thumb");if(nt){var ni=document.createElement("img");ni.loading="lazy";ni.src=url;nt.replaceWith(ni);}}}
 async function sendLog(done,fail){try{var fd=new FormData();fd.append("_token",TOKEN);fd.append("log",JSON.stringify({album_id:AID,done:done,fail:fail,items:LOG}));await fetch("?action=save_recreate_log",{method:"POST",body:fd,credentials:"same-origin"});}catch(e){}}
+function posterFromUrl(url){return new Promise(function(res,rej){var v=document.createElement("video");v.muted=true;v.playsInline=true;v.preload="auto";var to=setTimeout(function(){end();rej(new Error("video neatsako (25s) – kodekas?"));},25000);function end(){clearTimeout(to);try{v.removeAttribute("src");v.load();}catch(x){}}v.addEventListener("error",function(){end();rej(new Error("naršyklė negali dekoduoti šio video (kodekas)"));});v.addEventListener("loadeddata",function(){v.addEventListener("seeked",function(){try{var c=document.createElement("canvas");c.width=v.videoWidth;c.height=v.videoHeight;if(!c.width||!c.height)throw new Error("nulinis video kadras");c.getContext("2d").drawImage(v,0,0);c.toBlob(function(b){end();b?res(b):rej(new Error("canvas toBlob nepavyko"));},"image/jpeg",0.85);}catch(e){end();rej(e);}},{once:true});v.currentTime=Math.min(1,(v.duration||2)/2);});v.src=url;});}
 async function convertOne(it,rec,live){
+if(it.video){live("1/2 imamas video kadras");var pj=await posterFromUrl("/video.php?file="+encodeURIComponent(it.key));rec.steps.push("poster "+(pj.size||0)+"B");live("2/2 JPG keliamas į B2");var pfd=new FormData();pfd.append("_token",TOKEN);pfd.append("photo_id",it.id);pfd.append("jpg",pj,it.name+".jpg");var pup=await wt(fetch("?action=save_recreated_jpg",{method:"POST",body:pfd,headers:{Accept:"application/json"},credentials:"same-origin"}),120000,"įkėlimas");var pjd=await pup.json();if(!pjd||!pjd.ok)throw new Error((pjd&&pjd.error)||"įkėlimas nepavyko");rec.steps.push("uploaded "+pjd.jpgKey);rec.ok=true;return pjd.jpgKey;}
 live("1/3 siunčiamas originalas");
 var r=await wt(fetch("?action=photo_heic_blob&id="+encodeURIComponent(it.id),{credentials:"same-origin"}),60000,"atsisiuntimas");
 if(!r.ok)throw new Error("originalo atsisiuntimas HTTP "+r.status);
@@ -1256,7 +1262,7 @@ var jd=await up.json();if(!jd||!jd.ok)throw new Error((jd&&jd.error)||"įkėlima
 rec.steps.push("uploaded "+jd.jpgKey);rec.ok=true;return jd.jpgKey;}
 // Vienos nuotraukos konversija paspaudus „JPG preview missing" žymę plytelėje.
 window.rjConvertOne=async function(id,name,live){var rec={id:id,name:name,steps:[],single:true};LOG=[rec];try{var k=await convertOne({id:id,name:name},rec,live);refreshTile(id,k);await sendLog(1,0);return k;}catch(err){rec.ok=false;rec.error=em(err);await sendLog(0,1);throw new Error(em(err));}};
-btn.addEventListener("click",async function(){if(!LIST.length){alert("Nėra HEIC failų be JPG peržiūros.");return;}btn.disabled=true;panel.style.display="block";body.innerHTML="";LOG=[];var PF=preflight();LOG.push({preflight:PF});sum.textContent="Aplinka: wasm="+PF.wasm+" · worker="+PF.blobWorker+" · SAB="+PF.sharedArrayBuffer+" · isolated="+PF.crossOriginIsolated;var done=0,fail=0;
+async function runAll(auto){if(!LIST.length){if(!auto)alert("Nėra HEIC ar video failų be JPG peržiūros.");return;}btn.disabled=true;panel.style.display="block";body.innerHTML="";LOG=[];var warn=document.getElementById("rjWarn");if(!warn){warn=document.createElement("div");warn.id="rjWarn";warn.setAttribute("role","alert");warn.style.cssText="margin:0 0 8px;padding:8px 10px;border:1px solid var(--amber);background:var(--amber-soft);border-radius:8px;font-weight:600";panel.insertBefore(warn,panel.firstChild);}warn.textContent=(auto?"Automatiškai kuriami trūkstami JPG (HEIC / video kadrai). ":"")+"⚠ Neuždarykite ir neperkraukite šio lango, kol vyksta konversija.";var guard=function(ev){ev.preventDefault();ev.returnValue="";return "";};window.addEventListener("beforeunload",guard);var PF=preflight();LOG.push({preflight:PF});sum.textContent="Aplinka: wasm="+PF.wasm+" · worker="+PF.blobWorker+" · SAB="+PF.sharedArrayBuffer+" · isolated="+PF.crossOriginIsolated;var done=0,fail=0;
 for(var i=0;i<LIST.length;i++){var it=LIST[i];var tr=document.createElement("tr");tr.innerHTML="<td>"+(i+1)+"</td><td>"+it.name+"</td><td class=\"rj-st\">Laukia</td><td class=\"rj-er muted small\" style=\"white-space:pre-wrap\"></td>";body.appendChild(tr);
 var rec={id:it.id,name:it.name,steps:[]};LOG.push(rec);var t0=Date.now();
 var live=function(txt){var st=tr.querySelector(".rj-st");st.dataset.live=txt;st.textContent=txt;st.style.color="var(--amber-ink)";};
@@ -1269,7 +1275,12 @@ refreshTile(it.id,jpgKey);
 finally{clearInterval(tick);}
 sum.textContent="Vykdoma: "+done+" ✓, "+fail+" ✗ iš "+LIST.length;}
 await sendLog(done,fail);
-sum.textContent="Baigta: "+done+" ✓, "+fail+" ✗ iš "+LIST.length+". Ataskaita įrašyta Audit žurnale.";btn.disabled=false;});
+window.removeEventListener("beforeunload",guard);warn.textContent="✓ Konversija baigta – langą jau galima uždaryti.";
+sum.textContent="Baigta: "+done+" ✓, "+fail+" ✗ iš "+LIST.length+". Ataskaita įrašyta Audit žurnale.";btn.disabled=false;}
+btn.addEventListener("click",function(){runAll(false);});
+// Automatinis paleidimas atidarius albumą: kiekvienas failas bandomas tik kartą
+// per naršyklės sesiją, kad nepavykęs (kodekas) nesisuktų kas perkrovimą.
+(function(){var tried={};try{tried=JSON.parse(sessionStorage.getItem("rjAutoTried")||"{}")||{};}catch(e){}var todo=LIST.filter(function(it){return !tried[it.id];});if(!todo.length)return;todo.forEach(function(it){tried[it.id]=1;});try{sessionStorage.setItem("rjAutoTried",JSON.stringify(tried));}catch(e){}LIST=todo;setTimeout(function(){runAll(true);},800);})();
 document.getElementById("rjCopy").addEventListener("click",function(){var txt=JSON.stringify({album:AID,items:LOG},null,1);if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt);}else{var ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();}this.textContent="Nukopijuota";});
 })();</script>';
     // Nariu ikelimo jungiklis stovi cia, o ne tik Nariu puslapyje: sprendimas
@@ -1658,6 +1669,34 @@ document.getElementById("rjCopy").addEventListener("click",function(){var txt=JS
             uploadProgress.innerHTML=`<div>${escHtml(message)}${counts}${time}</div>${meter}${detail?`<div class="muted small">${escHtml(detail)}</div>`:""}${renderHeicLogs("")}`;
         }
         function isHeic(file){return /\.(heic|heif)$/i.test(file.name||"") || /^image\/hei[cf]/i.test(file.type||"");}
+        // Video kadras JPG kopijai (2026-10-08): imamas iš vietinio failo prieš
+        // siunčiant, tad nieko nereikia parsisiųsti atgal. Nepavyko (kodekas) -
+        // video keliamas be kadro, jį vėliau sukurs albumo puslapis.
+        function isVideoFile(file){return /\.(mp4|mov|m4v|webm)$/i.test(file.name||"") || /^video\//i.test(file.type||"");}
+        function videoPosterFromFile(file){
+            return new Promise(resolve=>{
+                const url=URL.createObjectURL(file);
+                const v=document.createElement("video");
+                v.muted=true; v.playsInline=true; v.preload="auto";
+                let done=false, to=null;
+                const finish=blob=>{ if(done) return; done=true; clearTimeout(to); URL.revokeObjectURL(url); try{ v.removeAttribute("src"); v.load(); }catch(_){} resolve(blob); };
+                to=setTimeout(()=>finish(null),25000);
+                v.addEventListener("error",()=>finish(null));
+                v.addEventListener("loadeddata",()=>{
+                    v.addEventListener("seeked",()=>{
+                        try{
+                            const c=document.createElement("canvas");
+                            c.width=v.videoWidth; c.height=v.videoHeight;
+                            if(!c.width||!c.height){ finish(null); return; }
+                            c.getContext("2d").drawImage(v,0,0);
+                            c.toBlob(b=>finish(b&&b.size?b:null),"image/jpeg",0.85);
+                        }catch(_){ finish(null); }
+                    },{once:true});
+                    v.currentTime=Math.min(1,(v.duration||2)/2);
+                });
+                v.src=url;
+            });
+        }
         function displayNameForHeic(file, seen){
             const raw=(file.name||"photo.heic").replace(/^.*[\\/]/,"");
             const base=(raw.replace(/\.[^.]+$/,"")||"photo").replace(/[\\\\/:*?"<>|]+/g,"-");
@@ -1783,6 +1822,11 @@ document.getElementById("rjCopy").addEventListener("click",function(){var txt=JS
                         await new Promise(r=>setTimeout(r,900));
                     }
                     items.push({original:file,compatibility:jpg,previewStatus:jpg?"ready":"failed",previewError:jpg?"":((result&&result.reason)||heicFailedMessage)});
+                }else if(isVideoFile(file)){
+                    setUploadProgress("Kuriamas video kadras (JPG plytelei)...",idx+1,files.length,file.name||"");
+                    const blob=await videoPosterFromFile(file);
+                    const jpg=blob?new File([blob],(file.name||"video")+".jpg",{type:"image/jpeg"}):null;
+                    items.push({original:file,compatibility:jpg,previewStatus:"ready",previewError:""});
                 }else{
                     items.push({original:file,compatibility:null,previewStatus:"ready",previewError:""});
                 }
@@ -4358,8 +4402,8 @@ function b2_storage_root_rows(): array {
 function b2_compatibility_key_for_original(string $originalKey, array $files): ?string {
     $originalKey = trim($originalKey, '/');
     if ($originalKey === '' || !str_contains($originalKey, '/originals/')) return null;
-    $candidate = preg_replace('~/originals/([^/]+)\.[^.]+$~', '/jpg-originals/$1.jpg', $originalKey);
-    if (!is_string($candidate) || $candidate === $originalKey) return null;
+    // Video -> IMG_1.MOV.jpg, ne IMG_1.jpg (tai to paties Live Photo HEIC peržiūra).
+    $candidate = compatibility_jpg_key($originalKey);
     foreach ($files as $file) {
         $key = trim((string)($file['fileName'] ?? ''), '/');
         if ($key === $candidate) return $candidate;
@@ -6512,6 +6556,8 @@ function upload_album_photos(): void {
         $metadataFile = $compatibilityFile ?: $file;
         $exif = image_metadata((string)$metadataFile['tmp'], (string)$metadataFile['base']);
         if ($isHeicOriginal) $exif['mime_type'] = image_mime_from_name((string)$file['base']) ?: 'image/heic';
+        // Video su JPG kadru: matmenys iš kadro, bet MIME - video (ne image/jpeg).
+        if (preg_match('~\.(mp4|mov|m4v|webm|avi)$~i', (string)$file['base'])) $exif['mime_type'] = photo_mime_for_name((string)$file['base']);
         $identityFile = $file;
         $identityFile['base'] = $dbOriginalName;
         $byOriginal->execute([$albumId, $dbOriginalName]);
@@ -6572,9 +6618,14 @@ function upload_album_photos(): void {
 
         $compatibilityKey = null;
         if ($compatibilityFile) {
-            $compatBase = preg_replace('~\.[^.]+$~', '', $targetName) ?: $targetName;
-            $compatibilityTargetName = $compatBase.'.jpg';
-            $compatibilityKey = $prefix.'/jpg-originals/'.$compatibilityTargetName;
+            $compatibilityKey = compatibility_jpg_key($prefix.'/originals/'.$targetName);
+            // Raktas jau kitos nuotraukos (pvz. to paties vardo HEIC) - neperrašom.
+            $byCompat = db()->prepare("SELECT id FROM photos WHERE compatibility_b2_key=? LIMIT 1");
+            $byCompat->execute([$compatibilityKey]);
+            $compatOwner = (int)$byCompat->fetchColumn();
+            if ($compatOwner > 0 && (!$existing || $compatOwner !== (int)$existing['id'])) {
+                $compatibilityKey = substr($compatibilityKey, 0, -4).'-'.substr(sha1($key), 0, 8).'.jpg';
+            }
         }
         $shouldUploadMedia = $realDuplicateKey === '' || $duplicateMode === 'overwrite';
         if ($shouldUploadMedia) {
@@ -6733,12 +6784,13 @@ function save_recreated_jpg(): void {
     $info = @getimagesize((string)$f['tmp_name']);
     if (!$info || (string)($info['mime'] ?? '') !== 'image/jpeg') json_exit(['ok'=>false,'error'=>'invalid jpg'], 400);
     $key = trim((string)$p['b2_key'], '/');
-    $jpgKey = preg_replace('~/originals/([^/]+)\\.[^.]+$~', '/jpg-originals/$1.jpg', $key);
-    if (!is_string($jpgKey) || $jpgKey === $key) {
-        $prefix = trim((string)($p['source_path'] ?? ''), '/');
-        $base = preg_replace('~\\.[^.]+$~', '', basename($key)) ?: basename($key);
-        $jpgKey = ($prefix !== '' ? $prefix.'/' : '').'jpg-originals/'.$base.'.jpg';
-    }
+    $jpgKey = compatibility_jpg_key($key, (string)($p['source_path'] ?? ''));
+    // Kitos nuotraukos peržiūros neperrašom (2026-10-08: Live Photo IMG_5829.HEIC
+    // ir IMG_5829.MP4 abu gavo jpg-originals/IMG_5829.jpg - video kadras pakeitė
+    // HEIC peržiūrą). Užimtas raktas -> vardas su photo ID.
+    $taken = db()->prepare("SELECT COUNT(*) FROM photos WHERE id<>? AND (compatibility_b2_key=? OR b2_key=?)");
+    $taken->execute([$id, $jpgKey, $jpgKey]);
+    if ((int)$taken->fetchColumn() > 0) $jpgKey = substr($jpgKey, 0, -4).'-'.$id.'.jpg';
     try {
         $upload = b2_upload_url();
         b2_upload_file((string)$f['tmp_name'], $jpgKey, 'image/jpeg', $upload);
@@ -6893,8 +6945,8 @@ function photo_file_name_from_input(string $input, string $currentName): array {
 }
 function photo_compat_key_for(string $originalKey): string {
     $originalKey = trim($originalKey, '/');
-    $k = preg_replace('~/originals/([^/]+)\.[^./]+$~', '/jpg-originals/$1.jpg', $originalKey);
-    return (is_string($k) && $k !== $originalKey) ? $k : '';
+    if (!str_contains($originalKey, '/originals/')) return '';
+    return compatibility_jpg_key($originalKey);
 }
 function photo_mime_for_name(string $name): string {
     $mime = image_mime_from_name($name);
@@ -8041,8 +8093,7 @@ function bulk(string $table): void {
                 $newCompat = null;
                 $srcCompat = trim((string)($r['compatibility_b2_key'] ?? ''), '/');
                 if ($srcCompat !== '' && isset($sourceMaps[$srcPrefix][$srcCompat])) {
-                    $compatName = (preg_replace('~\.[^.]+$~', '', basename($newKey)) ?: basename($newKey)).'.jpg';
-                    $newCompat = $targetPrefix.'/jpg-originals/'.$compatName;
+                    $newCompat = compatibility_jpg_key($newKey, $targetPrefix);
                     b2_copy_file_version($sourceMaps[$srcPrefix][$srcCompat], $newCompat);
                     $targetMap[$newCompat] = ['fileName' => $newCompat];
                 }
@@ -8349,6 +8400,21 @@ function heic_upload_supported(): bool {
 }
 function is_heic_name(string $name): bool {
     return (bool)preg_match('~\.(heic|heif)$~i', $name);
+}
+/**
+ * JPG kopijos raktas originalui: <albumas>/jpg-originals/<vardas>.jpg. Video
+ * kadrui - visas vardas su plėtiniu (IMG_5829.MP4.jpg), kad nesutaptų su to paties
+ * Live Photo HEIC peržiūra (IMG_5829.HEIC -> IMG_5829.jpg).
+ */
+function compatibility_jpg_key(string $originalKey, string $sourcePath = ''): string {
+    $originalKey = trim($originalKey, '/');
+    $name = basename($originalKey);
+    $isVideo = (bool)preg_match('~\.(mp4|mov|m4v|webm|avi)$~i', $name);
+    $base = $isVideo ? $name : (preg_replace('~\.[^.]+$~', '', $name) ?: $name);
+    $pos = strrpos($originalKey, '/originals/');
+    if ($pos !== false) return substr($originalKey, 0, $pos).'/jpg-originals/'.$base.'.jpg';
+    $prefix = trim($sourcePath, '/');
+    return ($prefix !== '' ? $prefix.'/' : '').'jpg-originals/'.$base.'.jpg';
 }
 function valid_generated_heic_display(string $tmp, string $name): bool {
     if (!preg_match('~\.jpe?g$~i', $name)) return false;
