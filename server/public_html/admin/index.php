@@ -6310,24 +6310,34 @@ function gallery_list_cache_invalidate_album(int $albumId): void {
     }
 }
 function admin_img_cache_dir(): string {
-    $dir = dirname(__DIR__) . '/cache/b2_img_cache';
+    // img.php podelis: dirname(public_html)/cache/b2_img_cache (img.php cache_dir()).
+    // Iki 2026-10-08 cia buvo dirname(__DIR__) = public_html/cache - tokio katalogo
+    // nera, tad purge niekada nieko netrynė ir perkurtas JPG likdavo senas.
+    $dir = dirname(__DIR__, 2) . '/cache/b2_img_cache';
     return is_dir($dir) ? $dir : '';
 }
+/**
+ * Istrina visus img.php podelio variantus siam B2 raktui. Vardas skaiciuojamas
+ * lygiai kaip img.php thumb_cache_path(): versija (v1 / heic-imagick-v1), dydziai
+ * po normalize_size() (0/128/420/1400), q po normalize_quality() (45/76/83),
+ * fit, fmt ir pasukimas (|rot=N prie rakto).
+ */
 function purge_img_cache_for_b2_key(string $key): void {
+    $key = trim($key, '/');
     if ($key === '' || !defined('B2_BUCKET')) return;
     $dir = admin_img_cache_dir();
     if ($dir === '') return;
-    $variants = [
-        [420, 280, 'cover', 76, 'webp'],
-        [160, 280, 'cover', 76, 'webp'],
-        [1600, 1200, 'contain', 84, 'webp'],
-        [420, 0, 'cover', 76, 'webp'],
-        [1400, 0, 'cover', 83, 'webp'],
-    ];
-    foreach ($variants as [$w, $h, $fit, $q, $fmt]) {
-        $hash = hash('sha256', (string)B2_BUCKET . '|' . $key . "|w={$w}|h={$h}|fit={$fit}|q={$q}|fmt={$fmt}");
-        foreach (glob($dir.'/'.$hash.'.*') ?: [] as $path) @unlink($path);
+    $version = preg_match('~\.(heic|heif)$~i', $key) ? 'heic-imagick-v1' : 'v1';
+    $bucket = (string)B2_BUCKET;
+    $sizes = [0, 128, 420, 1400];
+    foreach (['', '|rot=90', '|rot=180', '|rot=270'] as $rot) {
+        $file = $key . $rot;
+        foreach ($sizes as $w) foreach ($sizes as $h) foreach (['contain', 'cover'] as $fit) foreach ([45, 76, 83] as $q) foreach (['webp' => 'webp', 'jpeg' => 'jpg'] as $fmt => $ext) {
+            @unlink($dir . '/' . hash('sha256', $version . '|' . $bucket . '|' . $file . "|w={$w}|h={$h}|fit={$fit}|q={$q}|fmt={$fmt}") . '.' . $ext);
+        }
     }
+    // GIF animacija (?anim=1): w=0 h=0 contain q=0 gif.
+    @unlink($dir . '/' . hash('sha256', $version . '|' . $bucket . '|' . $key . '|w=0|h=0|fit=contain|q=0|fmt=gif') . '.gif');
 }
 function album_photo_for_takeout_json(int $albumId, string $name): ?array {
     $targetKey = takeout_name_key($name);
