@@ -547,7 +547,8 @@ $listCacheKey = json_encode([
     // 18: GIF nuotraukos rodomos albume ir skaiciuojamos sarase.
     // 19: viewCount = tik apsilankymai; nuotrauku perziuros + svetaines perziuros.
     // 20: vaizdo irasai albume (isVideo, videoUrl) ir sarase skaiciuojami.
-    'v' => 20,
+    // 21: HEIC/video JPG kopijos miniatiuros su &pv= (versija pagal synced_at).
+    'v' => 21,
     'path' => $path,
     'storagePath' => $storagePath,
     'limit' => $limit,
@@ -579,17 +580,30 @@ function rot_param(int $rot): string {
     $rot = (($rot % 360) + 360) % 360;
     return in_array($rot, [90, 180, 270], true) ? '&rot=' . $rot : '';
 }
-function thumb_url(string $fileName, int $w = 420, int $rot = 0): string {
-    return 'img.php?file=' . rawurlencode($fileName) . '&w=' . $w . '&q=76&fmt=webp&v=7' . rot_param($rot);
+// $pv - JPG kopijos (compatibility_b2_key) versija. img.php ja ignoruoja, bet ji
+// keicia adresa: Cloudflare miniatiuras laiko "immutable" metus, tad perkurtas
+// JPG (admin "Sukurti JPG", video kadras is kitos vietos) be jo liktu senas.
+function pv_param(string $pv): string {
+    return $pv !== '' ? '&pv=' . rawurlencode($pv) : '';
+}
+function thumb_url(string $fileName, int $w = 420, int $rot = 0, string $pv = ''): string {
+    return 'img.php?file=' . rawurlencode($fileName) . '&w=' . $w . '&q=76&fmt=webp&v=7' . rot_param($rot) . pv_param($pv);
 }
 // GIF perziurai - originali animacija (img.php ?anim=1), ne statinis webp kadras.
 // Pasuktam GIF lieka statine perziura: animacijos img.php nesuka.
 function is_gif(string $fileName): bool {
     return (bool)preg_match('~\.gif$~i', $fileName);
 }
-function view_url(string $fileName, int $rot = 0): string {
-    if (is_gif($fileName) && rot_param($rot) === '') return 'img.php?file=' . rawurlencode($fileName) . '&anim=1&v=7';
-    return 'img.php?file=' . rawurlencode($fileName) . '&w=1400&q=83&fmt=webp&v=7' . rot_param($rot);
+function view_url(string $fileName, int $rot = 0, string $pv = ''): string {
+    if (is_gif($fileName) && rot_param($rot) === '') return 'img.php?file=' . rawurlencode($fileName) . '&anim=1&v=7' . pv_param($pv);
+    return 'img.php?file=' . rawurlencode($fileName) . '&w=1400&q=83&fmt=webp&v=7' . rot_param($rot) . pv_param($pv);
+}
+/** JPG kopijos versija: tik eilutems su compatibility_b2_key; keiciasi, kai admin'as ja perraso (synced_at). */
+function preview_version(array $row): string {
+    $compat = trim((string)($row['compatibility_b2_key'] ?? ''), "/ \t\n\r\0\x0B");
+    $synced = trim((string)($row['synced_at'] ?? ''));
+    if ($compat === '' || $synced === '') return '';
+    return substr(md5($compat . '|' . $synced), 0, 8);
 }
 function photo_download_allowed(string $fileName): bool {
     return function_exists('gallery_download_allowed_for_file') ? gallery_download_allowed_for_file($fileName) : true;
@@ -988,7 +1002,8 @@ function manifest_photos_for_path(string $path): array {
         $originalB2Select = gallery_db_column_exists($db, 'photos', 'original_b2_key') ? 'p.original_b2_key' : 'NULL AS original_b2_key';
         $rotSelect = gallery_db_column_exists($db, 'photos', 'rotation') ? 'p.rotation' : '0 AS rotation';
         $siteViewsSelect = gallery_db_column_exists($db, 'photos', 'site_views') ? 'p.site_views' : '0 AS site_views';
-        $q = $db->prepare("SELECT p.b2_key fileName,p.b2_key,$compatSelect,$originalB2Select,$rotSelect,$siteViewsSelect,p.stored_filename,p.original_filename,p.file_size contentLength,p.title,p.description,p.photo_views,p.taken_at,p.width,p.height,p.metadata_json,p.camera_make,p.camera_model,p.lens_model,p.focal_length,p.aperture,p.shutter_speed,p.iso_value,a.source_path,a.event_date,a.event_date_end,a.location_name, a.download_enabled, a.visibility AS album_visibility, p.visibility AS photo_visibility, p.is_downloadable, p.is_missing FROM photos p JOIN albums a ON a.id=p.album_id WHERE a.visibility IN (".manifest_album_visibility_sql().") AND p.visibility='published' AND p.is_missing=0 AND (a.slug=? OR a.source_path=?) ORDER BY p.sort_order ASC,p.id ASC");
+        $syncedSelect = gallery_db_column_exists($db, 'photos', 'synced_at') ? 'p.synced_at' : 'NULL AS synced_at';
+        $q = $db->prepare("SELECT p.b2_key fileName,p.b2_key,$compatSelect,$originalB2Select,$rotSelect,$siteViewsSelect,$syncedSelect,p.stored_filename,p.original_filename,p.file_size contentLength,p.title,p.description,p.photo_views,p.taken_at,p.width,p.height,p.metadata_json,p.camera_make,p.camera_model,p.lens_model,p.focal_length,p.aperture,p.shutter_speed,p.iso_value,a.source_path,a.event_date,a.event_date_end,a.location_name, a.download_enabled, a.visibility AS album_visibility, p.visibility AS photo_visibility, p.is_downloadable, p.is_missing FROM photos p JOIN albums a ON a.id=p.album_id WHERE a.visibility IN (".manifest_album_visibility_sql().") AND p.visibility='published' AND p.is_missing=0 AND (a.slug=? OR a.source_path=?) ORDER BY p.sort_order ASC,p.id ASC");
         $q->execute([$path, $path]);
         $rows = $q->fetchAll();
         foreach ($rows as &$row) {
@@ -1405,6 +1420,7 @@ if ($path === '') {
                 'fileName' => $displayFileName !== '' ? $displayFileName : $originalFileName,
                 'originalFileName' => $originalFileName,
                 'compatibilityFileName' => trim((string)($photo['compatibility_b2_key'] ?? ''), "/ \t\n\r\0\x0B"),
+                'previewVersion' => $displayFileName !== '' ? preview_version($photo) : '',
                 'hasDisplayPreview' => $displayFileName !== '',
                 'contentLength' => $contentLength,
                 'downloadAllowed' => $downloadAllowed,
@@ -1477,8 +1493,8 @@ foreach ($photos as $photo) {
         'previewMissing' => !$hasDisplayPreview,
         'previewStatus' => $hasDisplayPreview ? '' : HEIC_MISSING_DISPLAY_MESSAGE,
         'originalSize' => (int)($photo['contentLength'] ?? 0),
-        'thumbUrl' => $hasDisplayPreview ? thumb_url($fileName, 420, (int)($photo['rotation'] ?? 0)) : '',
-        'viewUrl' => $hasDisplayPreview ? view_url($fileName, (int)($photo['rotation'] ?? 0)) : '',
+        'thumbUrl' => $hasDisplayPreview ? thumb_url($fileName, 420, (int)($photo['rotation'] ?? 0), (string)($photo['previewVersion'] ?? '')) : '',
+        'viewUrl' => $hasDisplayPreview ? view_url($fileName, (int)($photo['rotation'] ?? 0), (string)($photo['previewVersion'] ?? '')) : '',
         'downloadAllowed' => $downloadAllowed,
         'downloadUrl' => download_url($downloadFile, $downloadAllowed),
         'compatibilityDownloadUrl' => $compatibilityFileName !== '' ? download_url($compatibilityFileName, $downloadAllowed) : '',
