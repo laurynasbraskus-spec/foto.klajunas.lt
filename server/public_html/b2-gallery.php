@@ -548,7 +548,8 @@ $listCacheKey = json_encode([
     // 19: viewCount = tik apsilankymai; nuotrauku perziuros + svetaines perziuros.
     // 20: vaizdo irasai albume (isVideo, videoUrl) ir sarase skaiciuojami.
     // 21: HEIC/video JPG kopijos miniatiuros su &pv= (versija pagal synced_at).
-    'v' => 21,
+    // 22: &pv= ir pakeistoms nuotraukoms bei virseliams (synced_at >= 2026-10-08).
+    'v' => 22,
     'path' => $path,
     'storagePath' => $storagePath,
     'limit' => $limit,
@@ -598,12 +599,24 @@ function view_url(string $fileName, int $rot = 0, string $pv = ''): string {
     if (is_gif($fileName) && rot_param($rot) === '') return 'img.php?file=' . rawurlencode($fileName) . '&anim=1&v=7' . pv_param($pv);
     return 'img.php?file=' . rawurlencode($fileName) . '&w=1400&q=83&fmt=webp&v=7' . rot_param($rot) . pv_param($pv);
 }
-/** JPG kopijos versija: tik eilutems su compatibility_b2_key; keiciasi, kai admin'as ja perraso (synced_at). */
+/**
+ * Miniatiuros adreso versija (&pv=), kuri keiciasi kartu su rodomu failu:
+ * synced_at admin'as pakelia, kai perraso JPG kopija ("Sukurti JPG"), pakeicia
+ * faila geresne versija (photo_b2_replace), sinchronizuoja ar atstato is B2.
+ *  - su JPG kopija (HEIC/video): visada (nuo 2026-10-08);
+ *  - paprastoms nuotraukoms: tik jei synced_at >= PREVIEW_VERSION_SINCE. Senesnems
+ *    adresas lieka toks pat, kad ~15 tukst. miniatiuru nebutu siunciamos is naujo
+ *    vien del sio pakeitimo.
+ */
+const PREVIEW_VERSION_SINCE = '2026-10-08 00:00:00';
 function preview_version(array $row): string {
     $compat = trim((string)($row['compatibility_b2_key'] ?? ''), "/ \t\n\r\0\x0B");
     $synced = trim((string)($row['synced_at'] ?? ''));
-    if ($compat === '' || $synced === '') return '';
-    return substr(md5($compat . '|' . $synced), 0, 8);
+    if ($synced === '') return '';
+    if ($compat !== '') return substr(md5($compat . '|' . $synced), 0, 8);
+    if (strcmp($synced, PREVIEW_VERSION_SINCE) < 0) return '';
+    $key = trim((string)($row['b2_key'] ?? ''), "/ \t\n\r\0\x0B");
+    return $key === '' ? '' : substr(md5($key . '|' . $synced), 0, 8);
 }
 function photo_download_allowed(string $fileName): bool {
     return function_exists('gallery_download_allowed_for_file') ? gallery_download_allowed_for_file($fileName) : true;
@@ -756,12 +769,13 @@ function manifest_album_rows(): array {
         } catch (Throwable $e) { gallery_log($e); }
 
         $rotSel = gallery_db_column_exists($db, 'photos', 'rotation') ? 'p.rotation' : '0';
+        $syncSel = gallery_db_column_exists($db, 'photos', 'synced_at') ? 'p.synced_at' : 'NULL';
         // ROW_NUMBER pakeicia buvusi "LIMIT 1" - rikiavimo tvarka ta pati, tad ir
         // virselis pasirenkamas tas pats, tik vienu kreipiniu visiems albumams.
         try {
             $q = $db->prepare(
-                "SELECT t.album_id,t.b2_key,t.fileName,t.compatibility_b2_key,t.original_b2_key,t.stored_filename,t.original_filename,t.source_path,t.rotation
-                   FROM (SELECT p.album_id,p.b2_key,p.b2_key AS fileName,$compatSelect,$originalB2Select,p.stored_filename,p.original_filename,a.source_path,$rotSel AS rotation,
+                "SELECT t.album_id,t.b2_key,t.fileName,t.compatibility_b2_key,t.original_b2_key,t.stored_filename,t.original_filename,t.source_path,t.rotation,t.synced_at
+                   FROM (SELECT p.album_id,p.b2_key,p.b2_key AS fileName,$compatSelect,$originalB2Select,p.stored_filename,p.original_filename,a.source_path,$rotSel AS rotation,$syncSel AS synced_at,
                                 ROW_NUMBER() OVER (PARTITION BY p.album_id ORDER BY CASE WHEN p.is_cover_candidate=1 THEN 0 ELSE 1 END ASC, CASE WHEN p.taken_at IS NULL THEN 1 ELSE 0 END ASC, p.taken_at ASC, p.sort_order ASC, p.id ASC) rn
                            FROM photos p JOIN albums a ON a.id=p.album_id
                           WHERE p.album_id IN ($in) AND p.visibility='published' AND p.is_missing=0 AND $imgExt) t
@@ -781,7 +795,7 @@ function manifest_album_rows(): array {
         if ($manualIds) {
             try {
                 $inM = implode(',', array_fill(0, count($manualIds), '?'));
-                $q = $db->prepare("SELECT p.id,p.album_id,p.b2_key,p.b2_key AS fileName,$compatSelect,$originalB2Select,p.stored_filename,p.original_filename,a.source_path,$rotSel AS rotation FROM photos p JOIN albums a ON a.id=p.album_id WHERE p.id IN ($inM) AND p.visibility='published' AND p.is_missing=0");
+                $q = $db->prepare("SELECT p.id,p.album_id,p.b2_key,p.b2_key AS fileName,$compatSelect,$originalB2Select,p.stored_filename,p.original_filename,a.source_path,$rotSel AS rotation,$syncSel AS synced_at FROM photos p JOIN albums a ON a.id=p.album_id WHERE p.id IN ($inM) AND p.visibility='published' AND p.is_missing=0");
                 $q->execute($manualIds);
                 foreach ($q->fetchAll() as $r) { $manualRows[(int)$r['id']] = $r; }
             } catch (Throwable $e) { gallery_log($e); }
@@ -843,6 +857,7 @@ function manifest_album_rows(): array {
             'copyrightText' => (string)($album['copyright_text'] ?? ''),
             'coverFile' => $cover,
             'coverRotation' => $coverRot,
+            'coverVersion' => ($cover !== '' && is_array($coverRow)) ? preview_version($coverRow) : '',
             'sortOrder' => isset($album['sort_order']) ? (int)$album['sort_order'] : null,
             'dbsportasUrl' => trim((string)($album['dbsportas_url'] ?? '')),
             'klajunasUrl' => trim((string)($album['klajunas_url'] ?? '')),
@@ -1468,8 +1483,8 @@ foreach ($folders as $fo) {
         if (isset($fo[$albumField]) && $fo[$albumField] !== '' && $fo[$albumField] !== []) $it[$albumField] = $fo[$albumField];
     }
     if ($withCovers && $fo['coverFile'] !== '') {
-        $it['coverThumbUrl'] = thumb_url($fo['coverFile'], 420, (int)($fo['coverRotation'] ?? 0));
-        $it['coverViewUrl']  = view_url($fo['coverFile'], (int)($fo['coverRotation'] ?? 0));
+        $it['coverThumbUrl'] = thumb_url($fo['coverFile'], 420, (int)($fo['coverRotation'] ?? 0), (string)($fo['coverVersion'] ?? ''));
+        $it['coverViewUrl']  = view_url($fo['coverFile'], (int)($fo['coverRotation'] ?? 0), (string)($fo['coverVersion'] ?? ''));
     }
     $items[] = $it;
 }
