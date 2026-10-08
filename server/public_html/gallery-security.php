@@ -61,10 +61,20 @@ function gallery_assert_allowed_prefix(string $path): void {
     }
 }
 
-function gallery_assert_allowed_file(string $file): void {
+// Galerijoje rodomi vaizdo irasai (2026-10-08). Leidziami tik video.php
+// (grotuvo srautas) ir download.php (originalas) - img.php ir meta.php ju
+// nepriima, nes vaizdo iraso nei sumazinti, nei EXIF perskaityti negali.
+const GALLERY_VIDEO_EXTS = ['mp4', 'm4v', 'mov', 'webm'];
+
+function gallery_is_video_file(string $file): bool {
+    return in_array(strtolower((string)pathinfo($file, PATHINFO_EXTENSION)), GALLERY_VIDEO_EXTS, true);
+}
+
+function gallery_assert_allowed_file(string $file, bool $allowVideo = false): void {
     if (!gallery_is_allowed_prefix($file)) {
         gallery_public_error('Not found', 404);
     }
+    if ($allowVideo && gallery_is_video_file($file)) return;
 
     // GIF leidziamas nuo 2026-10-04: Google Photos animacijos (MOTION.gif)
     // rodomos galerijoje - miniatiura pirmas kadras, perziura originali animacija.

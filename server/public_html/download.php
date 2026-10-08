@@ -43,7 +43,7 @@ function safe_file(string $file): string {
         if ($seg === '.' || $seg === '..') { $traversal = true; break; }
     }
     if ($file === '' || $traversal) respond_text('Invalid file path', 400);
-    gallery_assert_allowed_file($file);
+    gallery_assert_allowed_file($file, true);
     return $file;
 }
 

@@ -21,7 +21,7 @@
   # Zymeklis: pagal ji matyti, ar serveryje guli si .htaccess versija. Be jo
   # nebuvo kaip atskirti "failas neikeltas" nuo "ikeltas, bet direktyva
   # neveikia" - o tai du visai skirtingi dalykai.
-  Header always set X-Foto-Htaccess "2026-10-07b"
+  Header always set X-Foto-Htaccess "2026-10-08v"
   Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.googleusercontent.com; connect-src 'self' https://accounts.google.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 </IfModule>
 
@@ -33,7 +33,8 @@
 # Content-Length ir siuncia chunked - narsykle nerodo progreso. Sie du
 # skriptai siuncia tikslu dydi (readfile + exit), todel jiems pasitikejimas
 # ijungiamas. Patikrinta testiniu aplanku 2026-10-07.
-SetEnvIfNoCase Request_URI "^/(download|img)\.php$" no-gzip dont-vary ap_trust_cgilike_cl=1
+# video.php (2026-10-08) - Content-Length/Content-Range is B2 atsakymo, tikslus.
+SetEnvIfNoCase Request_URI "^/(download|img|video)\.php$" no-gzip dont-vary ap_trust_cgilike_cl=1
 
 <FilesMatch "^(config\.php|patch-.*\.php|.*\.bak.*|img\.new\.php|gallery-security\.php)$">
   Require all denied

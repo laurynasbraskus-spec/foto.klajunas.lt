@@ -594,6 +594,14 @@
     font-size: 12px; text-align: center; padding: 12px; line-height: 1.4;
   }
   .no-preview .np-ico { font-size: 22px; opacity: .7; }
+  /* Vaizdo irasai (2026-10-08): ▶ zenklas plyteleje ir grotuvas perziuroje. */
+  .vbadge {
+    position: absolute; top: 50%; left: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px;
+    border-radius: 50%; display: grid; place-items: center; pointer-events: none;
+    background: rgba(0,0,0,.55); color: #fff; font-size: 18px; padding-left: 3px;
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  }
+  .lb-img video { width: 100%; max-height: 78vh; border-radius: 16px; box-shadow: 0 24px 70px rgba(30,25,10,.15); display: block; background: #000; }
   .lb-notice {
     max-width: 440px; margin: 0 auto; text-align: center;
     background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
@@ -779,6 +787,7 @@
     toastTimer = setTimeout(() => t.classList.remove("show"), 4500);
   }
   function previewIssue(p) {
+    if (p.isVideo) return null;
     if (p.previewMissing) return "HEIC originalas įkeltas, bet JPG peržiūra nesukurta.";
     if (!p.thumbUrl || !p.viewUrl) return "Šiai nuotraukai peržiūra nesukurta.";
     return null;
@@ -1191,11 +1200,15 @@
       const card = document.createElement("figure");
       card.className = "pcard";
       const issue = previewIssue(p);
+      // Video be JPG kadro - tuscia plytele su uzrasu; ▶ zenklas - visiems video.
       const media = issue
         ? `<div class="no-preview"><span class="np-ico">⚠</span>${esc(issue)}</div>`
-        : `<img class="ph" loading="lazy" src="${esc(p.thumbUrl)}" alt="${esc(p.name)}">`;
+        : (p.isVideo && !p.thumbUrl)
+          ? `<div class="no-preview">Vaizdo įrašas</div>`
+          : `<img class="ph" loading="lazy" src="${esc(p.thumbUrl)}" alt="${esc(p.name)}">`;
       card.innerHTML =
         media +
+        (p.isVideo ? `<span class="vbadge" aria-label="Vaizdo įrašas">▶</span>` : "") +
         `<figcaption class="pmeta"><span>${esc(p.name)}</span><span>${esc(fmtBytes(p.originalSize))}</span></figcaption>` +
         `<span class="pindex">${vi + 1} / <span class="pindex-total"></span></span>` +
         `<button class="fav-btn${on ? " on" : ""}" title="Įsiminti">${on ? "♥" : "♡"}</button>`;
@@ -1300,7 +1313,11 @@
     $("lb").classList.add("open");
     pushHistory({ v: "photo", path: currentAlbum ? currentAlbum.path : "", i: vi, d: 2 });
   }
-  function closeLb() { $("lb").classList.remove("open"); }
+  function closeLb() {
+    // Uzdarytas langas tik pasislepia - video be pause() grotu toliau.
+    $("lbImg").querySelector("video")?.pause();
+    $("lb").classList.remove("open");
+  }
 
   // ================= Browser history + shareable URLs =================
   // Archive → album → photo each get a history entry (Back steps up one level)
@@ -1392,7 +1409,8 @@
     if (!stage) return;
     let x0 = null, y0 = null;
     stage.addEventListener("touchstart", e => {
-      if (e.touches.length !== 1) { x0 = null; return; }
+      // Tempiant video juosta, ne perjungiam irasa.
+      if (e.touches.length !== 1 || e.target.closest("video")) { x0 = null; return; }
       x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
     }, { passive: true });
     stage.addEventListener("touchend", e => {
@@ -1432,7 +1450,7 @@
     const box = $("lbImg"), im = zoomImg();
     if (im) im.style.transform = "";
     box.classList.remove("zoomed", "dragging");
-    box.classList.toggle("zoomable", zoomEnabled());
+    box.classList.toggle("zoomable", zoomEnabled() && !!im);
     zoomBadge(box);
   }
 
@@ -1512,7 +1530,23 @@
     if (!p) return closeLb();
     recordPhotoView(p);
     const lbIssue = previewIssue(p);
-    if (lbIssue) {
+    const dlLink = () => (p.downloadAllowed && p.downloadUrl)
+      ? `<br><br><a class="back-pill show" style="display:inline-block" href="${esc(p.downloadUrl)}" target="_blank" rel="noopener">⤓ Atsisiųsti originalą</a>`
+      : "";
+    if (p.isVideo) {
+      // preload="metadata": groti pradedama tik paspaudus, ir video.php per
+      // Range atsiuncia tik pradzia, o ne visa faila.
+      $("lbImg").innerHTML = `<video controls playsinline preload="metadata"${p.viewUrl ? ` poster="${esc(p.viewUrl)}"` : ""} src="${esc(p.videoUrl)}"></video>`;
+      const v = $("lbImg").querySelector("video");
+      // Nepalaikomas kodekas (dazniausiai iPhone HEVC .mov ne Safari narsykleje):
+      // error ivykis, arba metaduomenys be vaizdo (groja tik garsas).
+      const unsupported = () => {
+        if (visible[lbIndex] !== p) return;
+        $("lbImg").innerHTML = `<div class="lb-notice"><span class="np-ico">⚠</span>Ši naršyklė negali paleisti vaizdo įrašo „${esc(p.name)}“ (dažniausiai – iPhone HEVC formatas). Pabandykite Safari arba atsisiųskite failą.${dlLink()}</div>`;
+      };
+      v.addEventListener("error", unsupported);
+      v.addEventListener("loadedmetadata", () => { if (!v.videoWidth) unsupported(); });
+    } else if (lbIssue) {
       const dlHtml = (p.downloadAllowed && p.downloadUrl)
         ? `<br><br><a class="back-pill show" style="display:inline-block" href="${esc(p.downloadUrl)}" target="_blank" rel="noopener">⤓ Atsisiųsti originalą</a>`
         : "";
@@ -1562,7 +1596,7 @@
     const rows = [
       currentAlbum.subtitle ? ["Paantraštė", currentAlbum.subtitle] : null,
       ["Albumas", currentAlbum.name],
-      ["Nuotrauka", p.name],
+      [p.isVideo ? "Vaizdo įrašas" : "Nuotrauka", p.name],
       currentAlbum.eventPlace ? ["Vieta", currentAlbum.eventPlace] : null,
       dateLabel(currentAlbum) ? ["Renginio data", dateLabel(currentAlbum)] : null,
       p.originalSize ? ["Dydis", fmtBytes(p.originalSize)] : null,
@@ -1816,6 +1850,8 @@
       return;
     }
     if (!lbOpen) return;
+    // Fokusas ant grotuvo: rodykles prasuka video, ne perjungia irasa.
+    if (e.target && e.target.tagName === "VIDEO") return;
     if (e.key === "ArrowLeft") step(-1);
     if (e.key === "ArrowRight") step(1);
     if (e.key.toLowerCase() === "f") { const p = visible[lbIndex]; if (p) toggleFav(p.path); }
@@ -1823,7 +1859,7 @@
   });
 
   let swipeX = null;
-  $("lb").addEventListener("touchstart", e => { swipeX = e.touches[0].clientX; }, { passive: true });
+  $("lb").addEventListener("touchstart", e => { swipeX = e.target.closest("video") ? null : e.touches[0].clientX; }, { passive: true });
   $("lb").addEventListener("touchend", e => {
     if (swipeX === null) return;
     const dx = e.changedTouches[0].clientX - swipeX;

@@ -546,7 +546,8 @@ $listCacheKey = json_encode([
     // 17: albumo nuotraukos, kuriu b2_key ne po albums.source_path, nebedingsta.
     // 18: GIF nuotraukos rodomos albume ir skaiciuojamos sarase.
     // 19: viewCount = tik apsilankymai; nuotrauku perziuros + svetaines perziuros.
-    'v' => 19,
+    // 20: vaizdo irasai albume (isVideo, videoUrl) ir sarase skaiciuojami.
+    'v' => 20,
     'path' => $path,
     'storagePath' => $storagePath,
     'limit' => $limit,
@@ -602,6 +603,14 @@ function meta_url(string $fileName): string {
 }
 function is_image(string $fileName): bool {
     return (bool)preg_match('~\.(jpe?g|png|webp|gif|heic|heif)$~i', $fileName);
+}
+// Vaizdo irasai albume (2026-10-08): groja video.php srautu, miniatiura - JPG
+// kadras is compatibility_b2_key (admin "Sukurti JPG"), jei jis sukurtas.
+function is_video(string $fileName): bool {
+    return function_exists('gallery_is_video_file') && gallery_is_video_file($fileName);
+}
+function video_url(string $fileName): string {
+    return 'video.php?file=' . rawurlencode($fileName);
 }
 function is_derived_or_legacy_asset_path(string $fileName): bool {
     return str_contains($fileName, '/jpg-originals/') || str_contains($fileName, '/archive-originals/');
@@ -716,17 +725,18 @@ function manifest_album_rows(): array {
         $originalB2Select = gallery_db_column_exists($db, 'photos', 'original_b2_key') ? 'p.original_b2_key' : 'NULL AS original_b2_key';
 
         // Kiekis ir virselis privalo sutapti su tuo, ka naudotojas mato albuma
-        // atidares. Albumo viduje rodomos tik is_image() plėtiniu nuotraukos,
-        // todel .mov ir .mp4 cia neskaiciuojami: kitaip #540 sakniniame
-        // sarase rodytu 105, o viduje butu 52. .gif skaiciuojamas nuo 2026-10-04,
-        // nes is_image() ji jau rodo.
+        // atidares: is_image() nuotraukos ir nuo 2026-10-08 is_video() irasai
+        // (iki tol .mov/.mp4 albume nebuvo rodomi ir cia neskaiciuoti - #540
+        // sakniniame sarase rodytu 105, o viduje butu 52). .gif skaiciuojamas nuo
+        // 2026-10-04. Virselis - tik is nuotrauku ($imgExt).
         $imgExt = "SUBSTRING_INDEX(LOWER(p.b2_key),'.',-1) IN ('jpg','jpeg','png','webp','gif','heic','heif')";
+        $mediaExt = "SUBSTRING_INDEX(LOWER(p.b2_key),'.',-1) IN ('jpg','jpeg','png','webp','gif','heic','heif','mp4','m4v','mov','webm')";
 
         try {
             // COUNT(DISTINCT b2_key), o ne COUNT(*): b2_sync kartais ideda antra
             // eilute tam paciam B2 failui (#28 P7301744.JPG), ir tada kiekis butu
             // didesnis uz failu skaiciu.
-            $q = $db->prepare("SELECT p.album_id, COUNT(DISTINCT p.b2_key) n FROM photos p WHERE p.album_id IN ($in) AND p.visibility='published' AND p.is_missing=0 AND $imgExt GROUP BY p.album_id");
+            $q = $db->prepare("SELECT p.album_id, COUNT(DISTINCT p.b2_key) n FROM photos p WHERE p.album_id IN ($in) AND p.visibility='published' AND p.is_missing=0 AND $mediaExt GROUP BY p.album_id");
             $q->execute($ids);
             foreach ($q->fetchAll() as $r) { $counts[(int)$r['album_id']] = (int)$r['n']; }
         } catch (Throwable $e) { gallery_log($e); }
@@ -1375,7 +1385,7 @@ if ($path === '') {
                 $originalFileName = $rawKey;
                 if ($displayFileName === '' && is_displayable_original_path($rawKey) && !preg_match('~\.(heic|heif)$~i', $rawKey)) $displayFileName = $rawKey;
             }
-            if ($originalFileName === '' || !is_image($originalFileName)) continue;
+            if ($originalFileName === '' || !(is_image($originalFileName) || is_video($originalFileName))) continue;
             if (!isset($seenB2Keys[$originalFileName])) continue;
             // b2_sync kartais ideda antra eilute tam paciam B2 failui, ir tada
             // nuotrauka albume pasirodydavo du kartus (#28 P7301744.JPG). Vienas
@@ -1391,6 +1401,7 @@ if ($path === '') {
             }
             $contentLength = isset($seenB2Info[$originalFileName]['contentLength']) ? (int)$seenB2Info[$originalFileName]['contentLength'] : (int)($photo['contentLength'] ?? 0);
             $photos[] = [
+                'isVideo' => is_video($originalFileName),
                 'fileName' => $displayFileName !== '' ? $displayFileName : $originalFileName,
                 'originalFileName' => $originalFileName,
                 'compatibilityFileName' => trim((string)($photo['compatibility_b2_key'] ?? ''), "/ \t\n\r\0\x0B"),
@@ -1473,6 +1484,14 @@ foreach ($photos as $photo) {
         'compatibilityDownloadUrl' => $compatibilityFileName !== '' ? download_url($compatibilityFileName, $downloadAllowed) : '',
         'metaUrl' => meta_url($downloadFile),
     ];
+    if (!empty($photo['isVideo'])) {
+        // Video groja visada; JPG kadras - tik plyteles ir grotuvo virselis.
+        $item['isVideo'] = true;
+        $item['videoUrl'] = video_url($downloadFile);
+        $item['previewMissing'] = false;
+        $item['previewStatus'] = '';
+        $item['metaUrl'] = ''; // meta.php video neskaito
+    }
     if (!empty($photo['dbMeta']) && is_array($photo['dbMeta'])) $item['meta'] = $photo['dbMeta'];
     $items[] = $item;
 }
