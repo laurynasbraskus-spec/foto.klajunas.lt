@@ -61,6 +61,26 @@ function gallery_assert_allowed_prefix(string $path): void {
     }
 }
 
+/**
+ * Miniatiuros adreso versija (&pv=) - b2-gallery.php ir og.php. Ji keiciasi kartu su rodomu failu:
+ * synced_at admin'as pakelia, kai perraso JPG kopija ("Sukurti JPG"), pakeicia
+ * faila geresne versija (photo_b2_replace), sinchronizuoja ar atstato is B2.
+ *  - su JPG kopija (HEIC/video): visada (nuo 2026-10-08);
+ *  - paprastoms nuotraukoms: tik jei synced_at >= PREVIEW_VERSION_SINCE. Senesnems
+ *    adresas lieka toks pat, kad ~15 tukst. miniatiuru nebutu siunciamos is naujo
+ *    vien del sio pakeitimo.
+ */
+const PREVIEW_VERSION_SINCE = '2026-10-08 00:00:00';
+function preview_version(array $row): string {
+    $compat = trim((string)($row['compatibility_b2_key'] ?? ''), "/ \t\n\r\0\x0B");
+    $synced = trim((string)($row['synced_at'] ?? ''));
+    if ($synced === '') return '';
+    if ($compat !== '') return substr(md5($compat . '|' . $synced), 0, 8);
+    if (strcmp($synced, PREVIEW_VERSION_SINCE) < 0) return '';
+    $key = trim((string)($row['b2_key'] ?? ''), "/ \t\n\r\0\x0B");
+    return $key === '' ? '' : substr(md5($key . '|' . $synced), 0, 8);
+}
+
 // Galerijoje rodomi vaizdo irasai (2026-10-08). Leidziami tik video.php
 // (grotuvo srautas) ir download.php (originalas) - img.php ir meta.php ju
 // nepriima, nes vaizdo iraso nei sumazinti, nei EXIF perskaityti negali.

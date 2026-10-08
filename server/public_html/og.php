@@ -15,6 +15,8 @@ if (!defined('GALLERY_DB_NAME')) define('GALLERY_DB_NAME', 'klajunas_foto');
 if (!defined('GALLERY_DB_USER')) define('GALLERY_DB_USER', 'klajunas_adm');
 if (!defined('GALLERY_DB_PASS')) define('GALLERY_DB_PASS', '');
 
+require_once __DIR__ . '/gallery-security.php'; // preview_version()
+
 function og_e(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 
 $slug = trim((string)($_GET['a'] ?? ''), "/ \t\n\r\0\x0B");
@@ -92,7 +94,9 @@ if ($slug !== '' || $albumId > 0) {
             // Pasukimo stulpelio gali dar nebuti - tada tiesiog be jo.
             $rotCol = 'rotation';
             try { $pdo->query("SELECT rotation FROM photos LIMIT 0"); } catch (Throwable $e) { $rotCol = '0'; }
-            $coverSql = "SELECT COALESCE(NULLIF(compatibility_b2_key,''), b2_key) k, $rotCol r
+            // b2_key, compatibility_b2_key, synced_at - preview_version() (&pv=), kad
+            // pakeistas viršelis neliktų Cloudflare podėlyje (immutable metus).
+            $coverSql = "SELECT COALESCE(NULLIF(compatibility_b2_key,''), b2_key) k, $rotCol r, b2_key, compatibility_b2_key, synced_at
                            FROM photos
                           WHERE album_id=? AND visibility='published' AND is_missing=0 %s
                           ORDER BY CASE WHEN is_cover_candidate=1 THEN 0 ELSE 1 END,
@@ -114,6 +118,8 @@ if ($slug !== '' || $albumId > 0) {
             if ($cover && preg_match('~\.(jpe?g|png|webp)$~i', (string)$cover)) {
                 // img.php leidžia tik 128/420/1400 dydžius (podėlio apsauga), todėl 1400.
                 $image = $base . '/img.php?file=' . rawurlencode((string)$cover) . '&w=1400&q=83&fmt=jpeg&v=7' . (in_array($coverRot, [90, 180, 270], true) ? '&rot=' . $coverRot : '');
+                $pv = is_array($cr) ? preview_version($cr) : '';
+                if ($pv !== '') $image .= '&pv=' . rawurlencode($pv);
             }
         }
     } catch (Throwable $e) {

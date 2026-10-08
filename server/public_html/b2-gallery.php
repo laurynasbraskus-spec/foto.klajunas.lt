@@ -599,25 +599,6 @@ function view_url(string $fileName, int $rot = 0, string $pv = ''): string {
     if (is_gif($fileName) && rot_param($rot) === '') return 'img.php?file=' . rawurlencode($fileName) . '&anim=1&v=7' . pv_param($pv);
     return 'img.php?file=' . rawurlencode($fileName) . '&w=1400&q=83&fmt=webp&v=7' . rot_param($rot) . pv_param($pv);
 }
-/**
- * Miniatiuros adreso versija (&pv=), kuri keiciasi kartu su rodomu failu:
- * synced_at admin'as pakelia, kai perraso JPG kopija ("Sukurti JPG"), pakeicia
- * faila geresne versija (photo_b2_replace), sinchronizuoja ar atstato is B2.
- *  - su JPG kopija (HEIC/video): visada (nuo 2026-10-08);
- *  - paprastoms nuotraukoms: tik jei synced_at >= PREVIEW_VERSION_SINCE. Senesnems
- *    adresas lieka toks pat, kad ~15 tukst. miniatiuru nebutu siunciamos is naujo
- *    vien del sio pakeitimo.
- */
-const PREVIEW_VERSION_SINCE = '2026-10-08 00:00:00';
-function preview_version(array $row): string {
-    $compat = trim((string)($row['compatibility_b2_key'] ?? ''), "/ \t\n\r\0\x0B");
-    $synced = trim((string)($row['synced_at'] ?? ''));
-    if ($synced === '') return '';
-    if ($compat !== '') return substr(md5($compat . '|' . $synced), 0, 8);
-    if (strcmp($synced, PREVIEW_VERSION_SINCE) < 0) return '';
-    $key = trim((string)($row['b2_key'] ?? ''), "/ \t\n\r\0\x0B");
-    return $key === '' ? '' : substr(md5($key . '|' . $synced), 0, 8);
-}
 function photo_download_allowed(string $fileName): bool {
     return function_exists('gallery_download_allowed_for_file') ? gallery_download_allowed_for_file($fileName) : true;
 }
