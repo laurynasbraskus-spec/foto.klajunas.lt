@@ -2210,7 +2210,7 @@ function dashboard(): void {
         "SELECT COUNT(*) objects,
                 COALESCE(SUM(file_size),0) bytes,
                 SUM(CASE WHEN COALESCE(compatibility_b2_key,'')<>'' THEN 1 ELSE 0 END) previews,
-                SUM(CASE WHEN '.NO_PREVIEW_SQL.' THEN 1 ELSE 0 END) heic_no_jpg,
+                SUM(CASE WHEN ".NO_PREVIEW_SQL." THEN 1 ELSE 0 END) heic_no_jpg,
                 SUM(CASE WHEN is_missing=1 THEN 1 ELSE 0 END) missing
            FROM photos p"
     )->fetch(PDO::FETCH_ASSOC) ?: [];
