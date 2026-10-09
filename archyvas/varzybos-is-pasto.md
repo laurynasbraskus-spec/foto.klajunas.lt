@@ -25,22 +25,25 @@ Rengiamas kartu su Suginčių mokykla. Numeracija: 16-as = 2006 m., todėl 1-as 
 |---|---|---|---|
 | 16 | 2006-01 | nuostatus siuntė Juozas | `16 BEGIMO nuostatai.doc` [108971d12c59e540] |
 | 18 | 2008-01-12 | | [116f71c18ab06832] |
-| 20 | 2010-01 | jubiliejinis | [125873b9f9e7e913] |
+| 20 | 2010-01-16 | jubiliejinis, **387 dalyviai**; 13 km – 🥇 Tomas Matijošius **40:47 (trasos rekordas)**; 4 km – Julius Kardelis 18:46, Kristina Staliauskaitė 19:50 (LBMA) | [125873b9f9e7e913] |
 | 21 | 2011-01-15 | | [12d6f08c41a01db2] |
-| 22 | 2012 | | [13582dcc8f9ad22f] |
+| 22 | 2012 | 13 km – 🥇 Marius Diliūnas 45:38.27, 🥇 Milda Vilčinskaitė 52:06.21 ([LBMA](https://lbma.lt/naujienos-325)) | [13582dcc8f9ad22f] |
+| 25 | 2015 | 13 km – 🥇 Darius Sadeckas 42:13; moterų **trasos rekordas** Vaida Žūsinaitė 48:59 ([LBMA](https://www.lbma.lt/naujienos-677)) | |
 | 29 | 2019-01 | ≈500 dalyvių | info: klajunas.lt/organizuojam/2018/11/13/29-begimas-aplink-zelvos-ezera-suginciuose-informacija/ |
-| 30 | 2020-01-18 (šešt.) | 302 registruoti likus kelioms dienoms; nauji el. diplomai (dizainas Martina Skripkauskaitė, šriftas Raleway), registracija DBsportas (G. Rūkas), atminimo medalis; 12 padėkų rėmėjams (UAB Rąstinė troba, IĮ Žiuko įmonė, UAB Edjusta, UAB Olifėja, UAB Antalgės paukštynas, Molėtų kultūros centras, Molėtų GMP, Molėtų policija ir kt.) | `XXX tradicinis begimas 2020 NUOSTATAI.pdf/.doc` [16f55ddf8dc20410, 16e88fad46b51c69, 16ecc09b3de981f5, 16f23a8fde52c283, 16fa32a93e3aa40c] |
-| 32 | 2022-01-15 | COVID sąlygomis, 13 km trasa kerta vieškelį 2×, atminimo medalis, apdovanojimai ~12:30. **OK Klajūnas laimėjo I LBMA taurės etapą komandinėje įskaitoje** | `2022-01-15_XXXII_begimas_Aplink_Zelvos_ezera_rezultatai.xlsx`, `Dalyviai_kartu_su_numeriais.xls` [17e582ec3a0588ad, 17ebece7e65e53f4] |
+| 30 | 2020-01-18 (šešt.) | **rekordinis dalyvių skaičius – 472**; 13 km – 🥇 Lukas Prokopavičius; 4,4 km – Ugnė Paurytė (trasos rekordas). 302 registruoti likus kelioms dienoms; nauji el. diplomai (dizainas Martina Skripkauskaitė, šriftas Raleway), registracija DBsportas (G. Rūkas), atminimo medalis; 12 padėkų rėmėjams (UAB Rąstinė troba, IĮ Žiuko įmonė, UAB Edjusta, UAB Olifėja, UAB Antalgės paukštynas, Molėtų kultūros centras, Molėtų GMP, Molėtų policija ir kt.) | `XXX tradicinis begimas 2020 NUOSTATAI.pdf/.doc` [16f55ddf8dc20410, 16e88fad46b51c69, 16ecc09b3de981f5, 16f23a8fde52c283, 16fa32a93e3aa40c] |
+| 32 | 2022-01-15 | COVID sąlygomis, 13 km trasa kerta vieškelį 2×, atminimo medalis, apdovanojimai ~12:30. 13 km – 🥇 Vaidas Žlabys 46:22.1. **OK Klajūnas laimėjo I LBMA taurės etapą komandinėje įskaitoje** | `2022-01-15_XXXII_begimas_Aplink_Zelvos_ezera_rezultatai.xlsx`, `Dalyviai_kartu_su_numeriais.xls` [17e582ec3a0588ad, 17ebece7e65e53f4] |
+| 33 | 2023-01 | Kauno BMK – 31 atstovas; nuostatai klajunas.lt/2022/begimo-aplink-zelvos-ezera-2023-nuostatai/ | |
 | 34 | 2024-01 | dizainas Canva (M. Skrip) | [18c8667d9e77e7fb] |
-| 35 | 2025-01 | registracija DBsportas, diplomai (3 variantai PNG) | [193c05c3d21b9c43] |
-| 36 | 2026-01 | | [19bb1a7e9e532ac5] |
+| 35 | 2025-01-11 | nuostatai klajunas.lt/2024/xxxv-tradicinis-begimas-aplink-zelvos-ezera-2025-01-11/; rekordininkams – 100 € prizas; registracija DBsportas, diplomai (3 variantai PNG) | [193c05c3d21b9c43] |
+| 36 | 2026-01-17 | rezultatų rodyklėje – 127 dalyviai (patikrinti) | [19bb1a7e9e532ac5] |
 
-Trasos rekordai (13 km, pagal klajunas.lt paiešką – **patikrinti**): moterų Vaida Žūsinaitė 48:59 (2015), vyrų Tomas Matijošius 40:47 (2010).
+**Trasos rekordai (13 km):** moterų – Vaida Žūsinaitė 48:59 (2015; prieš tai 15 metų laikėsi Ingos Juodeškienės 50:23 iš 2000 m.), vyrų – Tomas Matijošius 40:47 (XX bėgimas, 2010-01-16). Patvirtinta klajunas.lt istorijos ir LBMA reportažų (2011, 2015). Nugalėtojų sąrašai 2013, 2014, 2016–2019, 2024–2026 m. – LBMA rezultatuose (lbma.lt/registracija/rezultatai/) ir DBsportas paieškoje „aplink želvos“.
 
 ### 2.2 Klajūno taurė (vasaros pabaiga, OS)
 - Istorijos lentelė: klajunas.lt/?p=846. 1998 m. rezultatai: dbtopas.lt/takas/lt/varz/1998006. **Trūksta rezultatų už 1989, 1991, 1993 m.** [1332be94a0993000]
 - Klajūnas komandiškai paskutinį kartą laimėjo **1990** m. (klajunas.lt/?p=2072). [14159394397eaa40]
-- Daugiausiai pergalių (pagal klajunas.lt, **patikrinti**): Aušra Kavaliauskienė – 8 (1995–1999, 2002–2004), Petras Pranckūnas – 6, Tomas Matijošius – 5 (2007–2011).
+- Daugiausiai pergalių (klajunas.lt/istorija): Aušra Kavaliauskienė (Žiežmariai) – 8 (1995–1999, 2002–2004), Petras Pranckūnas – 6 (1994, 1997, 2000, 2004…), Tomas Matijošius – 5 (2007–2011). ⚠ Iš paieškos santraukos neaišku, ar tai Klajūno taurės, ar „Aplink Želvos ežerą“ bėgimo pergalės (labiau tikėtina – bėgimo).
+- Klubo veiklos ataskaita 2020 m. (PDF): klajunas.lt/wp-content/uploads/2024/04/Klajunoveiklosataskaitas2020-s0319-supriedais.pdf
 
 | Metai | Data / vieta | Faktai | Šaltinis |
 |---|---|---|---|
@@ -50,10 +53,11 @@ Trasos rekordai (13 km, pagal klajunas.lt paiešką – **patikrinti**): moterų
 | 2015 | 09 | kartu su Šeimų taure | [14fabdf8715d8edd] |
 | 2018 | Toliejos poilsio namai, Ešerinio ež., Poviliškio k. | V50 grupei – Viktoro taurė; komandinė taurė; sekretorius V. Ralys (OK Perkūnas) | [1642dfd6a6d0d90c, 16549a4211edb39f] |
 | 2019 | 08-24 | darbuotojai: sekretorius Laurynas, registracija Juozas, KP Audrius, Živilė, Jonas, Andrius P., Vytas Š., parkavimas Inga, Robertas, startas Tūbų šeima, maitinimas Luiza, Irina, taurės Živilė, Justina, VC Lukas; nuostatai klajunas.lt/organizuojam/2019/07/02/klajuno-taure-2019-nuostatai/ | [16c61273132b4a02, 16bb419a18a1f10d] |
-| 2020 | 08 | įvyko **„treniruotės“ formatu**: dėl COVID oficialios varžybos 2 dienos prieš tai buvo uždraustos savivaldybės mastu. Nuostatai pagal LOSF LČ sprinto pavyzdį, dalyvavo OK Telšiai, OK Ąžuolas (komandinė įskaita) | [1741f7ac27d75d0b, 17380e6e0588ee4d] |
-| 2022 | | nuostatai klajunas.lt/svarbu/2022/07/21/klajuno-taure-2022-nuostatai/ | |
+| 2020 | 08-23, Alnė (Molėtų r.) | rezultatai https://dbsportas.lt/lt/varz/2020104 (komandinėje įskaitoje top 3: 92, 90, 83 tšk.); įvyko **„treniruotės“ formatu**: dėl COVID oficialios varžybos 2 dienos prieš tai buvo uždraustos savivaldybės mastu. Nuostatai pagal LOSF LČ sprinto pavyzdį, dalyvavo OK Telšiai, OK Ąžuolas (komandinė įskaita) | [1741f7ac27d75d0b, 17380e6e0588ee4d] |
+| 2021 | Mindūnai | (klubo kalendorius 2021) | |
+| 2022 | 08-21 (sekm.), Garšvėnai, Girsteitiškio sen., Molėtų r. | nuostatai klajunas.lt/2022/klajuno-taure-2022-nuostatai/ | |
 | 2023 | 08-20, Alnės k. (Molėtų r.), žemėlapis Alnė (S. Kireilis) | kartu vyko **Lietuvos mokinių (vaikų, jaunučių, jaunių) OS komandinis čempionatas** (LOSF), apie 266 startavusius | [1880668567f153d9] |
-| 2024 | 08-24 | starto protokolas | `Starto 2024.08.24 spausdinimas.pdf` [19184abde325659c] |
+| 2024 | 08-25, Alnio ežero stovyklavietė (nuo kelio 114 Molėtai–Labanoras) | komandą sudaro ≤15 vieno klubo narių, įskaitoje 10 geriausių; nugalėtojams – Klajūno taurė ir šakotis; nuostatai klajunas.lt/2024/klajuno-taure-2024-nuostatai/; starto protokolas | `Starto 2024.08.24 spausdinimas.pdf` [19184abde325659c] |
 | 2025 | 08-17, Labanoro RP, miškas prie Lakajos k. (Švenčionių r.) | LOSF prašymu perkelta į 2025; nuostatai klajunas.lt/svarbu/klajuno-taure-2025-nuostatai/ | [191e4c2c7d860723, 1989e2e4e376b39a] |
 | 2026 | 08-23, Rudesa | 214 dalyvių; grupės M/V12–18, M/V35–80, MS/VS, M, V, OPEN2; komandinė įskaita; Livelox. Rezultatai: https://dbsportas.lt/en/varz/2026140 | [1a03f7609feeb550] |
 
@@ -172,7 +176,7 @@ Laurynas Braškus (OK Klajūnas) LBMA bėgimuose: „Gyvybės ir mirties keliu�
 
 1. **Priedų turinys.** Rezultatai, nuostatai ir protokolai yra .doc/.docx/.xls/.pdf prieduose. Reikia paleisti `tools/takeout_extract.py` ant info.klajunas.lt Takeout arba atsisiųsti juos iš Gmail. Po to iš jų galima ištraukti prizininkų lenteles.
 2. **Senoji klajunas.lt svetainė.** Iš šios aplinkos klajunas.lt, old.klajunas.lt, dbsportas.lt ir web.archive.org nepasiekiami (tinklo politika). Reikia: klajunas.lt/?p=846 (Klajūno taurės istorija), klajunas.lt/archyvas/*, Molėtų taurės istorija 1991–2016, kategorijos „Klajūno taurė“ ir „Kantanto taurė“.
-3. **Patikslinti:** trasos rekordai ir taurės pergalių skaičiai (paimta iš paieškos santraukų).
+3. **Patikslinti:** ar pergalių skaičiai (Kavaliauskienė 8, Pranckūnas 6, Matijošius 5) priklauso Klajūno taurei ar bėgimui; 36-ojo bėgimo dalyvių skaičius.
 4. **Trūkstami seni rezultatai:** Klajūno taurė 1989, 1991, 1993; Klajūno maratonas 1990, 1992–1994, 1997; 3B čempionatas 1996.
 5. **Nuotraukų originalai** – iš Valento Laurinavičiaus (2006–2017).
 
