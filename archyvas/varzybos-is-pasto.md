@@ -55,7 +55,7 @@ Trasos rekordai (13 km, pagal klajunas.lt paiešką – **patikrinti**): moterų
 | 2023 | 08-20, Alnės k. (Molėtų r.), žemėlapis Alnė (S. Kireilis) | kartu vyko **Lietuvos mokinių (vaikų, jaunučių, jaunių) OS komandinis čempionatas** (LOSF), apie 266 startavusius | [1880668567f153d9] |
 | 2024 | 08-24 | starto protokolas | `Starto 2024.08.24 spausdinimas.pdf` [19184abde325659c] |
 | 2025 | 08-17, Labanoro RP, miškas prie Lakajos k. (Švenčionių r.) | LOSF prašymu perkelta į 2025; nuostatai klajunas.lt/svarbu/klajuno-taure-2025-nuostatai/ | [191e4c2c7d860723, 1989e2e4e376b39a] |
-| 2026 | 08 | DBsportas varž. Nr. 2026140, ≈220 dalyvių (tikėtina – Klajūno taurė 2026, **patikslinti**) | [1a03f7609feeb550] |
+| 2026 | 08-23, Rudesa | 214 dalyvių; grupės M/V12–18, M/V35–80, MS/VS, M, V, OPEN2; komandinė įskaita; Livelox. Rezultatai: https://dbsportas.lt/en/varz/2026140 | [1a03f7609feeb550] |
 
 ### 2.3 Klajūno maratonas
 - 1996 m. laimėjo Viktor Korčagin (rez. klajunas.lt/archyvas/Kmara96.htm, nuotrauka išlikusi). Trūksta 1990, 1992, 1993, 1994, 1997 m. rezultatų. [1332be94a0993000]
@@ -171,7 +171,7 @@ Laurynas Braškus (OK Klajūnas) LBMA bėgimuose: „Gyvybės ir mirties keliu�
 
 1. **Priedų turinys.** Rezultatai, nuostatai ir protokolai yra .doc/.docx/.xls/.pdf prieduose. Reikia paleisti `tools/takeout_extract.py` ant info.klajunas.lt Takeout arba atsisiųsti juos iš Gmail. Po to iš jų galima ištraukti prizininkų lenteles.
 2. **Senoji klajunas.lt svetainė.** Iš šios aplinkos klajunas.lt, old.klajunas.lt, dbsportas.lt ir web.archive.org nepasiekiami (tinklo politika). Reikia: klajunas.lt/?p=846 (Klajūno taurės istorija), klajunas.lt/archyvas/*, Molėtų taurės istorija 1991–2016, kategorijos „Klajūno taurė“ ir „Kantanto taurė“.
-3. **Patikslinti:** varž. 2026140 ir 2024095 pavadinimai (žr. 6 sk.); trasos rekordai ir taurės pergalių skaičiai (paimta iš paieškos santraukų).
+3. **Patikslinti:** varž. 2024095 pavadinimas (žr. 6 sk.); trasos rekordai ir taurės pergalių skaičiai (paimta iš paieškos santraukų).
 4. **Trūkstami seni rezultatai:** Klajūno taurė 1989, 1991, 1993; Klajūno maratonas 1990, 1992–1994, 1997; 3B čempionatas 1996.
 5. **Nuotraukų originalai** – iš Valento Laurinavičiaus (2006–2017).
 
@@ -188,6 +188,6 @@ Laurynas Braškus (OK Klajūnas) LBMA bėgimuose: „Gyvybės ir mirties keliu�
 | [2013005](https://dbsportas.lt/en/varz/2013005) | TAKAS 2013 Druskininkuose | [13ef47bc97de40ee] |
 | [2013178](https://dbsportas.lt/en/varz/2013178) | Varžybos Aukštadvaryje 2013-10 | [141992aad67513ee] |
 | [2024095](https://dbsportas.lt/en/varz/2024095) | 2024 m. gegužės varžybos (grupės su „+“ pavadinime) – patikslinti | [18fb9a2b82f1f191] |
-| [2026140](https://dbsportas.lt/en/varz/2026140) | 2026 m. rugpjūtis, ≈220 dalyvių – patikslinti pavadinimą | [1a03f7609feeb550] |
+| [2026140](https://dbsportas.lt/en/varz/2026140) | Klajūno taurė 2026, Rudesa, 2026-08-23, 214 dalyvių | [1a03f7609feeb550] |
 
 Viktor Korčagin (Klajūno maratono 1996 nugalėtojas) DBsportas profilis: https://dbsportas.lt/lt/dal/2887
