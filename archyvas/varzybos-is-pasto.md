@@ -1,6 +1,6 @@
 # OK Klajūnas – varžybų archyvas (iš pašto ir viešų šaltinių)
 
-Surinkta 2026-10-09 iš **laurynas.braskus@gmail.com** pašto: žymė „lbraskus@yahoo.com/OK Klajunas“ (≈330 gijų, 2006–2019) ir vėlesni laiškai. Peržiūrėtos ≈210 su varžybomis susijusios gijos. Taip pat panaudoti klajunas.lt puslapiai, kiek juos rodo paieška.
+Surinkta 2026-10-09 iš klubo pirmininko asmeninio pašto: senosios Yahoo dėžutės žymė „OK Klajunas“ (≈330 gijų, 2006–2019) ir vėlesni laiškai. Peržiūrėtos ≈210 su varžybomis susijusių gijų. Taip pat panaudoti klajunas.lt puslapiai, kiek juos rodo paieška.
 
 **Ko trūksta:** priedų (PDF/DOC/XLS rezultatų, nuostatų, nuotraukų) turinio per pašto jungtį atsisiųsti negalima, todėl žemiau nurodyti tik **failų pavadinimai**. Juos ištrauks `tools/takeout_extract.py` iš info.klajunas.lt Takeout kopijos arba galima atsisiųsti iš Gmail rankiniu būdu. Laužtiniuose skliaustuose `[…]` – Gmail gijos ID: atidarius `https://mail.google.com/mail/u/0/#all/<ID>` atsidaro to laiško gija.
 
