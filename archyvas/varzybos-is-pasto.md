@@ -50,7 +50,7 @@ Trasos rekordai (13 km, pagal klajunas.lt paiešką – **patikrinti**): moterų
 | 2015 | 09 | kartu su Šeimų taure | [14fabdf8715d8edd] |
 | 2018 | Toliejos poilsio namai, Ešerinio ež., Poviliškio k. | V50 grupei – Viktoro taurė; komandinė taurė; sekretorius V. Ralys (OK Perkūnas) | [1642dfd6a6d0d90c, 16549a4211edb39f] |
 | 2019 | 08-24 | darbuotojai: sekretorius Laurynas, registracija Juozas, KP Audrius, Živilė, Jonas, Andrius P., Vytas Š., parkavimas Inga, Robertas, startas Tūbų šeima, maitinimas Luiza, Irina, taurės Živilė, Justina, VC Lukas; nuostatai klajunas.lt/organizuojam/2019/07/02/klajuno-taure-2019-nuostatai/ | [16c61273132b4a02, 16bb419a18a1f10d] |
-| 2020 | 08 | nuostatai pagal LOSF LČ sprinto pavyzdį, dalyvavo OK Telšiai, OK Ąžuolas. ⚠ 2023 m. laiške rašoma, kad dėl COVID „vyko tik treniruotė“ – **patikslinti** | [1741f7ac27d75d0b, 17380e6e0588ee4d] |
+| 2020 | 08 | įvyko **„treniruotės“ formatu**: dėl COVID oficialios varžybos 2 dienos prieš tai buvo uždraustos savivaldybės mastu. Nuostatai pagal LOSF LČ sprinto pavyzdį, dalyvavo OK Telšiai, OK Ąžuolas (komandinė įskaita) | [1741f7ac27d75d0b, 17380e6e0588ee4d] |
 | 2022 | | nuostatai klajunas.lt/svarbu/2022/07/21/klajuno-taure-2022-nuostatai/ | |
 | 2023 | 08-20, Alnės k. (Molėtų r.), žemėlapis Alnė (S. Kireilis) | kartu vyko **Lietuvos mokinių (vaikų, jaunučių, jaunių) OS komandinis čempionatas** (LOSF), apie 266 startavusius | [1880668567f153d9] |
 | 2024 | 08-24 | starto protokolas | `Starto 2024.08.24 spausdinimas.pdf` [19184abde325659c] |
@@ -171,6 +171,6 @@ Laurynas Braškus (OK Klajūnas) LBMA bėgimuose: „Gyvybės ir mirties keliu�
 
 1. **Priedų turinys.** Rezultatai, nuostatai ir protokolai yra .doc/.docx/.xls/.pdf prieduose. Reikia paleisti `tools/takeout_extract.py` ant info.klajunas.lt Takeout arba atsisiųsti juos iš Gmail. Po to iš jų galima ištraukti prizininkų lenteles.
 2. **Senoji klajunas.lt svetainė.** Iš šios aplinkos klajunas.lt, old.klajunas.lt, dbsportas.lt ir web.archive.org nepasiekiami (tinklo politika). Reikia: klajunas.lt/?p=846 (Klajūno taurės istorija), klajunas.lt/archyvas/*, Molėtų taurės istorija 1991–2016, kategorijos „Klajūno taurė“ ir „Kantanto taurė“.
-3. **Patikslinti:** Klajūno taurė 2020 (įvyko ar tik treniruotė?); varž. 2026140 pavadinimas; trasos rekordai ir taurės pergalių skaičiai (paimta iš paieškos santraukų).
+3. **Patikslinti:** varž. 2026140 pavadinimas; trasos rekordai ir taurės pergalių skaičiai (paimta iš paieškos santraukų).
 4. **Trūkstami seni rezultatai:** Klajūno taurė 1989, 1991, 1993; Klajūno maratonas 1990, 1992–1994, 1997; 3B čempionatas 1996.
 5. **Nuotraukų originalai** – iš Valento Laurinavičiaus (2006–2017).
