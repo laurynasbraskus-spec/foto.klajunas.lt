@@ -37,13 +37,60 @@ Rengiamas kartu su Suginčių mokykla. Numeracija: 16-as = 2006 m., todėl 1-as 
 | 35 | 2025-01-11 | nuostatai klajunas.lt/2024/xxxv-tradicinis-begimas-aplink-zelvos-ezera-2025-01-11/; rekordininkams – 100 € prizas; registracija DBsportas, diplomai (3 variantai PNG) | [193c05c3d21b9c43] |
 | 36 | 2026-01-17 | rezultatų rodyklėje – 127 dalyviai (patikrinti) | [19bb1a7e9e532ac5] |
 
-**Trasos rekordai (13 km):** moterų – Vaida Žūsinaitė 48:59 (2015; prieš tai 15 metų laikėsi Ingos Juodeškienės 50:23 iš 2000 m.), vyrų – Tomas Matijošius 40:47 (XX bėgimas, 2010-01-16). Patvirtinta klajunas.lt istorijos ir LBMA reportažų (2011, 2015). Nugalėtojų sąrašai 2013, 2014, 2016–2019, 2024–2026 m. – LBMA rezultatuose (lbma.lt/registracija/rezultatai/) ir DBsportas paieškoje „aplink želvos“.
+**Pilnas visų bėgimų (1991–2026) nugalėtojų sąrašas visose distancijose jau yra: [klajunas.lt/begimo-aplink-zelvos-ezera-nugaletojai](https://klajunas.lt/begimo-aplink-zelvos-ezera-nugaletojai/). Daugiausia kartų laimėjo Aušra Kavaliauskienė (8: 1995–1999, 2002–2004), Petras Pranckūnas (6: 1994, 1997, 2000, 2004, 2005, 2014), Tomas Matijošius (5: 2007–2011). Daugiausia dalyvių – 2012 m. (489). Živilė Kanapkienė – vienintelė dalyvavusi visuose bėgimuose. 2021 m. bėgimas vyko virtualiai. 2026 m. 13 km moterų grupėje laimėjo klajūnietė Inga Žvinytė.
+
+**Trasos rekordai (13 km):**** moterų – Vaida Žūsinaitė 48:59 (2015; prieš tai 15 metų laikėsi Ingos Juodeškienės 50:23 iš 2000 m.), vyrų – Tomas Matijošius 40:47 (XX bėgimas, 2010-01-16). Patvirtinta klajunas.lt istorijos ir LBMA reportažų (2011, 2015). Nugalėtojų sąrašai 2013, 2014, 2016–2019, 2024–2026 m. – LBMA rezultatuose (lbma.lt/registracija/rezultatai/) ir DBsportas paieškoje „aplink želvos“.
 
 ### 2.2 Klajūno taurė (vasaros pabaiga, OS)
 - Istorijos lentelė: klajunas.lt/?p=846. 1998 m. rezultatai: dbtopas.lt/takas/lt/varz/1998006. **Trūksta rezultatų už 1989, 1991, 1993 m.** [1332be94a0993000]
-- Klajūnas komandiškai paskutinį kartą laimėjo **1990** m. (klajunas.lt/?p=2072). [14159394397eaa40]
-- Daugiausiai pergalių (klajunas.lt/istorija): Aušra Kavaliauskienė (Žiežmariai) – 8 (1995–1999, 2002–2004), Petras Pranckūnas – 6 (1994, 1997, 2000, 2004…), Tomas Matijošius – 5 (2007–2011). ⚠ Iš paieškos santraukos neaišku, ar tai Klajūno taurės, ar „Aplink Želvos ežerą“ bėgimo pergalės (labiau tikėtina – bėgimo).
+- Klajūnas komandiškai laimėjo 1989, 1990, 2014 ir 2015 m. (2013 m. laiške: „paskutinį kartą laimėjom 1990“). [14159394397eaa40]
+- (Pergalių rekordai – Kavaliauskienė 8, Pranckūnas 6, Matijošius 5 – priklauso bėgimui „Aplink Želvos ežerą“, žr. 2.1.)
 - Klubo veiklos ataskaita 2020 m. (PDF): klajunas.lt/wp-content/uploads/2024/04/Klajunoveiklosataskaitas2020-s0319-supriedais.pdf
+
+**Visų Klajūno taurių suvestinė** (iš [klajunas.lt/organizuojam/klajuno-taures-istorija](https://klajunas.lt/organizuojam/klajuno-taures-istorija/)):
+
+| Metai | Vieta | Dalyvių | Komandų | Laimėjo | Rezultatai |
+|---|---|---|---|---|---|
+| 1989 | Žičkai | 17 | – | Klajūnas | – |
+| 1990 | Dubingiai | 74 | 7 | Klajūnas | http://www.dbtopas.lt/takas/lt/varz/1990011 |
+| 1991 | Žičkai | ? | ? | Zarasų SM | – |
+| 1992 | Baluoša | 171 | 16 | Perkūnas | http://www.dbtopas.lt/takas/lt/varz/1992008 |
+| 1993 | Vidugiris | ? | ? | Perkūnas | – |
+| 1994 | Mindūnai | 148 | 12 | VŠT (jungtinė) | http://www.dbtopas.lt/takas/lt/varz/1994017 |
+| 1995 | Mindūnai | 223 | 18 | Perkūnas | http://www.dbtopas.lt/takas/lt/varz/1995003 |
+| 1996 | Neįvyko | – | – | – | – |
+| 1997 | Kulionys | 309 | 20 | Dainava | http://www.dbtopas.lt/takas/lt/varz/1997006 |
+| 1998 | Stirniai | 235 | 17 | Dainava | http://www.dbtopas.lt/takas/lt/varz/1998006 |
+| 1999 | Padkamariai | 281 | 18 | Lėvuo | http://www.dbtopas.lt/takas/lt/varz/1999044 |
+| 2000 | Molėtai | 225 | 17 | Lėvuo | http://www.dbtopas.lt/takas/lt/varz/2000012 |
+| 2001 | Vidugiris | 294 | 14 | Medeina | http://www.dbtopas.lt/takas/lt/varz/2001033 |
+| 2002 | Žičkai | 195 | 20 | Lėvuo | http://www.dbtopas.lt/takas/lt/varz/2002008 |
+| 2003 | Stirniai | 213 | 8 | Medeina | http://www.dbtopas.lt/takas/lt/varz/2003010 |
+| 2004 | Sariai | 178 | ? | Zarasų SM | http://www.dbtopas.lt/takas/lt/varz/2004007 |
+| 2005 | Dringis | 134 | 9 | Zarasų SM | http://www.dbtopas.lt/takas/lt/varz/2005053 |
+| 2006 | Ropeikiškės | 150 | 13 | Devyni | http://www.dbtopas.lt/takas/lt/varz/2006013 |
+| 2007 | Lakaja | 238 | 18 | Medeina | http://www.dbtopas.lt/takas/lt/varz/2007015 |
+| 2008 | Lakaja | 160 | 10 | Dainava | http://www.dbtopas.lt/takas/lt/varz/2008012 |
+| 2009 | Mindūnai | 257 | 15 | Medeina | http://www.dbtopas.lt/takas/lt/varz/2009054 |
+| 2010 | Kulionys | 154 | 14 | Oriens | http://www.dbtopas.lt/takas/lt/varz/2010106 |
+| 2011 | Lukna | 236 | 18 | Oriens | http://www.dbtopas.lt/takas/lt/varz/2011111 |
+| 2012 | Mindūnai | 305 | 19 | SM Gaja | http://www.dbtopas.lt/takas/lt/varz/2012130 |
+| 2013 | Žukaučizna | 90 | 3 | Labirintas | http://www.dbtopas.lt/takas/lt/varz/2013158 |
+| 2014 | Molėtai | 77 | 6 | Klajūnas | http://www.dbtopas.lt/takas/lt/varz/2014134 |
+| 2015 | Šironija | 72 | 2 | Klajūnas | https://dbtopas.lt/takas/lt/varz/2015132 |
+| 2016 | Vilkariai | 166 | 10 | Perkūnas | https://dbtopas.lt/takas/lt/varz/2016165 |
+| 2017 | Molėtai | 93 | 4 | Devyni | https://dbsportas.lt/en/varz/2017184 |
+| 2018 | Poviliškis | 114 | 10 | Oriens | https://dbsportas.lt/lt/varz/2018114 |
+| 2019 | Stirniai | 136 | 20 | Oriens | https://dbsportas.lt/lt/varz/2019135 |
+| 2020 | Alnė | 164 | 23 | Fortūna | https://dbsportas.lt/lt/varz/2020104 |
+| 2021 | Mindūnai | 170 | 29 | Lėvuo | https://dbsportas.lt/lt/varz/2021084 |
+| 2022 | Garšvėnai | 294 | 26 | SM Gaja | https://dbsportas.lt/lt/varz/2022112 |
+| 2023 | Alnė | 434 | 20 | Sostinės SC | https://dbsportas.lt/lt/varz/2023109 |
+| 2024 | Paelnė | 190 | 14 | Devyni | https://dbsportas.lt/lt/varz/2024138 |
+| 2025 | Parašė / Baltelis | 146 | 26 | Medeina | https://dbsportas.lt/lt/varz/2025119 |
+| 2026 | Rudesa | 214 | 28 | Lėvuo | https://dbsportas.lt/en/varz/2026140 (⚠ svetainėje klaidinga nuoroda į 2024138) |
+
+Papildomai iš pašto:
 
 | Metai | Data / vieta | Faktai | Šaltinis |
 |---|---|---|---|
@@ -57,8 +104,8 @@ Rengiamas kartu su Suginčių mokykla. Numeracija: 16-as = 2006 m., todėl 1-as 
 | 2021 | Mindūnai | (klubo kalendorius 2021) | |
 | 2022 | 08-21 (sekm.), Garšvėnai, Girsteitiškio sen., Molėtų r. | nuostatai klajunas.lt/2022/klajuno-taure-2022-nuostatai/ | |
 | 2023 | 08-20, Alnės k. (Molėtų r.), žemėlapis Alnė (S. Kireilis) | kartu vyko **Lietuvos mokinių (vaikų, jaunučių, jaunių) OS komandinis čempionatas** (LOSF), apie 266 startavusius | [1880668567f153d9] |
-| 2024 | 08-25, Alnio ežero stovyklavietė (nuo kelio 114 Molėtai–Labanoras) | komandą sudaro ≤15 vieno klubo narių, įskaitoje 10 geriausių; nugalėtojams – Klajūno taurė ir šakotis; nuostatai klajunas.lt/2024/klajuno-taure-2024-nuostatai/; starto protokolas | `Starto 2024.08.24 spausdinimas.pdf` [19184abde325659c] |
-| 2025 | 08-17, Labanoro RP, miškas prie Lakajos k. (Švenčionių r.) | LOSF prašymu perkelta į 2025; nuostatai klajunas.lt/svarbu/klajuno-taure-2025-nuostatai/ | [191e4c2c7d860723, 1989e2e4e376b39a] |
+| 2024 | 08-25, Paelnė – VC Alnio ežero stovyklavietė (nuo kelio 114 Molėtai–Labanoras) | komandą sudaro ≤15 vieno klubo narių, įskaitoje 10 geriausių; nugalėtojams – Klajūno taurė ir šakotis; nuostatai klajunas.lt/2024/klajuno-taure-2024-nuostatai/; starto protokolas | `Starto 2024.08.24 spausdinimas.pdf` [19184abde325659c] |
+| 2025 | 08-17, Parašė / Baltelis (Labanoro RP, prie Lakajos k., Švenčionių r.) | LOSF prašymu perkelta į 2025; nuostatai klajunas.lt/svarbu/klajuno-taure-2025-nuostatai/ | [191e4c2c7d860723, 1989e2e4e376b39a] |
 | 2026 | 08-23, Rudesa | 214 dalyvių; grupės M/V12–18, M/V35–80, MS/VS, M, V, OPEN2; komandinė įskaita; Livelox. Rezultatai: https://dbsportas.lt/en/varz/2026140 | [1a03f7609feeb550] |
 
 ### 2.3 Klajūno maratonas
@@ -172,13 +219,25 @@ Laurynas Braškus (OK Klajūnas) LBMA bėgimuose: „Gyvybės ir mirties keliu�
 
 ---
 
-## 5. Ko trūksta ir ką toliau daryti
+## 5. Kas jau yra svetainėse ir ko iš tikrųjų trūksta
 
-1. **Priedų turinys.** Rezultatai, nuostatai ir protokolai yra .doc/.docx/.xls/.pdf prieduose. Reikia paleisti `tools/takeout_extract.py` ant info.klajunas.lt Takeout arba atsisiųsti juos iš Gmail. Po to iš jų galima ištraukti prizininkų lenteles.
-2. **Senoji klajunas.lt svetainė.** Iš šios aplinkos klajunas.lt, old.klajunas.lt, dbsportas.lt ir web.archive.org nepasiekiami (tinklo politika). Reikia: klajunas.lt/?p=846 (Klajūno taurės istorija), klajunas.lt/archyvas/*, Molėtų taurės istorija 1991–2016, kategorijos „Klajūno taurė“ ir „Kantanto taurė“.
-3. **Patikslinti:** ar pergalių skaičiai (Kavaliauskienė 8, Pranckūnas 6, Matijošius 5) priklauso Klajūno taurei ar bėgimui; 36-ojo bėgimo dalyvių skaičius.
-4. **Trūkstami seni rezultatai:** Klajūno taurė 1989, 1991, 1993; Klajūno maratonas 1990, 1992–1994, 1997; 3B čempionatas 1996.
-5. **Nuotraukų originalai** – iš Valento Laurinavičiaus (2006–2017).
+**Jau yra (patikrinta 2026-10-09):**
+- [klajunas.lt/istorija](https://klajunas.lt/istorija/) – įkūrimas, pirmininkai, įdomūs faktai, K. Mickevičiaus prisiminimai.
+- [Klajūno taurės istorija](https://klajunas.lt/organizuojam/klajuno-taures-istorija/) – visi metai 1989–2026 (vieta, dalyviai, komandos, laimėtojas, rezultatai).
+- [„Aplink Želvos ežerą“ nugalėtojai 1991–2026](https://klajunas.lt/begimo-aplink-zelvos-ezera-nugaletojai/) – visos distancijos.
+- [Molėtų taurės istorija](https://klajunas.lt/moletu-taures-istorija/) – grupių nugalėtojai.
+- [old.klajunas.lt/archyvas.htm](https://old.klajunas.lt/archyvas.htm) – rezultatų nuorodų matrica 1989–2018: Želvos bėgimas, Snaigė, Kopija, Moksleivių žaidynės, Klajūno taurė, Molėtų estafetės, Luknos taurė, Molėtų čempionatas, Molėtų taurės finalai, Klajūno maratonas, Prologas, Bobų vasara, Sprintas, Sezono uždarymas, Šeimų taurė, Kantanto taurė (2010–2018), VU Rektoriaus taurė (2015–2019) ir kt. Atnaujinama iš CSV (`archyvas-update.php`).
+
+**Klaidos svetainėse:**
+- Klajūno taurės istorijoje 2026 m. „rezultatai“ veda į `dbsportas.lt/en/varz/2024138/…` – turi būti **https://dbsportas.lt/en/varz/2026140**.
+
+**Ko trūksta (čia gali padėti paštas / Takeout):**
+1. **old.klajunas.lt archyvo matrica baigiasi 2018 m.** – nėra 2019–2026 m. Snaigės / OS „Žiema“, Kantanto taurės, Bobų vasaros, sprinto, sezono uždarymo, Molėtų taurės, Lunatikų įrašų. Pašte rasti: Snaigė 2019, Molėtų taurė 2019 finalai, Kantantas 2019, sezono uždarymas 2019, Žiema 2020, OS Žiema 2022 (žr. 2 sk.).
+2. **Molėtų taurės istorijoje trūksta** 1999, 2000, 2003, 2004 ir 2017–2026 m. (2019 m. finalų rezultatai – pašte [16b1949fa0b3603e, 16b3ab5f2fb0d970]).
+3. **Klajūno taurė 1991 ir 1993** – nežinomas dalyvių / komandų skaičius ir rezultatai. **Klajūno maratonas** – archyve nėra 1989, 1990, 1992–1994, 1997 m. **3B čempionatas 1996** – rezultatų nėra.
+4. **Kantanto taurė** – archyve nėra 2014 ir 2017 m. III etapo, 2018 m. III–IV etapų.
+5. **Prieduose esantys failai** (rezultatai .doc/.xls, nuostatai, nuotraukos) – ištrauks `tools/takeout_extract.py`.
+6. **Nuotraukų originalai** – Valentas Laurinavičius (2006–2017).
 
 ---
 
