@@ -171,6 +171,23 @@ Laurynas Braškus (OK Klajūnas) LBMA bėgimuose: „Gyvybės ir mirties keliu�
 
 1. **Priedų turinys.** Rezultatai, nuostatai ir protokolai yra .doc/.docx/.xls/.pdf prieduose. Reikia paleisti `tools/takeout_extract.py` ant info.klajunas.lt Takeout arba atsisiųsti juos iš Gmail. Po to iš jų galima ištraukti prizininkų lenteles.
 2. **Senoji klajunas.lt svetainė.** Iš šios aplinkos klajunas.lt, old.klajunas.lt, dbsportas.lt ir web.archive.org nepasiekiami (tinklo politika). Reikia: klajunas.lt/?p=846 (Klajūno taurės istorija), klajunas.lt/archyvas/*, Molėtų taurės istorija 1991–2016, kategorijos „Klajūno taurė“ ir „Kantanto taurė“.
-3. **Patikslinti:** varž. 2026140 pavadinimas; trasos rekordai ir taurės pergalių skaičiai (paimta iš paieškos santraukų).
+3. **Patikslinti:** varž. 2026140 ir 2024095 pavadinimai (žr. 6 sk.); trasos rekordai ir taurės pergalių skaičiai (paimta iš paieškos santraukų).
 4. **Trūkstami seni rezultatai:** Klajūno taurė 1989, 1991, 1993; Klajūno maratonas 1990, 1992–1994, 1997; 3B čempionatas 1996.
 5. **Nuotraukų originalai** – iš Valento Laurinavičiaus (2006–2017).
+
+---
+
+## 6. DBsportas varžybų kodai (rezultatai: `https://dbsportas.lt/en/varz/<kodas>`)
+
+| Kodas | Varžybos | Šaltinis |
+|---|---|---|
+| [1998006](https://dbsportas.lt/en/varz/1998006) | Klajūno taurė 1998 | [1332be94a0993000] |
+| [2010004](https://dbsportas.lt/en/varz/2010004) | 20-asis bėgimas „Aplink Želvos ežerą“ (2010) | [16f5615aa24c4a2c] |
+| [2010079](https://dbsportas.lt/en/varz/2010079) | Klubų taurė 2010 | [12abf37429754523] |
+| [2011096](https://dbsportas.lt/en/varz/2011096) | Klubų taurė 2011 | [132195c96922e558] |
+| [2013005](https://dbsportas.lt/en/varz/2013005) | TAKAS 2013 Druskininkuose | [13ef47bc97de40ee] |
+| [2013178](https://dbsportas.lt/en/varz/2013178) | Varžybos Aukštadvaryje 2013-10 | [141992aad67513ee] |
+| [2024095](https://dbsportas.lt/en/varz/2024095) | 2024 m. gegužės varžybos (grupės su „+“ pavadinime) – patikslinti | [18fb9a2b82f1f191] |
+| [2026140](https://dbsportas.lt/en/varz/2026140) | 2026 m. rugpjūtis, ≈220 dalyvių – patikslinti pavadinimą | [1a03f7609feeb550] |
+
+Viktor Korčagin (Klajūno maratono 1996 nugalėtojas) DBsportas profilis: https://dbsportas.lt/lt/dal/2887
