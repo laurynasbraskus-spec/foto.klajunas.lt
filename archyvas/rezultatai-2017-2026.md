@@ -260,12 +260,14 @@
 - 2025-12-03 – [Vilniaus čempionatas – sprintas](https://klajunas.lt/2025/vilniaus-cempionatas-sprintas/)
 - 2026-06-06 – [Lietuvos čempionatas – Sprintas 2026 (Kėdainiai)](https://klajunas.lt/2026/lietuvos-cempionatas-sprintas-2026-kedainiai/)
 
+Papildomai old.klajunas.lt rasti archyve nenurodyti rezultatų puslapiai: [snaige19](https://old.klajunas.lt/archyvas/snaige19.htm), [kopija19](https://old.klajunas.lt/archyvas/kopija19.htm), [mokslzaid19](https://old.klajunas.lt/archyvas/mokslzaid19.htm), [uzdarymas24](https://old.klajunas.lt/archyvas/uzdarymas24.htm). Atnaujintas archyvo CSV su 2017–2026 eilutėmis – `old-klajunas/archyvas-by-year.csv`.
+
 ## Spragos 2017–2026 (nėra rezultatų įrašo nei klajunas.lt, nei DBsportas)
 
 - **Snaigė / OS „Žiema“:** 2018 (yra tik įrašas be rezultatų), 2021, 2023 (tik kvietimas), 2025, 2026.
 - **Bobų vasara:** 2018 (rezultatai buvo įkelti į klajunas.lt/varzybos/ – pašte [167128a9f1fc87c2]), 2019–2026.
 - **Kantanto taurė:** 2018 etapai ir finalas (tik foto), 2019 III etapas ir finalas (programa 2019-10-26).
-- **Sezono uždarymas:** 2023, 2024 (įrašas be rezultatų).
+- **Sezono uždarymas:** 2023. (2024 – rezultatai yra https://old.klajunas.lt/archyvas/uzdarymas24.htm)
 - **Molėtų taurė:** 2020–2026 – įrašų nėra (galbūt nebevyko).
 - **Klajūno maratonas, Šeimų taurė, Luknos taurė, Prologas:** po 2017–2018 m. įrašų nėra (Luknos taurė 2019 – nukelta; Molėtų prologas 2020 Kulionyse – be rezultatų).
 - **„Aplink Želvos ežerą“ 2021 (XXXI)** – virtualus, rezultatai tik klajunas.lt.
