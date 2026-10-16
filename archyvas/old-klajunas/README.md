@@ -14,4 +14,12 @@ Kas pridėta:
 
 Tuščia langelis = rezultatų nerasta (žr. `../rezultatai-2017-2026.md` skyrių „Spragos“). Ikonos: `T.png` – dbtopas/dbsportas, `kp.jpg` – klajunas.lt puslapis.
 
-Kantanto ir VU rektoriaus taurės lentelė archyve yra atskira (ne šiame CSV).
+## ⚠ VU Rektoriaus taurės lentelė
+
+`archyvas-update.php` perrašo `archyvas.htm` pagal savo šabloną. Šablone yra Kantanto taurės lentelė, bet **nėra VU Rektoriaus taurės lentelės** (2015, 2017–2019, Žukaučizna) – ji buvo įrašyta į HTML rankiniu būdu, todėl po CSV įkėlimo (2026-10-16) dingo.
+
+Atkūrimas:
+- `archyvas.htm` – dabartinis puslapis (su 2017–2026 eilutėmis) + grąžinta Rektoriaus lentelė po Kantanto lentele. Įkelti per FTP / hostingo failų tvarkyklę vietoje `https://old.klajunas.lt/archyvas.htm`.
+- `vu-rektoriaus-taure.html` – tik pati lentelė, jei patogiau įklijuoti ranka.
+
+Kad lentelė nedingtų kito CSV įkėlimo metu, ją reikia įdėti į `archyvas-update.php` šabloną (po Kantanto taurės lentele).
