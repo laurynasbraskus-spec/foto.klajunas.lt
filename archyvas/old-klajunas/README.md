@@ -19,7 +19,10 @@ Tuščia langelis = rezultatų nerasta (žr. `../rezultatai-2017-2026.md` skyri�
 `archyvas-update.php` perrašo `archyvas.htm` pagal savo šabloną. Šablone yra Kantanto taurės lentelė, bet **nėra VU Rektoriaus taurės lentelės** (2015, 2017–2019, Žukaučizna) – ji buvo įrašyta į HTML rankiniu būdu, todėl po CSV įkėlimo (2026-10-16) dingo.
 
 Atkūrimas:
-- `archyvas.htm` – dabartinis puslapis (su 2017–2026 eilutėmis) + grąžinta Rektoriaus lentelė po Kantanto lentele. Įkelti per FTP / hostingo failų tvarkyklę vietoje `https://old.klajunas.lt/archyvas.htm`.
+- `archyvas.html` – dabartinis puslapis (su 2017–2026 eilutėmis) + grąžinta Rektoriaus lentelė po Kantanto lentele. Įkelti per FTP / hostingo failų tvarkyklę į `https://old.klajunas.lt/archyvas.html`.
+- `archyvas.htm` – nukreipimas į `archyvas.html` (kaip `old.klajunas.lt` pradžios puslapyje), kad veiktų senos nuorodos (klajunas.lt meniu „Varžybų archyvas“ ir kt.). Įkelti vietoje esamo `archyvas.htm`.
+
+⚠ `archyvas-update.php` rašo į `archyvas.htm`: kol skriptas nepakeistas, kitas CSV įkėlimas nukreipimą vėl pakeis pilnu puslapiu (be Rektoriaus lentelės), o `archyvas.html` liks senas. Skripte reikia pakeisti išvesties failą į `archyvas.html` ir į šabloną įdėti Rektoriaus lentelę.
 - `vu-rektoriaus-taure.html` – tik pati lentelė, jei patogiau įklijuoti ranka.
 
-Kad lentelė nedingtų kito CSV įkėlimo metu, ją reikia įdėti į `archyvas-update.php` šabloną (po Kantanto taurės lentele).
+
