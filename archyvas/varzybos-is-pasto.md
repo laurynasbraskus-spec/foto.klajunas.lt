@@ -10,7 +10,7 @@ Surinkta 2026-10-09 iš klubo pirmininko asmeninio pašto: senosios Yahoo dėžu
 
 - **Įkurtas** 1989-09-19 Mindūnuose (Molėtų r.), iniciatorius Jonas Kraujelis. 1995 m. susijungė su bėgimo klubu „Suraižos“. Dabar – *Ištvermės sporto šakų ir turizmo mėgėjų klubas „OK Klajūnas“*, Labanoro g. 1, Mindūnai. Klubo 20-mečiui (2009) planuotas jubiliejinis leidinys. [120561bf4233aa21; klajunas.lt/istorija]
 - **Pirmininkai:** Jonas Kraujelis 1989–1999 · Juozas Vasilevičius 1999–2003 · Audrius Kraujalis 2003–2011 · Živilė Kanapkienė 2011–2019 · Laurynas Braškus nuo 2019 m. rudens (išrinktas 2019 m. sezono uždaryme). [170a484588f497a1, 16fb3fce46a57b2e]
-- **Svetainės istorija:** klajunas.com (iki ~2009) → klajunas.lt (WordPress, tvarkė Vytas V., nuo 2018 m. – ir L. Braškus). Senieji rezultatai buvo `klajunas.lt/archyvas/…` (pvz. `Kmara96.htm`), WordPress įrašai `klajunas.lt/?p=…`, vėliau `klajunas.lt/varzybos/`, `klajunas.lt/organizuojam/…`. 2024 m. gegužę domenas buvo „karantine“.
+- **Svetainės istorija:** klajunas.com (iki ~2009) → klajunas.lt (WordPress, tvarkė Vytas V., nuo 2018 m. – ir L. Braškus). Senieji rezultatai buvo `klajunas.lt/archyvas/…` (pvz. `Kmara96.html`), WordPress įrašai `klajunas.lt/?p=…`, vėliau `klajunas.lt/varzybos/`, `klajunas.lt/organizuojam/…`. 2024 m. gegužę domenas buvo „karantine“.
 - **Logotipas:** 2007–2008 m. svarstytas naujas logotipas (Justina Vasilevičiūtė, 2–3 variantai). [116f71c18ab06832]
 - **Narių sąrašai:** 2007 („OK Klajunas nariu sarasas.doc“) [112e18f5192e369b], 2011, 2012 [index]. 2011 m. adresatų sąraše – apie 29 nariai.
 
@@ -109,7 +109,7 @@ Papildomai iš pašto:
 | 2026 | 08-23, Rudesa | 214 dalyvių; grupės M/V12–18, M/V35–80, MS/VS, M, V, OPEN2; komandinė įskaita; Livelox. Rezultatai: https://dbsportas.lt/en/varz/2026140 | [1a03f7609feeb550] |
 
 ### 2.3 Klajūno maratonas
-- 1996 m. laimėjo Viktor Korčagin (rez. klajunas.lt/archyvas/Kmara96.htm, nuotrauka išlikusi). Trūksta 1990, 1992, 1993, 1994, 1997 m. rezultatų. [1332be94a0993000]
+- 1996 m. laimėjo Viktor Korčagin (rez. https://old.klajunas.lt/archyvas/Kmara96.html, nuotrauka išlikusi). Trūksta 1990, 1992, 1993, 1994, 1997 m. rezultatų. [1332be94a0993000]
 - 2016 m. kartu su Šeimų taure [1567d3edd73d6bc0]; 2017-08-20 [15dea95620520868]; 2018 m. registracija per dbtopas [164b2c7e0a9a3a3f].
 - 1996 m. klubas rengė 3B čempionatą (rezultatų nėra).
 
@@ -226,7 +226,7 @@ Laurynas Braškus (OK Klajūnas) LBMA bėgimuose: „Gyvybės ir mirties keliu�
 - [Klajūno taurės istorija](https://klajunas.lt/organizuojam/klajuno-taures-istorija/) – visi metai 1989–2026 (vieta, dalyviai, komandos, laimėtojas, rezultatai).
 - [„Aplink Želvos ežerą“ nugalėtojai 1991–2026](https://klajunas.lt/begimo-aplink-zelvos-ezera-nugaletojai/) – visos distancijos.
 - [Molėtų taurės istorija](https://klajunas.lt/moletu-taures-istorija/) – grupių nugalėtojai.
-- [old.klajunas.lt/archyvas.htm](https://old.klajunas.lt/archyvas.htm) – rezultatų nuorodų matrica 1989–2018: Želvos bėgimas, Snaigė, Kopija, Moksleivių žaidynės, Klajūno taurė, Molėtų estafetės, Luknos taurė, Molėtų čempionatas, Molėtų taurės finalai, Klajūno maratonas, Prologas, Bobų vasara, Sprintas, Sezono uždarymas, Šeimų taurė, Kantanto taurė (2010–2018), VU Rektoriaus taurė (2015–2019) ir kt. Atnaujinama iš CSV (`archyvas-update.php`).
+- [old.klajunas.lt/archyvas.html](https://old.klajunas.lt/archyvas.html) – rezultatų nuorodų matrica 1989–2018: Želvos bėgimas, Snaigė, Kopija, Moksleivių žaidynės, Klajūno taurė, Molėtų estafetės, Luknos taurė, Molėtų čempionatas, Molėtų taurės finalai, Klajūno maratonas, Prologas, Bobų vasara, Sprintas, Sezono uždarymas, Šeimų taurė, Kantanto taurė (2010–2018), VU Rektoriaus taurė (2015–2019) ir kt. Atnaujinama iš CSV (`archyvas-update.php`).
 
 **Klaidos svetainėse:**
 - Klajūno taurės istorijoje 2026 m. „rezultatai“ veda į `dbsportas.lt/en/varz/2024138/…` – turi būti **https://dbsportas.lt/en/varz/2026140**.

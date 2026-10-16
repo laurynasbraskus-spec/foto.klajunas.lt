@@ -1,28 +1,54 @@
-# old.klajunas.lt archyvo atnaujinimas (2017–2026)
+# old.klajunas.lt: perėjimas prie .html
 
-`archyvas-by-year.csv` – serverio failo https://old.klajunas.lt/archyvas-by-year.csv kopija (eilutės 1989–2016 nepakeistos) **su naujomis eilutėmis 2017–2026**.
+Visi old.klajunas.lt `*.htm` failai pervadinti į `*.html`, o visos nuorodos į juos pakeistos (be nukreipimų).
+Patikrinta 2026-10-16: 283 puslapiai, 559 pakeistos nuorodos, 515 vidinių nuorodų – nė vienos neveikiančios.
 
-Kaip įkelti:
-1. Atidaryti https://old.klajunas.lt/archyvas-update.php
-2. Įvesti slaptažodį, pasirinkti šį `archyvas-by-year.csv` ir spausti „Sukelti iš CSV failo“ (senas `archyvas.htm` automatiškai išsaugomas `/archyvas-backups/`).
+## Failai
 
-Kas pridėta:
-- **2017–2018** – perkelta iš dabartinio `archyvas.htm` (ten jau buvo, bet CSV šaltinyje trūko – kitaip įkėlus CSV jos dingtų) ir papildyta: Klajūno taurė 2018, Molėtų taurės finalai 2018.
-- **2019–2026** – rezultatų nuorodos iš klajunas.lt įrašų ir dbsportas.lt (Želvos bėgimas, Snaigė / OS „Žiema“, Kopija, Moksleivių žaidynės, Klajūno taurė, Molėtų taurės finalai ir galutiniai rezultatai 2019, Sprintas 2019, Sezono uždarymas).
-- Rasti, bet archyve nenurodyti puslapiai: `archyvas/snaige19.htm`, `kopija19.htm`, `mokslzaid19.htm`, `uzdarymas24.htm`.
-- Visos 40 naujų nuorodų patikrintos (HTTP 200) 2026-10-13.
+| Failas | Kas tai |
+|---|---|
+| `svetaine/` | Visa svetainės HTML dalis jau su `.html` pavadinimais ir pataisytomis nuorodomis (`archyvas/`, `old/`, `old/nariai/`, `lc/`, `files/temp/`, `archyvas.html`, `archyvas-by-year.csv`). Paveikslėliai ir kiti failai nesikeičia – jų kelti nereikia. |
+| `archyvas.html` | Archyvo puslapis (su 2017–2026 eilutėmis, VU Rektoriaus taurės lentele, visos nuorodos į `.html`). Tas pats kaip `svetaine/archyvas.html`. |
+| `archyvas-by-year.csv` | Archyvo CSV su `.html` nuorodomis. Tas pats kaip `svetaine/archyvas-by-year.csv`. |
+| `vu-rektoriaus-taure.html` | Tik VU Rektoriaus taurės lentelė (įdėti į `archyvas-update.php` šabloną). |
+| `pervadinimai.csv` | Kas pervadinta ir kurios nuorodos kuriuose failuose pakeistos. |
+| `klajunas-lt-nuorodos.csv` | klajunas.lt (WordPress) įrašai ir puslapiai su nuorodomis į senus `.htm` – kuriuos keisti. |
 
-Tuščia langelis = rezultatų nerasta (žr. `../rezultatai-2017-2026.md` skyrių „Spragos“). Ikonos: `T.png` – dbtopas/dbsportas, `kp.jpg` – klajunas.lt puslapis.
+## Kaip pritaikyti serveryje
 
-## ⚠ VU Rektoriaus taurės lentelė
+**Saugiausias būdas – paleisti įrankį ant pilnos FTP kopijos** (jis apims ir failus, kurių iš išorės nesimato, pvz. `archyvas-update.php`):
 
-`archyvas-update.php` perrašo `archyvas.htm` pagal savo šabloną. Šablone yra Kantanto taurės lentelė, bet **nėra VU Rektoriaus taurės lentelės** (2015, 2017–2019, Žukaučizna) – ji buvo įrašyta į HTML rankiniu būdu, todėl po CSV įkėlimo (2026-10-16) dingo.
+1. Per FTP parsisiųsti visą `old.klajunas.lt` svetainę į aplanką, pvz. `D:\old_klajunas`.
+2. Paleisti:
+   ```
+   py tools\htm_to_html.py "D:\old_klajunas" "D:\old_klajunas_html" --report "D:\pervadinimai.csv"
+   ```
+3. Peržiūrėti ekrane išvardintas „nerastas“ nuorodas.
+4. Serveryje ištrinti visus `*.htm` failus ir įkelti `D:\old_klajunas_html` turinį.
 
-Atkūrimas:
-- `archyvas.html` – dabartinis puslapis (su 2017–2026 eilutėmis) + grąžinta Rektoriaus lentelė po Kantanto lentele. Įkelti per FTP / hostingo failų tvarkyklę į `https://old.klajunas.lt/archyvas.html`.
-- `archyvas.htm` – nukreipimas į `archyvas.html` (kaip `old.klajunas.lt` pradžios puslapyje), kad veiktų senos nuorodos (klajunas.lt meniu „Varžybų archyvas“ ir kt.). Įkelti vietoje esamo `archyvas.htm`.
+Įrankis pakeičia ir PHP failus – pvz. `archyvas-update.php` eilutę, kurioje rašoma į `archyvas.htm`, į `archyvas.html`. Po to vis tiek reikia į to skripto šabloną įdėti VU Rektoriaus taurės lentelę (`vu-rektoriaus-taure.html`), kitaip ji vėl dings po kito CSV įkėlimo.
 
-⚠ `archyvas-update.php` rašo į `archyvas.htm`: kol skriptas nepakeistas, kitas CSV įkėlimas nukreipimą vėl pakeis pilnu puslapiu (be Rektoriaus lentelės), o `archyvas.html` liks senas. Skripte reikia pakeisti išvesties failą į `archyvas.html` ir į šabloną įdėti Rektoriaus lentelę.
-- `vu-rektoriaus-taure.html` – tik pati lentelė, jei patogiau įklijuoti ranka.
+**Arba** įkelti jau paruoštą `svetaine/` turinį ir serveryje ištrinti senus `*.htm` (sąrašas – `pervadinimai.csv`, tipas „pervadinta“ ir „istrinti“), o `archyvas-update.php` pataisyti ranka.
 
+## klajunas.lt (WordPress)
 
+`klajunas-lt-nuorodos.csv`:
+- **keisti** (108) – nuorodos į old.klajunas.lt / klajunas.lt `.htm` puslapius, stulpelyje `nauja_nuoroda` – nauja.
+- **wp-media** (5) – `.htm` failai pačiame WordPress (`wp-content/uploads/2019/…`, Molėtų taurės 2019 lentelės). Juos reikėtų iš naujo įkelti kaip `.html` (jei WordPress leidžia) ir pakeisti nuorodas.
+- **svetimas** (8) – kitų svetainių `.htm` (tengris.lt, aleliunas.lt ir kt.) – jų pervadinti negalima.
+
+Visas 108 nuorodas galima pakeisti vienu kartu įskiepiu „Search Regex“ (arba „Better Search Replace Pro“), lentelėje `wp_posts`, stulpelyje `post_content`:
+
+Paeiliui atlikti 3 pakeitimus (įjungti „Regex“):
+
+| # | Ieškoti (regex) | Keisti į |
+|---|---|---|
+| 1 | `https?://(?:www\.)?(?:old\.)?klajunas\.(?:lt\|com)/((?:archyvas\|old\|lc\|files/temp)/[^"'\s]+?)\.htm(?=["'\s#?])` | `https://old.klajunas.lt/$1.html` |
+| 2 | `https?://(?:www\.)?old\.klajunas\.lt/archyvas\.htm(?=["'\s#?])` | `https://old.klajunas.lt/archyvas.html` |
+| 3 | `(["'])/((?:archyvas\|old\|lc\|files/temp)/[^"'\s]+?)\.htm(?=["'\s#?])` | `$1https://old.klajunas.lt/$2.html` |
+
+Šie šablonai patikrinti su visomis 121 rastomis nuorodomis: visos 108 „keisti“ pakeičiamos teisingai, kitos (wp-media, svetimos) nepaliečiamos. Prieš keičiant – padaryti duomenų bazės atsarginę kopiją.
+
+`wp-content/uploads` nuorodos šiais šablonais nekeičiamos.
+
+Taip pat ranka pakeisti **meniu** (Išvaizda → Meniu) punktą „Varžybų archyvas“: `https://old.klajunas.lt/archyvas.html`.
